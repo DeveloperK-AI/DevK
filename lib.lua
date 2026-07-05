@@ -345,7 +345,7 @@ function DevLib:CreateWindow(options: { Name: string?, Intro: boolean? }?)
 
         local path = CONFIG_DIR .. folderName .. "/" .. fileName .. ".json"
         local ok, writeErr = pcall(function()
-            GlobalWriteFile!(path, encrypted)
+            GlobalWriteFile(path, encrypted)
         end)
         return ok, ok and nil or tostring(writeErr)
     end
@@ -362,7 +362,7 @@ function DevLib:CreateWindow(options: { Name: string?, Intro: boolean? }?)
         if GlobalIsFile and not GlobalIsFile(path) then return false, "config not found" end
 
         local ok, encrypted = pcall(function()
-            return GlobalReadFile!(path)
+            return GlobalReadFile(path)
         end)
         if not ok or type(encrypted) ~= "string" then return false, "read error" end
 
