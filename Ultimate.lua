@@ -200,33 +200,8 @@ local function safeFire(func)
     end)
 end
 
--- ============================================
--- [SECURITY] API akses terkontrol (hanya jika dibutuhkan antar modul)
--- ============================================
--- Jika ada bagian lain yang perlu membaca/mengubah Config, gunakan getter/setter.
--- Contoh:
-function GetConfig() return Config end
-function SetConfig(key, value)
-    if Config[key] ~= nil then
-        Config[key] = value
-    end
-end
-function GetTasks() return Tasks end
-function AddTask(task) table.insert(Tasks, task) end
-function ClearTasks() Tasks = {} end
-function SetNeedCast(value) needCast = value end
-function GetNeedCast() return needCast end
-function SetSkip(value) skip = value end
-function GetSkip() return skip end
-function IncrementBlatantCount() blatantFishCycleCount = blatantFishCycleCount + 1 end
-function ResetBlatantCount() blatantFishCycleCount = 0 end
-function RegisterEvent(name, func) Events[name] = func end
-function FireEvent(name, ...) if Events[name] then Events[name](...) end end
-
--- ============================================
--- [SECURITY] Fungsi pemanggil remote yang aman (local)
--- ============================================
-local function CallRemoteServer(remote, ...)
+-- sleitnick_net often exposes RF/* as RemoteEvent; use FireServer in that case.
+function CallRemoteServer(remote, ...)
     if not remote then return false end
     local ok
     if remote:IsA("RemoteFunction") then
@@ -250,31 +225,25 @@ local function CallRemoteServer(remote, ...)
     return ok
 end
 
--- ============================================
--- [SECURITY] Events (local) – gunakan GetServerRemote yang sudah diperbaiki
--- ============================================
-Events.equip                = GetServerRemote("RF/EquipToolFromHotbar")
-Events.CancelFishingInputs  = GetServerRemote("RF/CancelFishingInputs")
-Events.charge               = GetServerRemote("RF/ChargeFishingRod")
-Events.minigame             = GetServerRemote("RF/RequestFishingMinigameStarted")
+Events.equip = GetServerRemote("RF/EquipToolFromHotbar")
+Events.CancelFishingInputs = GetServerRemote("RF/CancelFishingInputs")
+Events.charge = GetServerRemote("RF/ChargeFishingRod")
+Events.minigame = GetServerRemote("RF/RequestFishingMinigameStarted")
 Events.UpdateAutoFishingState = GetServerRemote("RF/UpdateAutoFishingState")
 
--- ============================================
--- [SECURITY] Service Roblox sebagai LOCAL (jangan global)
--- ============================================
-local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
-local CoreGui = game:GetService("CoreGui")
-local Players = game:GetService("Players")
-local HttpService = game:GetService("HttpService")
-local Lighting = game:GetService("Lighting")
-local Terrain = workspace:FindFirstChildOfClass("Terrain")
+TweenService = game:GetService("TweenService")
+UserInputService = game:GetService("UserInputService")
+RunService = game:GetService("RunService")
+CoreGui = game:GetService("CoreGui")
+Players = game:GetService("Players")
+HttpService = game:GetService("HttpService")
+Lighting = game:GetService("Lighting")
+Terrain = workspace:FindFirstChildOfClass("Terrain")
 
--- ============================================
--- [SECURITY] DataCache sekarang LOCAL (tidak bisa diakses skrip lain)
--- ============================================
-local DataCache = {
+
+
+-- Performance Optimization: Data Cache System
+DataCache = {
     equipped = nil,
     rods = nil,
     inventory = nil,
@@ -300,17 +269,6 @@ function DataCache:Invalidate()
     self.rods = nil
     self.inventory = nil
     self.enchantStones = nil
-end
-
--- ============================================
--- [SECURITY] API akses untuk debugging/logging (opsional)
--- ============================================
-function GetDataCache(key)
-    return DataCache:Get(key)
-end
-
-function ClearDataCache()
-    DataCache:Invalidate()
 end
 
 local DevLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/DeveloperK-AI/DevK/main/lib.lua"))()
@@ -388,82 +346,49 @@ InfoTab:CreateParagraph({
 
 ShopTab:CreateSection({ Name = "Charms Shop" })
 
--- [SECURITY] Semua variabel lokal
-local SelectedCharm = nil
-local CharmIDs = {}       -- map nama charm -> ID
-local PurchaseQuantity = 1
+ SelectedCharm = "Bone Charm"
+ CharmIDs = {}
 
--- Fungsi untuk memuat daftar charm dari game (tanpa fallback manual)
-local function loadCharms()
-    local charmNames = {}
-    CharmIDs = {}
-
-    local success, charmsModule = pcall(function()
+ local function loadCharms()
+    local success, charms_module = pcall(function()
         return require(game:GetService("ReplicatedStorage"):WaitForChild("Charms", 5))
     end)
-
-    if success and type(charmsModule) == "table" then
-        for _, charm in pairs(charmsModule) do
+    
+    local charm_names = {}
+    if success and type(charms_module) == "table" then
+        for _, charm in pairs(charms_module) do
             if charm.Data and charm.Data.Name and charm.Data.Id then
-                local name = tostring(charm.Data.Name)
-                local id = tonumber(charm.Data.Id)
-                if name and id then
-                    CharmIDs[name] = id
-                    table.insert(charmNames, name)
-                end
+                CharmIDs[charm.Data.Name] = charm.Data.Id
+                table.insert(charm_names, charm.Data.Name)
             end
         end
-        table.sort(charmNames)
-    else
-        Window:Notify({
-            Title = "Load Failed",
-            Content = "Could not load charms from game. Press 'Refresh' to try again.",
-            Duration = 5
-        })
     end
+    table.sort(charm_names)
+    return charm_names
+ end
 
-    return charmNames
-end
+ local charmItems = loadCharms()
+ if #charmItems == 0 then
+    charmItems = {"Bone Charm", "Algae Charm", "Magma Charm", "Clover Charm", "Heart Charm"}
+    CharmIDs = {
+        ["Bone Charm"] = 1,
+        ["Algae Charm"] = 2,
+        ["Magma Charm"] = 3,
+        ["Clover Charm"] = 4,
+        ["Heart Charm"] = 14,
+    }
+ end
 
--- Dropdown charm (akan diisi ulang oleh fungsi update)
-local charmDropdown = ShopTab:CreateDropdown({
+ local charmDropdown = ShopTab:CreateDropdown({
     Name = "Select Charm",
-    Items = {},  -- kosong dulu, diisi setelah load
-    Default = nil,
+    Items = charmItems,
+    Default = charmItems[1] or "Bone Charm",
     Callback = function(val)
         SelectedCharm = val
     end
 })
 
--- Fungsi untuk memperbarui dropdown dengan daftar charm terbaru
-local function refreshCharmDropdown()
-    local charmItems = loadCharms()
-    if #charmItems > 0 then
-        charmDropdown:Refresh(charmItems)  -- Refresh() sudah ada di library dropdown
-        if not SelectedCharm or not CharmIDs[SelectedCharm] then
-            SelectedCharm = charmItems[1]
-            charmDropdown:Set(SelectedCharm)
-        end
-    end
-end
-
--- Tombol Refresh (selalu tampil, untuk memuat ulang charm)
-ShopTab:CreateButton({
-    Name = "Refresh Charm List",
-    Callback = function()
-        refreshCharmDropdown()
-        Window:Notify({
-            Title = "Refreshed",
-            Content = "Charm list updated from game.",
-            Duration = 2
-        })
-    end
-})
-
--- Panggil pertama kali
-refreshCharmDropdown()
-
--- Input quantity
+ PurchaseQuantity = 1
 ShopTab:CreateInput({
     Name = "Quantity",
     PlaceholderText = "1",
@@ -474,30 +399,29 @@ ShopTab:CreateInput({
     end
 })
 
--- Tombol Purchase
 ShopTab:CreateButton({
     Name = "Purchase Charm",
     Callback = function()
-        if not SelectedCharm then
-            Window:Notify({ Title = "Error", Content = "No charm selected.", Duration = 3 })
-            return
-        end
         local id = CharmIDs[SelectedCharm]
-        if not id then
-            Window:Notify({ Title = "Error", Content = "Charm ID not found.", Duration = 3 })
-            return
+        if not id then 
+            Window:Notify({
+                Title = "Error",
+                Content = "Charm ID not found for " .. tostring(SelectedCharm),
+                Duration = 3
+            })
+            return 
         end
-
+        
         Window:Notify({
             Title = "Purchase",
             Content = "Buying " .. PurchaseQuantity .. " " .. SelectedCharm .. "...",
             Duration = 2
         })
-
+        
         task.spawn(function()
             for i = 1, PurchaseQuantity do
                 pcall(function()
-                    CallRemoteServer(BuyCharm, id)  -- BuyCharm sudah local dari perbaikan sebelumnya
+                    CallRemoteServer(BuyCharm, id)
                 end)
                 task.wait(0.1)
             end
@@ -510,14 +434,16 @@ ShopTab:CreateButton({
     end
 })
 
--- Tombol Equip
 ShopTab:CreateButton({
     Name = "Equip Charm",
     Callback = function()
         if not SelectedCharm then return end
+        
+        -- Try to equip by name first
         pcall(function()
             REEquipCharm:FireServer(SelectedCharm)
         end)
+        
         Window:Notify({
             Title = "Equip",
             Content = "Equipped " .. SelectedCharm,
@@ -526,11 +452,11 @@ ShopTab:CreateButton({
     end
 })
 
--- Tombol Unequip
 ShopTab:CreateButton({
     Name = "Unequip Charm",
     Callback = function()
         REUnequipCharm:FireServer()
+        
         Window:Notify({
             Title = "Unequip",
             Content = "Unequipped Charm",
@@ -539,67 +465,62 @@ ShopTab:CreateButton({
     end
 })
 
- -- ============================================
--- [SECURITY] Tab tambahan - semua LOCAL
--- ============================================
-local TeleportTab = Window:CreateTab({
-    Name = "Teleport",
-    Icon = "rbxassetid://128755575520135"
+ TeleportTab = Window:CreateTab({
+	Name = "Teleport",
+	Icon = "rbxassetid://128755575520135"
 })
 
-local SettingsTab = Window:CreateTab({
-    Name = "Settings",
-    Icon = "rbxassetid://7733954611"
+ SettingsTab = Window:CreateTab({
+	Name = "Settings",
+	Icon = "rbxassetid://7733954611"
 })
 
-local MonitoringTab = Window:CreateTab({
-    Name = "Monitoring",
-    Icon = "rbxassetid://137601480983962"
+ MonitoringTab = Window:CreateTab({
+	Name = "Monitoring",
+	Icon = "rbxassetid://137601480983962"
 })
 
--- ============================================
--- [SECURITY] LocalPlayer sebagai LOCAL (gantikan getgenv().host)
--- ============================================
-local LocalPlayer = Players.LocalPlayer  -- Players sudah local dari inisialisasi sebelumnya
+getgenv().host = game:GetService("Players").LocalPlayer
 
-local function applyZoom()
-    LocalPlayer.CameraMaxZoomDistance = math.huge
-    LocalPlayer.CameraMinZoomDistance = 0.1
+ function applyZoom()
+    host.CameraMaxZoomDistance = math.huge
+    host.CameraMinZoomDistance = 0.1
 end
 
 applyZoom()
 
-LocalPlayer.CharacterAdded:Connect(function()
+host.CharacterAdded:Connect(function()
     task.wait(0.1)
     applyZoom()
 end)
 
--- ============================================
--- [SECURITY] Semua modul & remote sebagai LOCAL
--- ============================================
--- Service sudah local di bagian sebelumnya: ReplicatedStorage, RunService, Players, CoreGui
-local Replion = require(ReplicatedStorage.Packages.Replion)
-local FishingController = require(ReplicatedStorage.Controllers.FishingController)
-local ItemUtility = require(ReplicatedStorage.Shared.ItemUtility)   -- hanya perlu satu kali
-local VendorUtility = require(ReplicatedStorage.Shared.VendorUtility)
+ReplicatedStorage = game:GetService("ReplicatedStorage")
+RunService = game:GetService("RunService")
+-- Net already initialized
+Replion = require(ReplicatedStorage.Packages.Replion)
+FishingController = require(ReplicatedStorage.Controllers.FishingController)
+ItemUtility = require(ReplicatedStorage.Shared.ItemUtility)
+VendorUtility = require(ReplicatedStorage.Shared.VendorUtility)
+ Data = Replion.Client:WaitReplion("Data")
+ Client = require(ReplicatedStorage.Packages.Replion).Client
+ dataStore = Client:WaitReplion("Data")
+ Items = ReplicatedStorage:WaitForChild("Items")
+ Players = game:GetService("Players")
+ LocalPlayer = Players.LocalPlayer
+ NetService = Net
+ sellAllItems = SellItem
+ enchan = REAltar
+ oxygenRemote = UpdateOxygen
+ radar = UpdateRadar
+ autoon = AutoEnabled
+ equipTool = REEquip
+ CoreGui = game:GetService("CoreGui")
+ tradeFunc = InitiateTrade
+ RETextNotification = RENotify
+ ItemUtility = require(ReplicatedStorage.Shared.ItemUtility)
 
-local Data = Replion.Client:WaitReplion("Data")
-local Client = Replion.Client   -- sudah Replion.Client, tidak perlu require lagi
-local dataStore = Client:WaitReplion("Data")
-local Items = ReplicatedStorage:WaitForChild("Items")
 
--- Remote (semua sudah local dari bagian sebelumnya: SellItem, REAltar, dll.)
-local sellAllItems = SellItem
-local enchan = REAltar
-local oxygenRemote = UpdateOxygen   -- pastikan UpdateOxygen sudah dideklarasikan local di tempat lain
-local radar = UpdateRadar
-local autoon = AutoEnabled
-local equipTool = REEquip
-local tradeFunc = InitiateTrade
-local RETextNotification = RENotify
-
--- RE table (local)
-local RE = {
+RE = {
     FavoriteItem = REFav,
     FavoriteStateChanged = REFavChg,
     FishingCompleted = REFishDone,
@@ -610,29 +531,23 @@ local RE = {
     OpenPirateChest = PirateChest
 }
 
-local equipItemRemote = RE.EquipItem or REEquipItem
-local equipToolRemote = RE.EquipTool or REEquip
-local activateAltarRemote = RE.ActivateAltar or REAltar
+equipItemRemote = RE.EquipItem or REEquipItem
+equipToolRemote = RE.EquipTool or REEquip
+activateAltarRemote = RE.ActivateAltar or REAltar
 
--- ============================================
--- [SECURITY] State lokal untuk kontrol
--- ============================================
-local st = {
+st = {
     canFish = true,
 }
 
--- ============================================
--- [SECURITY] Patching fungsi (diisolasi)
--- ============================================
-local blockedFunctions = {
+blockedFunctions = {
     "OnCooldown",
 }
 
-local function patchFishingController()
-    local fishingModule = ReplicatedStorage.Controllers:FindFirstChild("FishingController")
+function patchFishingController()
+     fishingModule = ReplicatedStorage.Controllers:FindFirstChild("FishingController")
     if not fishingModule then return end
 
-    local ok, FC = pcall(require, fishingModule)
+     ok, FC = pcall(require, fishingModule)
     if not ok or type(FC) ~= "table" then return end
 
     for key, fn in pairs(FC) do
@@ -642,53 +557,19 @@ local function patchFishingController()
             end
         end
     end
+
 end
 
 patchFishingController()
 
--- ============================================
--- [SECURITY] State lokal untuk semua fitur (pengganti _G.*)
--- ============================================
-local AutoFarm = false
-local AutoRod = false
-local AutoSells = false
-local InfiniteJump = false
-local Radar = false
-local AntiAFK = false
-local AutoReconnect = false
-local Amblatant = false
-local autoFavEnabled = false
-
--- API getter/setter (jika diperlukan oleh bagian lain dari kode)
-function SetAutoFarm(v) AutoFarm = v end
-function GetAutoFarm() return AutoFarm end
-function SetAutoRod(v) AutoRod = v end
-function GetAutoRod() return AutoRod end
-function SetAutoSells(v) AutoSells = v end
-function GetAutoSells() return AutoSells end
-function SetInfiniteJump(v) InfiniteJump = v end
-function GetInfiniteJump() return InfiniteJump end
-function SetRadar(v) Radar = v end
-function GetRadar() return Radar end
-function SetAntiAFK(v) AntiAFK = v end
-function GetAntiAFK() return AntiAFK end
-function SetAutoReconnect(v) AutoReconnect = v end
-function GetAutoReconnect() return AutoReconnect end
-function SetAmblatant(v) Amblatant = v end
-function GetAmblatant() return Amblatant end
-function SetAutoFavEnabled(v) autoFavEnabled = v end
-function GetAutoFavEnabled() return autoFavEnabled end
-
--- ============================================
--- [SECURITY] Ultra Blatant 3N stub (local variables)
--- ============================================
+-- Ultra Blatant 3N (moons.lua): simpan fungsi asli FishingController, stub di PC + mobile
 local origUB3N_RequestChargeFishingRod, origUB3N_SendFishingRequestToServer
 pcall(function()
     origUB3N_RequestChargeFishingRod = FishingController.RequestChargeFishingRod
     origUB3N_SendFishingRequestToServer = FishingController.SendFishingRequestToServer
 end)
 
-local function applyUltraBlatant3NFishingControllerStub(enabled)
+function applyUltraBlatant3NFishingControllerStub(enabled)
     if not origUB3N_RequestChargeFishingRod or not origUB3N_SendFishingRequestToServer then
         return
     end
@@ -701,24 +582,34 @@ local function applyUltraBlatant3NFishingControllerStub(enabled)
     end
 end
 
--- ============================================
--- [SECURITY] Fixed Natural Hook (state lokal)
--- ============================================
-local naturalHookInstalled = false
-local naturalRainbowCount = 0
-local naturalGoldenCount = 0
-local naturalFishCount = 0
-local isCaught = false
+------------------ Variable ------------------------
+_G.AutoFarm = false
+_G.AutoRod = false
+_G.AutoSells = false
+_G.InfiniteJump = false
+_G.Radar = false
+_G.AntiAFK = false
+_G.AutoReconnect = false
+autoFavEnabled = false
+_G.Amblatant = _G.Amblatant or false
 
-local function resetNaturalHookCounts()
-    naturalRainbowCount = 0
-    naturalGoldenCount = 0
-    naturalFishCount = 0
+-- Fixed Natural Hook Active (port from blatant.lua)
+-- Meng-overwrite increment "1st fish/rainbow/golden" supaya terlihat natural.
+ _naturalHookInstalled = false
+ _naturalRainbowCount = 0
+ _naturalGoldenCount = 0
+ _naturalFishCount = 0
+ isCaught = false
+
+function _resetNaturalHookCounts()
+    _naturalRainbowCount = 0
+    _naturalGoldenCount = 0
+    _naturalFishCount = 0
     isCaught = false
 end
 
-local function installFixedNaturalHook()
-    if naturalHookInstalled then return end
+function _installFixedNaturalHook()
+    if _naturalHookInstalled then return end
 
     local executorName = "Unknown"
     pcall(function()
@@ -737,7 +628,7 @@ local function installFixedNaturalHook()
         return
     end
 
-    naturalHookInstalled = true
+    _naturalHookInstalled = true
 
     local Event
     pcall(function()
@@ -756,33 +647,32 @@ local function installFixedNaturalHook()
                     local category = Args[2][1]
                     local subCategory = Args[2][2]
 
-                    local function RunNaturalUpdate(updateType)
+                    function RunNaturalUpdate(updateType)
                         task.spawn(function()
                             for _ = 1, 2 do
                                 if updateType == "Rainbow" then
-                                    local last = naturalRainbowCount
-                                    naturalRainbowCount = naturalRainbowCount + 1
-                                    if naturalRainbowCount > 40 then naturalRainbowCount = 0 end
-                                    isCaught = (naturalRainbowCount ~= last)
-                                    old(Args[1], Args[2], naturalRainbowCount)
+                                    local last = _naturalRainbowCount
+                                    _naturalRainbowCount = _naturalRainbowCount + 1
+                                    if _naturalRainbowCount > 40 then _naturalRainbowCount = 0 end
+                                    isCaught = (_naturalRainbowCount ~= last)
+                                    old(Args[1], Args[2], _naturalRainbowCount)
                                 elseif updateType == "Golden" then
-                                    local last = naturalGoldenCount
-                                    naturalGoldenCount = naturalGoldenCount + 1
-                                    if naturalGoldenCount > 10 then naturalGoldenCount = 0 end
-                                    isCaught = (naturalGoldenCount ~= last)
-                                    old(Args[1], Args[2], naturalGoldenCount)
+                                    local last = _naturalGoldenCount
+                                    _naturalGoldenCount = _naturalGoldenCount + 1
+                                    if _naturalGoldenCount > 10 then _naturalGoldenCount = 0 end
+                                    isCaught = (_naturalGoldenCount ~= last)
+                                    old(Args[1], Args[2], _naturalGoldenCount)
                                 elseif updateType == "Fish" then
-                                    naturalFishCount = naturalFishCount + 1
+                                    _naturalFishCount = _naturalFishCount + 1
                                     isCaught = true
-                                    old(Args[1], Args[2], naturalFishCount)
+                                    old(Args[1], Args[2], _naturalFishCount)
                                 end
                                 task.wait(0.3)
                             end
                         end)
                     end
 
-                    -- Gunakan state lokal Amblatant, bukan _G.Amblatant
-                    if Amblatant then
+                    if _G.Amblatant then
                         if category == "Modifiers" and subCategory == "Rainbow" then
                             RunNaturalUpdate("Rainbow")
                             return
@@ -804,9 +694,6 @@ local function installFixedNaturalHook()
     print("Fixed Natural Hook Active!")
 end
 
--- ============================================
--- [SECURITY] Delay fishing (local)
--- ============================================
 local delayfishing = 1
 
 ----------------------------------------------------------------
@@ -817,7 +704,7 @@ local PI = math.pi
 local CAST_MODE_LIST = { "Perfect", "Fast", "Random" }
 
 ----------------------------------------------------------------
--- REMOTES (pastikan ChargeRod, REFishDoneRE, StartMini sudah local)
+-- REMOTES
 ----------------------------------------------------------------
 local RF_ChargeFishingRod = ChargeRod
 local RE_CatchFishCompleted = REFishDoneRE or REFishDone
@@ -834,7 +721,6 @@ local state = {
 }
 
 local loopTask = nil
-local InstantTasks = {}   -- [SECURITY] task tracker lokal
 local notifHooked = false
 
 function getPowerAtTime(chargeTime, elapsed)
@@ -977,21 +863,15 @@ function Instant.Start()
     state.enabled = true
     hookNotificationDelay()
     loopTask = task.spawn(startLoop)
-    -- [SECURITY] Simpan task secara lokal
-    table.insert(InstantTasks, loopTask)
+    if _G._NEXTHUB and _G._NEXTHUB.tasks then
+        table.insert(_G._NEXTHUB.tasks, loopTask)
+    end
 end
 
 function Instant.Stop()
     state.enabled = false
     if loopTask then
         pcall(task.cancel, loopTask)
-        -- [SECURITY] Bersihkan dari daftar task lokal
-        for i, t in ipairs(InstantTasks) do
-            if t == loopTask then
-                table.remove(InstantTasks, i)
-                break
-            end
-        end
         loopTask = nil
     end
     state.running = false
@@ -1001,7 +881,7 @@ function Instant.IsActive()
     return state.enabled
 end
 
--- Compatibility wrappers
+-- Compatibility wrappers for existing UI flow
 function CallFishDone(remote, ...)
     if not remote then return end
     local ok = pcall(function() remote:InvokeServer() end)
@@ -1050,6 +930,7 @@ end
 function stopInstantFishingV2()
     UB_stop()
 end
+
 -- =============================
 -- Instant Bobber (moons.lua: patchInstantBaitOverrideToCastPosition)
 -- =============================
@@ -1196,13 +1077,8 @@ end
 
 ExclusiveTab:CreateSection({ Name = "Premium" })
 
--- ============================================
--- [SECURITY] Semua state lokal
--- ============================================
-local stopAnimConnections = {}
-
-local function setAnim(v)
-    local player = game:GetService("Players").LocalPlayer
+ stopAnimConnections = {}
+ function setAnim(v)
     local char = player.Character or player.CharacterAdded:Wait()
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hum then return end
@@ -1225,175 +1101,46 @@ local function setAnim(v)
 end
 
 ExclusiveTab:CreateToggle({
-    Name = "No Animation",
+	Name = "No Animation",
     Value = false,
     Callback = setAnim
 })
 
--- ============================================
--- [SECURITY] Load Totem Data dari Game (Dinamis)
--- ============================================
-local TOTEM_DATA = {}          -- Map name -> {Id = number, Duration = number, Price = number?}
-local TOTEM_NAMES = {}         -- List nama totem
-local TotemMarketIds = {}      -- Map name -> marketId (jika beda)
-local TotemPrices = {}         -- Map name -> price
+-- // TOTEM DATA
+ TOTEM_DATA = {
+    ["Luck Totem"] = {Id = 1, Duration = 3601},
+    ["Mutation Totem"] = {Id = 2, Duration = 3601},
+    ["Shiny Totem"] = {Id = 3, Duration = 3601},
+    ["Super Love Totem"] = {Id = 4, Duration = 3601},
+    ["Love Totem"] = {Id = 5, Duration = 3601},
+    ["Super Easter Totem"] = {Id = 6, Duration = 3601},    
+    ["Easter Totem"] = {Id = 7, Duration = 3601},
+}
+ TOTEM_NAMES = {"Luck Totem", "Mutation Totem", "Shiny Totem", "Super Love Totem", "Love Totem","Super Easter Totem","Easter Totem"}
+ selectedTotemName = "Luck Totem"
 
--- Fungsi untuk mengambil data totem dari game
-local function LoadTotemData()
-    -- Reset
-    TOTEM_DATA = {}
-    TOTEM_NAMES = {}
-    TotemMarketIds = {}
-    TotemPrices = {}
+-- // AUTO SINGLE TOTEM
+ AUTO_TOTEM_ACTIVE = false
+ AUTO_TOTEM_THREAD = nil
+ currentTotemExpiry = 0
 
-    -- 1. Coba dari folder Items/Totems (biasanya berisi ObjectValue dengan atribut)
-    local totemsFolder = ReplicatedStorage:FindFirstChild("Items")
-    if totemsFolder then
-        totemsFolder = totemsFolder:FindFirstChild("Totems") or totemsFolder:FindFirstChild("ShopItems") or totemsFolder
-        if totemsFolder then
-            for _, item in ipairs(totemsFolder:GetChildren()) do
-                if item:IsA("ModuleScript") or item:IsA("ObjectValue") then
-                    local data = nil
-                    if item:IsA("ModuleScript") then
-                        local ok, mod = pcall(require, item)
-                        if ok then data = mod end
-                    else
-                        data = item.Value
-                    end
-                    if type(data) == "table" and data.Name then
-                        local name = tostring(data.Name)
-                        TOTEM_DATA[name] = {
-                            Id = tonumber(data.Id) or 0,
-                            Duration = tonumber(data.Duration) or 3601,
-                            Price = tonumber(data.Price) or tonumber(data.Cost) or 0
-                        }
-                        table.insert(TOTEM_NAMES, name)
-                        -- Coba ambil market ID jika ada
-                        if data.MarketId then TotemMarketIds[name] = tonumber(data.MarketId) end
-                        if data.Price then TotemPrices[name] = tonumber(data.Price) end
-                    end
-                end
-            end
-        end
-    end
-
-    -- 2. Jika masih kosong, coba ambil dari VendorUtility atau Replion
-    if #TOTEM_NAMES == 0 then
-        -- Fallback: coba dari Remote yang biasa dipakai untuk beli item
-        -- Misalnya dengan membaca inventory player atau data shop
-        -- Ini hanya contoh, sesuaikan dengan game.
-        pcall(function()
-            local dataStore = Replion.Client:WaitReplion("Data")
-            local shopData = dataStore:GetExpect("Shop") or dataStore:GetExpect("Market")
-            if shopData and shopData.Totems then
-                for _, item in ipairs(shopData.Totems) do
-                    local name = item.Name or item.DisplayName
-                    if name then
-                        TOTEM_DATA[name] = {
-                            Id = tonumber(item.Id) or 0,
-                            Duration = tonumber(item.Duration) or 3601,
-                            Price = tonumber(item.Price) or 0
-                        }
-                        table.insert(TOTEM_NAMES, name)
-                        if item.MarketId then TotemMarketIds[name] = tonumber(item.MarketId) end
-                        if item.Price then TotemPrices[name] = tonumber(item.Price) end
-                    end
-                end
-            end
-        end)
-    end
-
-    -- 3. Jika masih kosong juga, fallback ke hardcode (tapi tidak disarankan)
-    if #TOTEM_NAMES == 0 then
-        TOTEM_DATA = {
-            ["Luck Totem"] = {Id = 1, Duration = 3601, Price = 650000},
-            ["Mutation Totem"] = {Id = 2, Duration = 3601, Price = 800000},
-            ["Shiny Totem"] = {Id = 3, Duration = 3601, Price = 400000},
-            ["Super Love Totem"] = {Id = 4, Duration = 3601},
-            ["Love Totem"] = {Id = 5, Duration = 3601},
-            ["Super Easter Totem"] = {Id = 6, Duration = 3601},
-            ["Easter Totem"] = {Id = 7, Duration = 3601},
-        }
-        TotemMarketIds = {
-            ["Luck Totem"] = 5,
-            ["Shiny Totem"] = 7,
-            ["Mutation Totem"] = 8
-        }
-        TotemPrices = {
-            ["Luck Totem"] = 650000,
-            ["Shiny Totem"] = 400000,
-            ["Mutation Totem"] = 800000
-        }
-        TOTEM_NAMES = {}
-        for name in pairs(TOTEM_DATA) do
-            table.insert(TOTEM_NAMES, name)
-        end
-        table.sort(TOTEM_NAMES)
-        Window:Notify({
-            Title = "Warning",
-            Content = "Using fallback totem data (hardcoded). Press Refresh to retry.",
-            Duration = 5
-        })
-    else
-        table.sort(TOTEM_NAMES)
-    end
-end
-
--- Panggil pertama kali
-LoadTotemData()
-
--- Tombol Refresh (untuk memuat ulang data setelah game update)
-ExclusiveTab:CreateButton({
-    Name = "Refresh Totem List",
-    Callback = function()
-        LoadTotemData()
-        -- Update dropdowns
-        if singleTotemDropdown then
-            singleTotemDropdown:Refresh(TOTEM_NAMES)
-        end
-        if buyTotemDropdown then
-            buyTotemDropdown:Refresh(TOTEM_NAMES)
-        end
-        Window:Notify({
-            Title = "Refreshed",
-            Content = "Totem list updated from game.",
-            Duration = 3
-        })
-    end
-})
-
--- ============================================
--- State Auto Single Totem (local)
--- ============================================
-local selectedTotemName = TOTEM_NAMES[1] or "Luck Totem"
-local AUTO_TOTEM_ACTIVE = false
-local AUTO_TOTEM_THREAD = nil
-local currentTotemExpiry = 0
-
--- Helper untuk dapatkan UUID totem dari inventory
-local function GetTotemUUID(name)
-    local data = TOTEM_DATA[name]
-    if not data then return nil end
-    local totemId = data.Id
-
-    local success, replionData = pcall(function()
+-- // GET TOTEM UUID
+ function GetTotemUUID(name)
+    local success, r = pcall(function()
         return require(ReplicatedStorage.Packages.Replion).Client:WaitReplion("Data")
     end)
     if not success then return nil end
-
-    local s, d = pcall(function() return replionData:GetExpect("Inventory") end)
-    if s and d.Totems then
-        for _, item in ipairs(d.Totems) do
-            if tonumber(item.Id) == totemId and (item.Count or 1) >= 1 then
-                return item.UUID
-            end
-        end
+    local s, d = pcall(function() return r:GetExpect("Inventory") end)
+    if s and d.Totems then 
+        for _, i in ipairs(d.Totems) do 
+            if tonumber(i.Id) == TOTEM_DATA[name].Id and (i.Count or 1) >= 1 then return i.UUID end 
+        end 
     end
     return nil
 end
 
--- Loop auto totem tunggal
-local function RunAutoTotemLoop()
+-- // AUTO SINGLE TOTEM
+ function RunAutoTotemLoop()
     if AUTO_TOTEM_THREAD then task.cancel(AUTO_TOTEM_THREAD) end
     AUTO_TOTEM_THREAD = task.spawn(function()
         while AUTO_TOTEM_ACTIVE do
@@ -1401,14 +1148,20 @@ local function RunAutoTotemLoop()
             if timeLeft <= 0 then
                 local uuid = GetTotemUUID(selectedTotemName)
                 if uuid then
+                    -- Spawn totem
                     pcall(function() Totem:FireServer(uuid) end)
-                    currentTotemExpiry = os.time() + (TOTEM_DATA[selectedTotemName] and TOTEM_DATA[selectedTotemName].Duration or 3601)
-                    task.spawn(function()
-                        task.wait(0.5)
-                        for _ = 1, 8 do
+                    currentTotemExpiry = os.time() + TOTEM_DATA[selectedTotemName].Duration
+                    
+                    -- Re-equip rod setelah spawn totem (improved timing & retries)
+                    task.spawn(function() 
+                        task.wait(0.5) -- Delay awal lebih lama untuk memastikan totem sudah spawn
+                        for i=1,8 do -- Lebih banyak retry untuk memastikan rod ter-equip
                             task.wait(0.25)
-                            pcall(function() REEquip:FireServer(1) end)
+                            pcall(function() 
+                                REEquip:FireServer(1) 
+                            end)
                         end
+                        -- Notifikasi bahwa rod sudah di-equip kembali
                         print("[Auto Totem] Rod re-equipped after spawning " .. selectedTotemName)
                     end)
                 end
@@ -1418,120 +1171,182 @@ local function RunAutoTotemLoop()
     end)
 end
 
--- Dropdown Pilih Totem Single
-local singleTotemDropdown = ExclusiveTab:CreateDropdown({
-    Name = "Pilih Jenis Totem",
-    Items = TOTEM_NAMES,
-    Default = selectedTotemName,
-    Callback = function(n)
+ExclusiveTab:CreateDropdown({
+	Name = "Pilih Jenis Totem",
+    Items = {"Luck Totem", "Mutation Totem", "Shiny Totem","Super Love Totem", "Love Totem","Super Easter Totem","Easter Totem"},
+    Value = selectedTotemName,
+ Callback = function(n) 
         selectedTotemName = n
-        currentTotemExpiry = 0
-    end
+        currentTotemExpiry = 0 
+    end 
 })
 
 ExclusiveTab:CreateToggle({
-    Name = "Enable Auto Totem (Single)",
-    SubText = "Mode Normal",
-    Default = false,
-    Callback = function(s)
+	Name = "Enable Auto Totem (Single)",
+	SubText = "Mode Normal",
+	Default = false,
+	ConfigKey = "EnableAutoTotemSingle",
+	 Callback = function(s) 
         AUTO_TOTEM_ACTIVE = s
-        if s then
-            RunAutoTotemLoop()
-        else
-            if AUTO_TOTEM_THREAD then task.cancel(AUTO_TOTEM_THREAD) end
-        end
-    end
+        if s then RunAutoTotemLoop() else if AUTO_TOTEM_THREAD then task.cancel(AUTO_TOTEM_THREAD) end end 
+    end 
 })
 
+
 -- ============================================
--- AUTO 3 TOTEM MIX (SHINY -> LUCK -> MUTATION)
+-- AUTO 3 TOTEM MIX (SHINY -> LUCK -> MUTATION) [TWEEN + PLATFORM]
 -- ============================================
+
 local AUTO_3_TOTEM_ACTIVE = false
 local AUTO_3_TOTEM_THREAD = nil
-local TOTEM_MIX_ORDER = {"Shiny Totem", "Luck Totem", "Mutation Totem"}   -- bisa disesuaikan
 
+-- Mixed Order: Spot 1=Shiny, Spot 2=Luck, Spot 3=Mutation
+local TOTEM_MIX_ORDER = {"Shiny Totem", "Luck Totem", "Mutation Totem"}
+
+-- 3 Spots Only
 local REF_CENTER = Vector3.new(93.932, 9.532, 2684.134)
 local REF_SPOTS = {
-    Vector3.new(45.0468979, 13.5, 2730.19067),
-    Vector3.new(145.644608, 13.5, 2721.90747),
-    Vector3.new(84.6406631, 14.2, 2636.05786),
+    Vector3.new(45.0468979, 13.5, 2730.19067),   -- 1
+    Vector3.new(145.644608, 13.5, 2721.90747),   -- 2
+    Vector3.new(84.6406631, 14.2, 2636.05786),   -- 3
 }
 
--- Helper functions (sudah ada di file utama, jangan duplikasi)
--- GetRoot, TweenTo, CreatePlatform tidak perlu didefinisikan ulang di sini.
--- Asumsikan mereka sudah ada sebagai local function di bagian lain.
--- Jika tidak, pindahkan ke sini dan jadikan local.
+TweenService = game:GetService("TweenService")
+ReplicatedStorage = game:GetService("ReplicatedStorage")
+-- Net already initialized
 
-local function Run3TotemLoop()
+function GetRoot()
+    local player = game:GetService("Players").LocalPlayer
+    local char = player.Character
+    if not char then return nil end
+    return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+end
+
+-- Helper: Tween Character to Target CFrame
+function TweenTo(targetCFrame, duration)
+    local root = GetRoot()
+    if not root then return end
+    
+    -- Ensure Anchored for Tween
+    root.Anchored = true
+    
+    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear)
+    local tween = TweenService:Create(root, tweenInfo, {CFrame = targetCFrame})
+    tween:Play()
+    tween.Completed:Wait()
+    -- Keep anchored until platform interaction
+end
+
+-- Helper: Create Temporary Platform
+function CreatePlatform(position)
+    local plat = Instance.new("Part")
+    plat.Name = "TotemPlatform"
+    plat.Size = Vector3.new(10, 1, 10)
+    plat.Position = position - Vector3.new(0, 3.5, 0) -- Slightly below player
+    plat.Anchored = true
+    plat.CanCollide = true
+    plat.Transparency = 0.5
+    plat.Color = Color3.fromRGB(0, 255, 255)
+    plat.Material = Enum.Material.Neon
+    plat.Parent = workspace
+    return plat
+end
+
+function Run3TotemLoop()
     if AUTO_3_TOTEM_THREAD then task.cancel(AUTO_3_TOTEM_THREAD) end
+    
     AUTO_3_TOTEM_THREAD = task.spawn(function()
         AUTO_3_TOTEM_ACTIVE = true
+        
         local player = game:GetService("Players").LocalPlayer
         local char = player.Character or player.CharacterAdded:Wait()
         local root = GetRoot()
-        if not root then AUTO_3_TOTEM_ACTIVE = false; return end
-
+        
+        if not root then 
+            AUTO_3_TOTEM_ACTIVE = false
+            return 
+        end
+        
         local startCFrame = root.CFrame
         Window:Notify({ Title = "Started", Content = "3 Totem Mix (Tween Mode)", Duration = 4, Icon = "zap" })
+        
+        -- Equip Oxygen Tank (Optional safety)
+        local RF_EquipOxygenTank = EquipOxygen
+        if RF_EquipOxygenTank then pcall(function() RF_EquipOxygenTank:InvokeServer(105) end) end
 
-        -- Equip Oxygen (if remote available)
-        if EquipOxygen then pcall(function() EquipOxygen:InvokeServer(105) end) end
-
+        -- PRIMARY LOOP: Runs indefinitely until toggled off
         while AUTO_3_TOTEM_ACTIVE do
+            -- Loop through spots
             for i, refSpot in ipairs(REF_SPOTS) do
                 if not AUTO_3_TOTEM_ACTIVE then break end
+                
                 local targetTotemName = TOTEM_MIX_ORDER[i]
+                -- Calculate Adjust position relative to center
                 local relativePos = refSpot - REF_CENTER
                 local targetPos = startCFrame.Position + relativePos
+                
                 local targetCFrame = CFrame.new(targetPos)
-
+                
+                -- 1. Tween to Location
                 local dist = (root.Position - targetPos).Magnitude
-                local travelTime = math.max(1.5, dist / 60)
+                local travelTime = math.max(1.5, dist / 60) -- Speed calc
+                
                 TweenTo(targetCFrame, travelTime)
-
+                
+                -- 2. Create Platform & Stand
                 local platform = CreatePlatform(targetPos)
-                root.Anchored = false
-                task.wait(0.5)
-
+                root.Anchored = false -- Allow standing on platform
+                
+                task.wait(0.5) -- Stabilize
+                
+                -- 3. Spawn & Equip Totem
                 local uuid = GetTotemUUID(targetTotemName)
                 if uuid then
                     pcall(function() Totem:FireServer(uuid) end)
-                    task.spawn(function()
-                        for _ = 1, 5 do
+                    
+                    -- Equip Loop
+                    task.spawn(function() 
+                        for k=1,5 do -- More attempts
                             pcall(function() REEquip:FireServer(1) end)
-                            task.wait(0.2)
-                        end
+                            task.wait(0.2) 
+                        end 
                     end)
                     Window:Notify({ Title = "Spawned", Content = targetTotemName, Duration = 2 })
                 else
-                    Window:Notify({ Title = "Skip", Content = "No " .. targetTotemName, Duration = 2 })
+                    Window:Notify({ Title = "Skip", Content = "No " .. targetTotemName, Duration = 2, Icon = "x" })
                 end
-
-                task.wait(3)
+                
+                task.wait(3) -- Wait for usage/interaction
+                
+                -- 4. Cleanup Platform & Prepare for next
                 if platform then platform:Destroy() end
-                root.Anchored = true
+                root.Anchored = true -- Prepare for next tween
             end
-
+            
+            -- Return to Start Position
             if AUTO_3_TOTEM_ACTIVE then
                 TweenTo(startCFrame, 2)
                 root.Anchored = false
-                Window:Notify({ Title = "Cycle Done", Content = "Waiting 1 Hour...", Duration = 10 })
-                -- Wait 1 hour, breakable
-                for _ = 1, 3600 do
-                    if not AUTO_3_TOTEM_ACTIVE then break end
-                    task.wait(1)
-                end
+                Window:Notify({ Title = "Cycle Done", Content = "Waiting 1 Hour...", Duration = 10, Icon = "time" })
+            end
+            
+            -- Wait 1 Hour (with breakdown for cancellation)
+            for waitTime = 3600, 1, -1 do
+                if not AUTO_3_TOTEM_ACTIVE then break end
+                task.wait(1)
             end
         end
-
-        if UnequipOxygen then pcall(function() UnequipOxygen:InvokeServer() end) end
+        
+        -- Unequip Oxygen (When manually stopped)
+        local RF_UnequipOxygenTank = UnequipOxygen
+        if RF_UnequipOxygenTank then pcall(function() RF_UnequipOxygenTank:InvokeServer() end) end
     end)
 end
 
 ExclusiveTab:CreateToggle({
-    Name = "Auto Spawn 3 Totem Mix",
+	Name = "Auto Spawn 3 Totem Mix",
     SubText = "Shiny -> Luck -> Mutation",
-    Default = false,
+	Default = false,
     Callback = function(s)
         AUTO_3_TOTEM_ACTIVE = s
         if s then
@@ -1539,12 +1354,15 @@ ExclusiveTab:CreateToggle({
         else
             AUTO_3_TOTEM_ACTIVE = false
             if AUTO_3_TOTEM_THREAD then task.cancel(AUTO_3_TOTEM_THREAD) end
+            
+            -- Cleanup if stopped mid-way
             local root = GetRoot()
             if root then root.Anchored = false end
             for _, v in ipairs(workspace:GetChildren()) do
                 if v.Name == "TotemPlatform" then v:Destroy() end
             end
-            Window:Notify({ Title = "Stopped", Content = "Cancelled!", Duration = 3 })
+            
+            Window:Notify({ Title = "Stopped", Content = "Cancelled!", Duration = 3, Icon = "x" })
         end
     end
 })
@@ -1552,148 +1370,215 @@ ExclusiveTab:CreateToggle({
 ExclusiveTab:CreateSection({ Name = "Auto Buy Totem" })
 
 -- ============================================
--- AUTO BUY TOTEM (State Local, Dynamic)
+-- AUTO BUY TOTEM (MARKET PURCHASE)
 -- ============================================
-local autoBuyTotem = false
-local selectedBuyTotem = TOTEM_NAMES[1] or "Luck Totem"
-local buyTotemLimit = 10
+
+local TotemMarketIds = {
+	["Luck Totem"] = 5,
+	["Shiny Totem"] = 7,
+	["Mutation Totem"] = 8
+}
+
+local TotemPrices = {
+	["Luck Totem"] = 650000,
+	["Shiny Totem"] = 400000,
+	["Mutation Totem"] = 800000
+}
+
+_G.AutoBuyTotem = false
+_G.SelectedBuyTotem = "Luck Totem"
+_G.BuyTotemLimit = 10
 local purchaseCount = 0
 
--- Dropdown pilih totem untuk dibeli (dinamis)
-local buyTotemDropdown = ExclusiveTab:CreateDropdown({
-    Name = "Select Totem to Buy",
-    Items = TOTEM_NAMES,
-    Default = selectedBuyTotem,
-    Callback = function(selected)
-        selectedBuyTotem = selected
-        print("[Auto Buy] Selected totem:", selected, "Price:", TotemPrices[selected] or TOTEM_DATA[selected]?.Price)
-    end
+-- Dropdown untuk pilih totem
+ExclusiveTab:CreateDropdown({
+	Name = "Select Totem to Buy",
+	Items = {"Luck Totem", "Shiny Totem", "Mutation Totem"},
+	Default = "Luck Totem",
+	Callback = function(selected)
+		_G.SelectedBuyTotem = selected
+		print("[Auto Buy] Selected totem:", selected, "Price:", TotemPrices[selected])
+	end
 })
 
+-- Slider untuk batas pembelian
+-- Input untuk batas pembelian
 ExclusiveTab:CreateInput({
-    Name = "Purchase Limit",
-    PlaceholderText = "10",
-    RemoveTextAfterFocusLost = false,
-    Callback = function(text)
-        local value = tonumber(text)
-        if value then
-            buyTotemLimit = value
-            print("[Auto Buy] Purchase limit set to:", value)
-        end
-    end
+	Name = "Purchase Limit",
+	PlaceholderText = "10",
+	RemoveTextAfterFocusLost = false,
+	Callback = function(text)
+		local value = tonumber(text)
+		if value then
+			_G.BuyTotemLimit = value
+			print("[Auto Buy] Purchase limit set to:", value)
+		else
+			warn("[Auto Buy] Invalid number entered for limit")
+		end
+	end
 })
 
+-- Button Open Merchant
+-- Toggle Open Merchant
 ExclusiveTab:CreateToggle({
-    Name = "Open Merchant GUI",
-    Default = false,
-    Callback = function(value)
-        local merchantGui = game:GetService("Players").LocalPlayer.PlayerGui:FindFirstChild("Merchant")
-        if merchantGui then
-            merchantGui.Enabled = value
-        else
-            Window:Notify({ Title = "Error", Content = "Merchant GUI not found!", Duration = 3 })
-        end
-    end
+	Name = "Open Merchant GUI",
+	Default = false,
+	Callback = function(value)
+		local merchantGui = game:GetService("Players").LocalPlayer.PlayerGui:FindFirstChild("Merchant")
+		if merchantGui then
+			merchantGui.Enabled = value
+			if value then
+				Window:Notify({
+					Title = "Merchant",
+					Content = "Merchant GUI Opened!",
+					Icon = "rbxassetid://7733920644",
+					Duration = 3
+				})
+			end
+		else
+			Window:Notify({
+				Title = "Error",
+				Content = "Merchant GUI not found!",
+				Icon = "rbxassetid://7733658504",
+				Duration = 3
+			})
+		end
+	end
 })
 
+-- Toggle Auto Buy Totem
 ExclusiveTab:CreateToggle({
-    Name = "Auto Buy Totem",
-    SubText = "Purchase totem from market",
-    Default = false,
-    Callback = function(value)
-        autoBuyTotem = value
-        if value then
-            purchaseCount = 0
-            Window:Notify({
-                Title = "Auto Buy Totem Enabled",
-                Content = "Buying: " .. selectedBuyTotem .. " (Price: " .. (TotemPrices[selectedBuyTotem] or "?") .. ")\nLimit: " .. buyTotemLimit,
-                Duration = 3
-            })
+	Name = "Auto Buy Totem",
+	SubText = "Purchase totem from market",
+	Default = false,
+	Callback = function(value)
+		_G.AutoBuyTotem = value
+		
+		if value then
+			purchaseCount = 0 -- Reset counter
+			
+			Window:Notify({
+				Title = "Auto Buy Totem Enabled",
+				Content = "Buying: " .. _G.SelectedBuyTotem .. " (" .. TotemPrices[_G.SelectedBuyTotem] .. " coins)\nLimit: " .. _G.BuyTotemLimit .. " totems",
+				Icon = "rbxassetid://7733911621",
+				Duration = 3
+			})
+			
+			-- Auto buy loop
+			task.spawn(function()
+				local ReplicatedStorage = game:GetService("ReplicatedStorage")
+				local PurchaseRemote = BuyMarket
+				
+				-- Inventory IDs (different from Market IDs)
+				local TotemInventoryIds = {
+					["Luck Totem"] = 1,
+					["Mutation Totem"] = 2,
+					["Shiny Totem"] = 3
+				}
 
-            task.spawn(function()
-                -- Gunakan BuyMarket remote (sudah local)
-                local PurchaseRemote = BuyMarket
-                -- Map nama -> marketId (dinamis)
-                local function getMarketId(name)
-                    return TotemMarketIds[name] or TOTEM_DATA[name]?.Id  -- fallback ke Id jika tidak ada marketId terpisah
-                end
-
-                -- Function to count totems in inventory (by Id)
-                local function GetTotemCount(totemName)
-                    local data = TOTEM_DATA[totemName]
-                    if not data then return 0 end
-                    local invId = data.Id
-                    local success, result = pcall(function()
-                        local dataStore = Replion.Client:WaitReplion("Data")
-                        local inventory = dataStore:GetExpect("Inventory")
-                        if inventory and inventory.Totems then
-                            local total = 0
-                            for _, item in ipairs(inventory.Totems) do
-                                if tonumber(item.Id) == invId then
-                                    total = total + (item.Count or 1)
-                                end
-                            end
-                            return total
-                        end
-                        return 0
-                    end)
-                    return success and result or 0
-                end
-
-                while autoBuyTotem and purchaseCount < buyTotemLimit do
-                    local marketId = getMarketId(selectedBuyTotem)
-                    if not marketId then
-                        warn("[Auto Buy] No market ID for " .. selectedBuyTotem)
-                        break
-                    end
-
-                    local beforeCount = GetTotemCount(selectedBuyTotem)
-                    local success, result = pcall(function()
-                        return PurchaseRemote:InvokeServer(marketId)
-                    end)
-                    if success then
-                        task.wait(0.5)
-                        local afterCount = GetTotemCount(selectedBuyTotem)
-                        if afterCount > beforeCount then
-                            purchaseCount = purchaseCount + 1
-                            print("[Auto Buy] ✓ Purchased:", selectedBuyTotem, "Count:", purchaseCount)
-                        else
-                            warn("[Auto Buy] ⚠️ Purchase succeeded but inventory not updated")
-                        end
-                    else
-                        warn("[Auto Buy] Error:", result)
-                    end
-                    task.wait(1)
-                end
-
-                if purchaseCount >= buyTotemLimit then
-                    autoBuyTotem = false
-                    Window:Notify({
-                        Title = "Auto Buy Completed",
-                        Content = "Purchased " .. purchaseCount .. " totems!",
-                        Duration = 4
-                    })
-                end
-            end)
-        else
-            Window:Notify({
-                Title = "Auto Buy Totem Disabled",
-                Content = "Stopped. Purchased: " .. purchaseCount,
-                Duration = 2
-            })
-        end
-    end
+				-- Function to check inventory count
+				function GetTotemCount(totemName)
+					local success, result = pcall(function()
+						local Client = require(ReplicatedStorage.Packages.Replion).Client
+						local dataStore = Client:WaitReplion("Data")
+						local inventory = dataStore:GetExpect("Inventory")
+						
+						-- Get correct Inventory ID
+						local inventoryId = TotemInventoryIds[totemName]
+						
+						if inventory and inventory.Totems then
+							local totalCount = 0
+							for _, item in ipairs(inventory.Totems) do
+								-- Check by Inventory ID
+								if tonumber(item.Id) == inventoryId then
+									totalCount = totalCount + (item.Count or 1)
+								end
+							end
+							return totalCount
+						end
+						return 0
+					end)
+					
+					if not success then
+						warn("[Auto Buy] GetTotemCount error:", result)
+						return 0
+					end
+					
+					return result or 0
+				end
+				
+				while _G.AutoBuyTotem and purchaseCount < _G.BuyTotemLimit do
+					local totemId = TotemMarketIds[_G.SelectedBuyTotem]
+					local beforeCount = GetTotemCount(_G.SelectedBuyTotem)
+					
+					-- Try to purchase
+					local success, result = pcall(function()
+						return PurchaseRemote:InvokeServer(totemId)
+					end)
+					
+					if success then
+						if result then
+							-- Wait a bit for inventory to update
+							task.wait(0.5)
+							
+							-- Verify purchase by checking inventory
+							local afterCount = GetTotemCount(_G.SelectedBuyTotem)
+							
+							if afterCount > beforeCount then
+								purchaseCount = purchaseCount + 1
+								print("[Auto Buy] ✓ Purchased:", _G.SelectedBuyTotem, "ID:", totemId, "Count:", purchaseCount .. "/" .. _G.BuyTotemLimit)
+								print("[Auto Buy] Inventory:", afterCount, "totems")
+							else
+								warn("[Auto Buy] ⚠️ Purchase response OK but inventory not updated")
+							end
+						else
+							warn("[Auto Buy] ✗ Purchase failed (not enough coins or error)")
+						end
+					else
+						warn("[Auto Buy] Error:", result)
+					end
+					
+					-- Wait before next purchase attempt
+					task.wait(1)
+				end
+				
+				-- Auto disable when limit reached
+				if purchaseCount >= _G.BuyTotemLimit then
+					_G.AutoBuyTotem = false
+					Window:Notify({
+						Title = "Auto Buy Completed",
+						Content = "Purchased " .. purchaseCount .. " totems!\nAuto Buy disabled.",
+						Icon = "rbxassetid://7733911621",
+						Duration = 4
+					})
+				end
+			end)
+		else
+			Window:Notify({
+				Title = "Auto Buy Totem Disabled",
+				Content = "Stopped auto buying totems\nPurchased: " .. purchaseCount .. " totems",
+				Icon = "rbxassetid://7733911621",
+				Duration = 2
+			})
+		end
+	end
 })
 
 ExclusiveTab:CreateSection({ Name = "FPS Boost" })
 
 -- ==============================================================
---                ⭐ FPS BOOSTER MODULE (SECURED) ⭐
+--                ⭐ FPS BOOSTER MODULE (OPTIMIZED) ⭐
+--                    Ready untuk GUI Integration
 -- ==============================================================
+
 local FPSBooster = {}
 FPSBooster.Enabled = false
 
--- Storage untuk restore (sudah local)
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local Terrain = workspace:FindFirstChildOfClass("Terrain")
+
+-- Storage untuk restore
 local originalStates = {
     reflectance = {},
     transparency = {},
@@ -1702,44 +1587,63 @@ local originalStates = {
     waterProperties = {}
 }
 
+-- Connection untuk new objects
 local newObjectConnection = nil
 
--- [SECURITY] Sekarang local function
-local function optimizeObject(obj)
+-- Fungsi untuk optimize single object
+ function optimizeObject(obj)
     if not FPSBooster.Enabled then return end
     
     pcall(function()
+        -- Optimize BasePart (Bangunan, model, dll)
         if obj:IsA("BasePart") then
+            -- Simpan original states (JANGAN UBAH WARNA & MATERIAL)
             if not originalStates.reflectance[obj] then
                 originalStates.reflectance[obj] = obj.Reflectance
             end
+            
+            -- Hapus reflections & shadows saja
             obj.Reflectance = 0
             obj.CastShadow = false
         end
         
+        -- Matikan Decals & Textures
         if obj:IsA("Decal") or obj:IsA("Texture") then
             if not originalStates.transparency[obj] then
                 originalStates.transparency[obj] = obj.Transparency
             end
-            obj.Transparency = 1
+            obj.Transparency = 1 -- Invisible
         end
         
+        -- Matikan SurfaceAppearance (texture PBR)
         if obj:IsA("SurfaceAppearance") then
             obj:Destroy()
         end
         
-        if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam") then
+        -- Matikan ParticleEmitter (debu, asap, dll)
+        if obj:IsA("ParticleEmitter") then
             obj.Enabled = false
         end
         
+        -- Matikan Trail effects
+        if obj:IsA("Trail") then
+            obj.Enabled = false
+        end
+        
+        -- Matikan Beam effects
+        if obj:IsA("Beam") then
+            obj.Enabled = false
+        end
+        
+        -- Matikan Fire, Smoke, Sparkles
         if obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then
             obj.Enabled = false
         end
     end)
 end
 
--- [SECURITY] Sekarang local function
-local function restoreObject(obj)
+-- Fungsi untuk restore single object
+ function restoreObject(obj)
     pcall(function()
         if obj:IsA("BasePart") then
             if originalStates.reflectance[obj] then
@@ -1774,36 +1678,48 @@ function FPSBooster.Enable()
     
     FPSBooster.Enabled = true
     
-    -- Optimize existing objects
+    -----------------------------------------
+    -- 1. Optimize semua existing objects
+    -----------------------------------------
     for _, obj in ipairs(workspace:GetDescendants()) do
         optimizeObject(obj)
     end
     
-    -- Terrain Water (gunakan Terrain yang sudah ada di file utama)
+    -----------------------------------------
+    -- 2. MATIKAN ANIMASI AIR (Terrain Water)
+    -----------------------------------------
     if Terrain then
         pcall(function()
+            -- Simpan water properties
             originalStates.waterProperties = {
                 WaterReflectance = Terrain.WaterReflectance,
                 WaterWaveSize = Terrain.WaterWaveSize,
                 WaterWaveSpeed = Terrain.WaterWaveSpeed
             }
-            Terrain.WaterWaveSize = 0
-            Terrain.WaterWaveSpeed = 0
-            Terrain.WaterReflectance = 0
+            
+            -- Matikan animasi air (WARNA TETAP DEFAULT)
+            Terrain.WaterWaveSize = 0 -- NO WAVES
+            Terrain.WaterWaveSpeed = 0 -- NO ANIMATION
+            Terrain.WaterReflectance = 0 -- NO REFLECTION
         end)
     end
     
-    -- Lighting (gunakan Lighting yang sudah ada)
+    -----------------------------------------
+    -- 3. Optimize Lighting (Hapus Shadows & Fog)
+    -----------------------------------------
     originalStates.lighting = {
         GlobalShadows = Lighting.GlobalShadows,
         FogEnd = Lighting.FogEnd,
         FogStart = Lighting.FogStart
     }
-    Lighting.GlobalShadows = false
-    Lighting.FogStart = 0
-    Lighting.FogEnd = 1000000
     
-    -- Post-Processing Effects
+    Lighting.GlobalShadows = false -- NO SHADOWS
+    Lighting.FogStart = 0
+    Lighting.FogEnd = 1000000 -- NO FOG
+    
+    -----------------------------------------
+    -- 4. Matikan Post-Processing Effects
+    -----------------------------------------
     for _, effect in ipairs(Lighting:GetChildren()) do
         if effect:IsA("PostEffect") then
             originalStates.effects[effect] = effect.Enabled
@@ -1811,13 +1727,17 @@ function FPSBooster.Enable()
         end
     end
     
-    -- Render Quality
+    -----------------------------------------
+    -- 5. Set Render Quality ke MINIMUM
+    -----------------------------------------
     settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
     
-    -- Hook new objects
+    -----------------------------------------
+    -- 6. Hook new objects yang spawn
+    -----------------------------------------
     newObjectConnection = workspace.DescendantAdded:Connect(function(obj)
         if FPSBooster.Enabled then
-            task.wait(0.1)
+            task.wait(0.1) -- Delay kecil
             optimizeObject(obj)
         end
     end)
@@ -1835,12 +1755,16 @@ function FPSBooster.Disable()
     
     FPSBooster.Enabled = false
     
-    -- Restore objects
+    -----------------------------------------
+    -- 1. Restore semua objects
+    -----------------------------------------
     for _, obj in ipairs(workspace:GetDescendants()) do
         restoreObject(obj)
     end
     
-    -- Restore Terrain Water
+    -----------------------------------------
+    -- 2. Restore Terrain Water
+    -----------------------------------------
     if Terrain and originalStates.waterProperties then
         pcall(function()
             Terrain.WaterReflectance = originalStates.waterProperties.WaterReflectance
@@ -1849,30 +1773,38 @@ function FPSBooster.Disable()
         end)
     end
     
-    -- Restore Lighting
+    -----------------------------------------
+    -- 3. Restore Lighting
+    -----------------------------------------
     if originalStates.lighting.GlobalShadows ~= nil then
         Lighting.GlobalShadows = originalStates.lighting.GlobalShadows
         Lighting.FogEnd = originalStates.lighting.FogEnd
         Lighting.FogStart = originalStates.lighting.FogStart
     end
     
-    -- Restore Post-Processing
+    -----------------------------------------
+    -- 4. Restore Post-Processing
+    -----------------------------------------
     for effect, state in pairs(originalStates.effects) do
         if effect and effect.Parent then
             effect.Enabled = state
         end
     end
     
-    -- Restore Render Quality
+    -----------------------------------------
+    -- 5. Restore Render Quality
+    -----------------------------------------
     settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
     
-    -- Disconnect hook
+    -----------------------------------------
+    -- 6. Disconnect hook
+    -----------------------------------------
     if newObjectConnection then
         newObjectConnection:Disconnect()
         newObjectConnection = nil
     end
     
-    -- Clear states
+    -- Clear original states
     originalStates = {
         reflectance = {},
         transparency = {},
@@ -1885,7 +1817,7 @@ function FPSBooster.Disable()
 end
 
 -- ============================================
--- UTILITY
+-- UTILITY FUNCTIONS
 -- ============================================
 function FPSBooster.IsEnabled()
     return FPSBooster.Enabled
@@ -1901,72 +1833,77 @@ ExclusiveTab:CreateToggle({
     Default = false,
     Callback = function(value)
         if value then
-            FPSBooster.Enable()
+            -- Enable FPS Booster
+            local success, msg = FPSBooster.Enable()
         else
-            FPSBooster.Disable()
+            -- Disable FPS Booster
+            local success, msg = FPSBooster.Disable()
         end
     end,
 })
+
 ExclusiveTab:CreateSection({ Name = "Player Optimize" })
 
--- ============================================
--- [SECURITY] State lokal (tidak ada lagi _G.*)
--- ============================================
-local freezeConnection = nil
-local originalCFrame = nil
-local renderEnabled = true
-local disableNotifs = false
-local disableCharFx = false
-local delEffects = false
-local hideRod = false
-local fxBackup = nil
-local effectsConnection = nil
+local freezeConnection
+local originalCFrame
 
-local function log(msg)
+-- Services
+RunService = game:GetService("RunService")
+Players = game:GetService("Players")
+
+-- State
+renderEnabled = true
+
+-- Logger
+function log(msg)
     print("[Disable3D]", msg)
 end
 
-local function setRender(state)
+-- REAL disable function
+function setRender(state)
     renderEnabled = state
-    RunService:Set3dRenderingEnabled(state)  -- RunService sudah local dari awal
+    RunService:Set3dRenderingEnabled(state)
     log(state and "3D Rendering ENABLED" or "3D Rendering DISABLED")
 end
 
--- Keep-alive
+-- Safety keep-alive (REAL disable)
 task.spawn(function()
     while task.wait(3) do
         RunService:Set3dRenderingEnabled(renderEnabled)
     end
 end)
 
+-- Re-apply on respawn
 Players.LocalPlayer.CharacterAdded:Connect(function()
     task.wait(1)
     RunService:Set3dRenderingEnabled(renderEnabled)
     log("Re-applied after respawn")
 end)
 
--- Disable 3D Rendering
+-- UI Toggle
 ExclusiveTab:CreateToggle({
     Name = "Disable 3D Rendering",
     Default = false,
     Callback = function(state)
+        -- state = true berarti DISABLE
         setRender(not state)
     end
 })
 
--- Freeze Character
+
 ExclusiveTab:CreateToggle({
-    Name = "Freeze Character",
-    Default = false,
-    Callback = function(state)
+	Name = "Freeze Character",
+	Default = false,
+	 Callback = function(state)
+        _G.FreezeCharacter = state
         if state then
-            local character = Players.LocalPlayer.Character
+            local character = game.Players.LocalPlayer.Character
             if character then
                 local root = character:FindFirstChild("HumanoidRootPart")
                 if root then
                     originalCFrame = root.CFrame
-                    freezeConnection = RunService.Heartbeat:Connect(function()
-                        if state and root and root.Parent then
+                    freezeConnection = game:GetService("RunService").Heartbeat:Connect(function()
+                        if _G.FreezeCharacter and root then
                             root.CFrame = originalCFrame
                         end
                     end)
@@ -1981,20 +1918,30 @@ ExclusiveTab:CreateToggle({
     end
 })
 
--- Disable Fish Caught Notification
+
 ExclusiveTab:CreateToggle({
-    Name = "Disable Fish Caught",
-    Default = false,
-    Callback = function(state)
+	Name = "Disable Fish Caught",
+	Default = false,
+  Callback = function(state)
         disableNotifs = state
+        
+        local Players = game:GetService("Players")
+        local LocalPlayer = Players.LocalPlayer
+        local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
         if state then
-            local PlayerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+            -- 1. Hapus yang sudah ada sekarang
             local smallNotif = PlayerGui:FindFirstChild("Small Notification")
-            if smallNotif then smallNotif:Destroy() end
+            if smallNotif then
+                smallNotif:Destroy()
+            end
+
+            -- 2. Auto-hapus setiap kali game coba spawn lagi
             PlayerGui.ChildAdded:Connect(function(child)
-                if child.Name == "Small Notification" or (child:FindFirstChild("Display") and child:FindFirstChildWhichIsA("Frame")) then
+                if child.Name == "Small Notification" or 
+                   (child:FindFirstChild("Display") and child:FindFirstChildWhichIsA("Frame")) then
                     task.spawn(function()
-                        task.wait()
+                        task.wait() -- tunggu 1 frame biar aman
                         if child and child.Parent then
                             child:Destroy()
                         end
@@ -2005,22 +1952,28 @@ ExclusiveTab:CreateToggle({
     end
 })
 
--- Disable Character Effect
 ExclusiveTab:CreateToggle({
-    Name = "Disable Char Effect",
-    Default = false,
-    Callback = function(state)
+	Name = "Disable Char Effect",
+	Default = false,
+	   Callback = function(state)
         disableCharFx = state
         if state then
-            if REPlayFishEffect and REPlayFishEffect.OnClientEvent then
-                for _, conn in ipairs(getconnections(REPlayFishEffect.OnClientEvent)) do
-                    conn:Disconnect()
+            local effectEvents = {
+                REPlayFishEffect
+            }
+
+            for _, ev in ipairs(effectEvents) do
+                if ev and ev.OnClientEvent then
+                    for _, conn in ipairs(getconnections(ev.OnClientEvent)) do
+                        conn:Disconnect()
+                    end
+                    ev.OnClientEvent:Connect(function() end)
                 end
-                REPlayFishEffect.OnClientEvent:Connect(function() end)
             end
+
             if FishingController then
-                if not fxBackup then
-                    fxBackup = {
+                if not _fxBackup then
+                    _fxBackup = {
                         PlayFishingEffect = FishingController.PlayFishingEffect,
                         ReplicateCutscene = FishingController.ReplicateCutscene
                     }
@@ -2029,48 +1982,55 @@ ExclusiveTab:CreateToggle({
                 FishingController.ReplicateCutscene = function() end
             end
         else
-            if fxBackup then
-                for k, v in pairs(fxBackup) do
+            if _fxBackup then
+                for k, v in pairs(_fxBackup) do
                     FishingController[k] = v
                 end
-                fxBackup = nil
             end
         end
     end
 })
 
--- Disable Fishing Effect (Cosmetic Folder)
+
 ExclusiveTab:CreateToggle({
-    Name = "Disable Fishing Effect",
-    Default = false,
-    Callback = function(state)
+	Name = "Disable Fishing Effect",
+	Default = false,
+	Callback = function(state)
         delEffects = state
+        
         if state then
-            task.spawn(function()
+            -- Loop untuk menghapus efek yang sudah ada
+            spawn(function()
                 while delEffects do
                     local cosmetic = workspace:FindFirstChild("CosmeticFolder")
                     if cosmetic then
                         for _, child in ipairs(cosmetic:GetChildren()) do
-                            local isExactPart = child.Name == "Part"
-                            local isPureNumber = string.match(child.Name, "^%d+$")
-                            local isModel = child:IsA("Model")
+                            local isExactPart   = child.Name == "Part"
+                            local isPureNumber  = string.match(child.Name, "^%d+$")
+                            local isModel       = child:IsA("Model")
+
+                            -- Tidak hapus jika Part, angka murni, atau Model
                             if not (isExactPart or isPureNumber or isModel) then
                                 child:Destroy()
                             end
                         end
                     end
-                    task.wait(0.1)
+                    task.wait(0.1) -- Optimized: Increased check interval to 5s (ChildAdded handles new items)
                 end
             end)
-            if not effectsConnection then
+            
+            -- Single connection untuk child baru
+            if not _G.EffectsConnection then
                 local cosmetic = workspace:WaitForChild("CosmeticFolder", 5)
                 if cosmetic then
-                    effectsConnection = cosmetic.ChildAdded:Connect(function(child)
+                    _G.EffectsConnection = cosmetic.ChildAdded:Connect(function(child)
                         if delEffects then
                             task.wait()
-                            local isExactPart = child.Name == "Part"
+                            local isExactPart  = child.Name == "Part"
                             local isPureNumber = string.match(child.Name, "^%d+$")
-                            local isModel = child:IsA("Model")
+                            local isModel      = child:IsA("Model")
+
+                            -- Tidak hapus jika Part, angka murni, atau Model
                             if not (isExactPart or isPureNumber or isModel) then
                                 child:Destroy()
                             end
@@ -2079,22 +2039,21 @@ ExclusiveTab:CreateToggle({
                 end
             end
         else
-            if effectsConnection then
-                effectsConnection:Disconnect()
-                effectsConnection = nil
+            if _G.EffectsConnection then
+                _G.EffectsConnection:Disconnect()
+                _G.EffectsConnection = nil
             end
         end
     end
 })
 
--- Hide Rod On Hand
 ExclusiveTab:CreateToggle({
-    Name = "Hide Rod On Hand",
-    Default = false,
-    Callback = function(state)
+	Name = "Hide Rod On Hand",
+	Default = false,
+	   Callback = function(state)
         hideRod = state
         if state then
-            task.spawn(function()
+            spawn(function()
                 while hideRod do
                     for _, char in ipairs(workspace.Characters:GetChildren()) do
                         local toolFolder = char:FindFirstChild("!!!EQUIPPED_TOOL!!!")
@@ -2110,30 +2069,29 @@ ExclusiveTab:CreateToggle({
 })
 
 
--- ============================================
--- [SECURITY] Semua variabel lokal & tidak ada duplikasi
--- ============================================
+ReplicatedStorage = game:GetService("ReplicatedStorage")
+-- Net already initialized
 
--- Service & controller sudah ada dari inisialisasi awal (local ReplicatedStorage, FishingController, dll.)
--- Tidak perlu di-require ulang.
+FishingController = require(ReplicatedStorage.Controllers.FishingController)
 
--- Simpan fungsi asli FishingController (local)
-local oldClick = FishingController.RequestFishingMinigameClick
-local oldCharge = FishingController.RequestChargeFishingRod
-local instantV2OrigCharge = FishingController.RequestChargeFishingRod
-local instantV2OrigCast = FishingController.SendFishingRequestToServer or function() end
+oldClick = FishingController.RequestFishingMinigameClick
+oldCharge = FishingController.RequestChargeFishingRod
 
--- ============================================
--- Hook Notifikasi (gunakan Config lokal & Amblatant lokal)
--- ============================================
+-- FAST 3 KEDIP: HookNotif duration + FC stubs (semua platform, bukan hanya touch)
+instantV2OrigCharge = FishingController.RequestChargeFishingRod
+instantV2OrigCast = FishingController.SendFishingRequestToServer
+if not instantV2OrigCast then
+    instantV2OrigCast = function() end
+end
 pcall(function()
     local TextNotificationController = require(ReplicatedStorage.Controllers:WaitForChild("TextNotificationController"))
     local origDeliver = TextNotificationController.DeliverNotification
     TextNotificationController.DeliverNotification = function(self, data, ...)
         if Config.HookNotif and data then
+            -- IFV2: 15 | Blatant V1 (Fast Reel): 7.5
             if Config.InstantFishingV2Active then
                 data.CustomDuration = 15
-            elseif Amblatant then   -- [SECURITY] Gantikan _G.BlatantMode dengan Amblatant lokal
+            elseif _G.BlatantMode then
                 data.CustomDuration = 7.5
             else
                 data.CustomDuration = 15
@@ -2143,15 +2101,12 @@ pcall(function()
     end
 end)
 
--- ============================================
--- Loop Auto Performance (local)
--- ============================================
 local autoPerf = false
 
 task.spawn(function()
-    while task.wait(1) do
+    while task.wait(1) do -- Optimized: Reduced from tick to 1s to prevent ping spikes
         if autoPerf then
-            AutoEnabled:InvokeServer(true)   -- AutoEnabled sudah local dari remote sebelumnya
+            AutoEnabled:InvokeServer(true)
         end
     end
 end)
@@ -3167,28 +3122,25 @@ MainTab:CreateDropdown({
 
 MainTab:CreateSection({ Name = "Fishing" })
 
--- ============================================
--- [SECURITY] Gunakan state lokal AutoRod & AutoFarm
--- ============================================
 MainTab:CreateToggle({
-    Name = "Auto Rod",
-    Default = false,
-    Callback = function(value)
-        SetAutoRod(value)   -- AutoRod & SetAutoRod sudah kita definisikan di bagian Config
-        if value then
+	Name = "Auto Rod",
+	Default = false,
+	  Callback = function(Value) 
+        _G.AutoRod = Value
+        if Value then
             equipTool:FireServer(1)
-        end
+        else return end
     end
 })
 
-local CurrentOption = "Instant"
+CurrentOption = "Instant"
 
 MainTab:CreateDropdown({
-    Name = "Mode",
-    Items = {"Legit", "Instant"},
-    Default = "Instant",
-    Callback = function(Option)
-        if CurrentOption == "Legit" and Option ~= "Legit" and GetAutoFarm() then
+	Name = "Mode",
+	Items = {"Legit", "Instant"},
+	Default = "Instant",
+	Callback = function(Option)
+        if CurrentOption == "Legit" and Option ~= "Legit" and _G.AutoFarm then
             AutoEnabled:InvokeServer(false)
         end
         CurrentOption = Option
@@ -3196,10 +3148,10 @@ MainTab:CreateDropdown({
 })
 
 MainTab:CreateToggle({
-    Name = "Auto Farm",
-    Default = false,
-    Callback = function(Value)
-        SetAutoFarm(Value)
+	Name = "Auto Farm",
+	Default = false,
+	    Callback = function(Value)
+        _G.AutoFarm = Value
         if Value then
             if CurrentOption == "Instant" then
                 Window:Notify({
@@ -3208,7 +3160,7 @@ MainTab:CreateToggle({
                     Duration = 3
                 })
                 task.spawn(function()
-                    while GetAutoFarm() and CurrentOption == "Instant" do
+                    while _G.AutoFarm and CurrentOption == "Instant" do
                         pcall(instant)
                         task.wait(0.001)
                     end
@@ -3221,7 +3173,7 @@ MainTab:CreateToggle({
                     Duration = 3
                 })
                 task.spawn(function()
-                    while GetAutoFarm() and CurrentOption == "Legit" do
+                    while _G.AutoFarm and CurrentOption == "Legit" do
                         pcall(function()
                             FishingController:RequestChargeFishingRod(Vector2.new(0, 0), true)
                             task.wait(delayfishing)
@@ -3231,6 +3183,8 @@ MainTab:CreateToggle({
                     end
                 end)
             end
+
+        -- ======================= WHEN AUTOFARM TURNS OFF =======================
         else
             if CurrentOption == "Legit" then
                 AutoEnabled:InvokeServer(false)
@@ -3240,6 +3194,8 @@ MainTab:CreateToggle({
                 Content = "AutoFarm OFF",
                 Duration = 3
             })
+
+            _G.AutoFarm = false
             pcall(autooff)
             pcall(cancel)
         end
@@ -3247,18 +3203,18 @@ MainTab:CreateToggle({
 })
 
 MainTab:CreateInput({
-    Name = "Fishing Delay",
-    SideLabel = "Fishing Delay",
-    Placeholder = "Contoh: 1.0",
-    Default = "",
-    Callback = function(value)
+	Name = "Fishing Delay",
+	SideLabel = "Fishing Delay",
+	Placeholder = "Contoh: 1.0",
+	Default = "",
+	Callback = function(value)
         local n = tonumber(value)
         if n and n > 0 then
-            delayfishing = n   -- delayfishing sudah local dari bagian Config, jadi aman
+            delayfishing = n
         else
             delayfishing = 1
         end
-    end
+	end
 })
 
 MainTab:CreateSection({ Name = "Instant Fishing V2" })
@@ -3295,7 +3251,8 @@ MainTab:CreateToggle({
     Name = "Enable Instant Fishing V2",
     Default = false,
     Callback = function(state)
-        needCast = true   -- needCast sudah local dari bagian Config
+        -- moons FAST 3 KEDIP: needCast, onToggleUB, lalu HookNotif + FC (desktop & mobile)
+        needCast = true
         Config.InstantFishingV2Active = state
         onToggleUB(state)
 
@@ -3318,6 +3275,7 @@ MainTab:CreateToggle({
         end
     end,
 })
+
 -- =================
 -- Instant Bobber UI
 -- =================
@@ -4873,87 +4831,15 @@ spawn(function()
     end
 end)
 
--- ============================================
--- [SECURITY] State Blatant V1 (semua lokal)
--- ============================================
-local BlatantMode = false    -- pengganti _G.BlatantMode
-local AutoEquip = true       -- pengganti _G.AutoEquip
-local Speed = 0.07           -- pengganti _G.Speed
-local LoopDelay = 0.25       -- pengganti _G.LoopDelay
-local AmSpeed = Speed        -- pengganti _G.AmSpeed
-local AmLoopDelay = LoopDelay -- pengganti _G.AmLoopDelay
+-- Respawn/recovery hook detection removed (no auto-respawn based on hook time).
 
--- Getter/Setter untuk konfigurasi yang mungkin diubah dari UI lain
-function SetBlatantSpeed(v) AmSpeed = tonumber(v) or Speed end
-function SetBlatantLoopDelay(v) AmLoopDelay = tonumber(v) or LoopDelay end
-function SetBlatantAutoEquip(v) AutoEquip = v and true or false end
-
--- State sesi
-local Protected = false
-local FishingSession = 0
-
--- Alias remote lokal (semua sudah ada dari deklarasi remote sebelumnya)
-local EquipTool  = REEquip
-local ChargeRod  = ChargeRod
-local StartMini  = StartMini
-local CatchFish  = REFishDone
-local CancelFish = Cancel
-
--- ============================================
--- [SECURITY] Fungsi-fungsi lokal
--- ============================================
-local function IsSessionAlive(session)
-    return FishingSession == session
-end
-
-local function BlatantSkipCycle(session)
-    if AutoEquip then
-        pcall(function()
-            EquipTool:FireServer(1)
-        end)
-        task.wait(0.25)
-    end
-
-    while Protected and IsSessionAlive(session) do
-        -- Gunakan Amblatant (state lokal dari bagian sebelumnya) untuk memilih speed/delay
-        local speed = GetAmblatant() and AmSpeed or Speed
-        local loopDelay = GetAmblatant() and AmLoopDelay or LoopDelay
-
-        local t = workspace:GetServerTimeNow()
-        pcall(function()
-            ChargeRod:InvokeServer(t)
-        end)
-        task.wait(speed)
-        pcall(function()
-            StartMini:InvokeServer(-1, 1, t)
-        end)
-        task.wait(speed)
-        CallFishDone(CatchFish, 1)
-        -- loopDelay tidak digunakan di sini, mungkin perlu ditambahkan jika memang ada
-        -- sengaja dibiarkan sesuai kode asli (tidak ada task.wait(loopDelay))
-    end
-end
-
-local function ToggleBlatant(value)
-    if value then
-        Protected = true
-        FishingSession = FishingSession + 1
-        local session = FishingSession
-        task.spawn(BlatantSkipCycle, session)
-    else
-        Protected = false
-        FishingSession = FishingSession + 1
-    end
-end
-
--- ============================================
--- UI: Blatant V1 (STABLE)
--- ============================================
 MainTab:CreateSection({ Name = "Blatant V1 (STABLE)" })
 
+_G.BlatantMode = _G.BlatantMode or false
+
 MainTab:CreateInput({
-    Name = "Complete Delay",  -- perbaiki typo "Compleate"
-    SideLabel = "Complete Delay",
+    Name = "Compleate Delay",
+    SideLabel = "Compleate Delay",
     Default = tostring(Config.UB.Settings.CompleteDelay),
     Callback = function(text)
         local n = tonumber(text)
@@ -4966,10 +4852,10 @@ MainTab:CreateInput({
 
 MainTab:CreateToggle({
     Name = "Fast Reel",
-    Default = GetAmblatant(),
+    Default = _G.BlatantMode,
     Callback = function(state)
-        if GetAmblatant() == state then return end
-        SetAmblatant(state)
+        if _G.BlatantMode == state then return end
+        _G.BlatantMode = state
         needCast = true
         if state then
             Protected = false
@@ -4980,14 +4866,70 @@ MainTab:CreateToggle({
     end,
 })
 
--- ============================================
--- [SECURITY] Inisialisasi pemain (pakai LocalPlayer yang sudah ada)
--- ============================================
--- player sudah ada sebagai LocalPlayer (dari deklarasi sebelumnya), tidak perlu ulang.
--- Jika belum ada, bisa gunakan:
--- local player = Players.LocalPlayer
--- if not player.Character then player.CharacterAdded:Wait() end
--- Tapi karena kita sudah punya LocalPlayer di bagian atas, asumsikan sudah siap.
+svc = {
+    Players = game:GetService("Players"),
+    RS = game:GetService("ReplicatedStorage"),
+}
+
+player = svc.Players.LocalPlayer
+if not player.Character then player.CharacterAdded:Wait() end
+
+-- Net already initialized
+
+EquipTool  = REEquip
+ChargeRod  = ChargeRod
+StartMini  = StartMini
+CatchFish  = REFishDone
+CancelFish = Cancel
+
+Protected = false
+FishingSession = 0
+
+_G.AutoEquip = true
+_G.Speed = 0.07       
+_G.LoopDelay = 0.25   
+_G.AmSpeed = _G.AmSpeed or _G.Speed
+_G.AmLoopDelay = _G.AmLoopDelay or _G.LoopDelay
+
+function ToggleBlatant(value)
+    if value then
+        Protected = true
+        FishingSession = FishingSession + 1
+        local session = FishingSession
+        task.spawn(BlatantSkipCycle, session)
+    else
+        Protected = false
+        FishingSession = FishingSession + 1
+    end
+end
+
+function IsSessionAlive(session)
+    return FishingSession == session
+end
+
+function BlatantSkipCycle(session)
+    if _G.AutoEquip then
+        pcall(function()
+            EquipTool:FireServer(1)
+        end)
+        task.wait(0.25)
+    end
+
+    while Protected and IsSessionAlive(session) do
+        local speed = (_G.Amblatant and _G.AmSpeed) or _G.Speed
+        local loopDelay = (_G.Amblatant and _G.AmLoopDelay) or _G.LoopDelay
+
+        t = workspace:GetServerTimeNow()
+        pcall(function()
+            ChargeRod:InvokeServer(t)
+        end)
+        task.wait(speed)
+        pcall(function()
+            StartMini:InvokeServer(-1, 1, t)
+        end)
+
+        task.wait(speed)
+        CallFishDone(CatchFish, 1)
 
         -- Amblatant: spam local fish events using cached data (disalin dari blatant.lua)
         if _G.Amblatant and _G.SavedData and _G.SavedData.FishCaught and isCaught then
@@ -5069,72 +5011,74 @@ AmblatantTab:CreateInput({
 MainTab:CreateSection({ Name = "Recovery Fishing" })
 
 MainTab:CreateButton({
-    Name = "Recovery Fishing",
-    SubText = "Fix stuck fishing & reset state",
-    Callback = function()
-        Window:Notify({
-            Title = "Recovery Fishing",
-            Content = "Attempting to recover fishing state...",
-            Duration = 2
-        })
-        
-        -- Step 1: Cancel any active fishing
-        pcall(function()
-            if Cancel then       -- Cancel sudah local dari remote sebelumnya
-                Cancel:InvokeServer()
-            end
-        end)
-        task.wait(0.1)
-        
-        -- Step 2: Force complete any stuck fishing
-        pcall(function()
-            if REFishDone then  -- REFishDone sudah local
-                REFishDone:InvokeServer()
-            end
-        end)
-        task.wait(0.1)
-        
-        -- Step 3: Cancel again to ensure clean state
-        pcall(function()
-            if Cancel then
-                Cancel:InvokeServer()
-            end
-        end)
-        task.wait(0.1)
-        
-        -- Step 4: Reset fishing state (st sudah local)
-        if st then
-            st.canFish = true
-        end
-        
-        -- Step 5: Re-equip rod if AutoRod is enabled
-        if GetAutoRod() then   -- [SECURITY] Gunakan state lokal, bukan _G.AutoRod
-            pcall(function()
-                if REEquip then  -- REEquip sudah local
-                    REEquip:FireServer(1)
-                end
-            end)
-        end
-        
-        Window:Notify({
-            Title = "Recovery Complete",
-            Content = "Fishing state has been reset!",
-            Duration = 3
-        })
-    end
+	Name = "Recovery Fishing",
+	SubText = "Fix stuck fishing & reset state",
+	Callback = function()
+		-- Notify start
+		Window:Notify({
+			Title = "Recovery Fishing",
+			Content = "Attempting to recover fishing state...",
+			Duration = 2
+		})
+		
+		-- Step 1: Cancel any active fishing
+		pcall(function() 
+			if cancelinput then 
+				cancelinput:InvokeServer() 
+			end
+		end)
+		task.wait(0.1)
+		
+		-- Step 2: Force complete any stuck fishing
+		pcall(function() 
+			if fishingcomplete then 
+				fishingcomplete:InvokeServer() 
+			end
+		end)
+		task.wait(0.1)
+		
+		-- Step 3: Cancel again to ensure clean state
+		pcall(function() 
+			if cancelinput then 
+				cancelinput:InvokeServer() 
+			end
+		end)
+		task.wait(0.1)
+		
+		-- Step 4: Reset fishing state
+		if st then
+			st.canFish = true
+		end
+		
+		-- Step 5: Re-equip rod if AutoRod is enabled
+		if _G.AutoRod then
+			pcall(function()
+				if equipTool then
+					equipTool:FireServer(1)
+				end
+			end)
+		end
+		
+		-- Notify success
+		Window:Notify({
+			Title = "Recovery Complete",
+			Content = "Fishing state has been reset!",
+			Duration = 3
+		})
+	end
 })
 
 MainTab:CreateSection({ Name = "Sell", Icon = "rbxassetid://7733793319" })
 
--- ============================================
--- [SECURITY] State Auto Sell (lokal)
--- ============================================
-local autoSellEnabled = false
-local autoSellMode = "Sell By Count"   -- "Sell By Count" atau "Sell All"
-local autoSellValue = 0                -- batas count
+Players = game:GetService("Players")
+ LocalPlayer = Players.LocalPlayer
+
+_G.AutoSells = false
+
+local autoSellMode = "Sell Delay"
+local autoSellValue = 0
 local currentCount = 0
 
--- Dapatkan label BagSize
 local label = LocalPlayer.PlayerGui.Inventory.Main.Top.Options.Fish.Label.BagSize
 
 label:GetPropertyChangedSignal("ContentText"):Connect(function()
@@ -5142,58 +5086,62 @@ label:GetPropertyChangedSignal("ContentText"):Connect(function()
     currentCount = tonumber(string.match(text, "^(%d+)")) or 0
 end)
 
--- Sell remote (sudah local dari sebelumnya)
 local sellAllItems = SellItem
 
-local function SafeSell()
+ function SafeSell()
     pcall(function()
         sellAllItems:InvokeServer()
     end)
 end
 
--- Loop hanya untuk mode "Sell By Count"
-local function AutoSellLoop()
-    while autoSellEnabled and autoSellMode == "Sell By Count" do
-        if currentCount >= autoSellValue then
+ function AutoSellLoop()
+    while _G.AutoSells do
+        local selldelay = 0
+        local countdelay = 0
+        if autoSellMode == "Sell Delay" then
+            selldelay = autoSellValue
+        else
+            countdelay = autoSellValue
+        end
+
+        if selldelay == 0 and countdelay > 0 then
+            if currentCount >= countdelay then
+                SafeSell()
+                task.wait(0.3)
+            end
+            task.wait(0.1)
+
+        elseif selldelay > 0 and countdelay == 0 then
             SafeSell()
-            task.wait(0.3)
+            task.wait(selldelay)
+
+        else
+            Window:Notify({
+                Title = "Yang Bener Hitam",
+                Content = "Pilih mode di dropdown dan isi angka di input (harus > 0).",
+                Duration = 3,
+                Icon = "warn",
+            })
+            break
         end
-        task.wait(0.1)
     end
 end
 
-local function StartAutoSell()
-    if autoSellEnabled then return end
-    autoSellEnabled = true
-    if autoSellMode == "Sell By Count" then
-        task.spawn(AutoSellLoop)
-    elseif autoSellMode == "Sell All" then
-        -- Langsung jual semua sekali, lalu matikan toggle
-        SafeSell()
-        Window:Notify({
-            Title = "Sell All",
-            Content = "Sold all items!",
-            Duration = 2
-        })
-        -- Matikan toggle (jika kita punya referensi toggle)
-        if autoSellToggle then
-            autoSellToggle:Set(false)  -- metode dari DevLib
-        end
-        autoSellEnabled = false
-    end
+function StartAutoSell()
+    if _G.AutoSells then return end
+    _G.AutoSells = true
+    task.spawn(AutoSellLoop)
 end
 
-local function StopAutoSell()
-    autoSellEnabled = false
+function StopAutoSell()
+    _G.AutoSells = false
 end
 
--- Referensi toggle (disimpan setelah CreateToggle)
-local autoSellToggle
 
-autoSellToggle = MainTab:CreateToggle({
-    Name = "Auto Sell",
-    Default = false,
-    Callback = function(v)
+MainTab:CreateToggle({
+	Name = "Auto Sell",
+	Default = false,
+	  Callback = function(v)
         if v then
             StartAutoSell()
         else
@@ -5203,22 +5151,23 @@ autoSellToggle = MainTab:CreateToggle({
 })
 
 MainTab:CreateDropdown({
-    Name = "Auto Sell Mode",
-    Items = { "Sell By Count", "Sell All" },
-    Default = "Sell By Count",
-    Callback = function(Option)
-        autoSellMode = Option
-    end,
+	Name = "Auto Sell Mode",
+	Items = { "Sell Delay", "Sell By Count" },
+	Default = "Sell Delay",
+	Callback = function(Option)
+		autoSellMode = Option
+	end,
 })
 
 MainTab:CreateInput({
-    Name = "Sell Count Threshold",
-    Placeholder = "Jual jika isi tas >= angka",
-    Default = "",
-    Callback = function(txt)
-        autoSellValue = tonumber(txt) or 0
-    end,
+	Name = "Auto Sell Value",
+	Placeholder = "Delay: detik antar jual | Count: jual jika isi tas >= angka",
+	Default = "",
+	Callback = function(txt)
+		autoSellValue = tonumber(txt) or 0
+	end,
 })
+
 
 --------------------------------------------------------------------------------
 -- SECTION 1: AUTO FAVORITE (NAME & RARITY ONLY)
@@ -5513,31 +5462,57 @@ MainTab:CreateButton({
     end
 })
 
--- ============================================
--- [SECURITY] Skin Animation Module (State Lokal)
--- ============================================
 local SkinAnimation = (function()
-    -- Service sudah tersedia (LocalPlayer, ReplicatedStorage) – tidak perlu deklarasi ulang
+    local Players = game:GetService("Players")
+    local LocalPlayer = Players.LocalPlayer
     
-    -- Data skin akan diisi oleh LoadSkinData()
-    local SkinAnimations = {}
+    local SkinAnimations = {
+        ["Cursed Katana"] = {ReelingIdle="85246394508551",EquipIdleFake="87355322562067",ReelStart="84160502333903",StartRodCharge="75015195359151",FishCaught="75078942392746"},
+        ["Blackhole Sword"] = {ReelingIdle="126645853428201",EquipIdleFake="110434285817259",ReelStart="80063739027478",ReelIntermission="92036914464034",RodThrow="120554144611008",FishCaught="88993991486322",StartRodCharge="106390588424443",LoopedRodCharge="76049869128172"},
+        ["Soul Scythe"] = {ReelingIdle="95453600470089",EquipIdleFake="84686809448947",ReelStart="137684649541594",ReelIntermission="139621583239992",RodThrow="104946400643250",FishCaught="82259219343456",StartRodCharge="117668204114399",LoopedRodCharge="88768375910397"},
+        ["Eclipse Katana"] = {ReelStart="115229621326605",EquipIdleFake="103641983335689",RodThrow="82600073500966",FishCaught="107940819382815"},
+        ["Ethereal Sword"] = {RodThrow="102875258412698",ReelIntermission="129632039690279",LoopedRodCharge="128015350117740",ReelStart="134537167807676",ReelingIdle="74353386311203",StartRodCharge="117245023195506",FishCaught="110866636674655",EquipIdleFake="116654265230180"},
+        ["Binary Edge"] = {FishCaught="109653945741202",RodThrow="104527781253009",StartRodCharge="72745361965091",ReelingIdle="81700883907369",LoopedRodCharge="98710992523201",EquipIdleFake="103714544264522"},
+        ["Princess Parasol"] = {FishCaught="99143072029495",ReelStart="104188512165442",RodThrow="108621937425425"},
+        ["1x1x1x1 Ban Hammer"] = {FishCaught="96285280763544",ReelIntermission="74643095451174",StartRodCharge="134431618143422",LoopedRodCharge="128538861163297",EquipIdleFake="81302570422307",RodThrow="123133988645038"},
+        ["The Vanquisher"] = {FishCaught="93884986836266",EquipIdleFake="123194574699925",RodThrow="102380394663862",LoopedRodCharge="92063415632933",ReelStart="138790747812051"},
+        ["Crescendo Scythe"] = {ReelStart="111056917953819",RodThrow="140421284729758",LoopedRodCharge="128488550256172",EquipIdleFake="91723046661800",ReelingHold="123869733913273",ReelIntermission="140344626493067",FishCaught="101593515409348",StartRodCharge="95597987757506"},
+        ["Eternal Flower"] = {ReelingIdle="110020934764602",RodThrow="105844949829012",StartRodCharge="77131632555646",LoopedRodCharge="124036821497471",ReelStart="135819234295555",EquipIdleFake="115119558523816",ReelIntermission="86376110148779",FishCaught="119567958965696"},
+        ["Frozen Krampus Scythe"] = {ReelingIdle="98716967215984",LoopedRodCharge="107284147985305",EquipIdleFake="124265469726043",RodThrow="96196869100887",FishCaught="134934781977605",StartRodCharge="93987679432095"},
+        ["Oceanic Harpoon"] = {LoopedRodCharge="76325124055693",StartRodCharge="84873660213983",RodThrow="127872348080219",EquipIdleFake="77549515147440"},
+        ["Corruption Edge"] = {RodThrow="84892442268560",StartRodCharge="112104009500915",ReelingIdle="110738276580375",EquipIdleFake="93958525241489",FishCaught="126613975718573"},
+        ["Holy Trident"] = {ReelStart="126831815839724",RodThrow="114917462794864",FishCaught="128167068291703",StartRodCharge="83219020397849"},
+        ["Undead Guitar"] = {EquipIdleFake="130474623877752"},
+        ["Electric Guitar"] = {EquipIdleFake="108792932396384"},
+        ["Christmas Parasol"] = {EquipIdleFake="79754634120924",RodThrow="122784676901871"},
+        ["Pirate Banjo"] = {EquipIdleFake="120677591068007"},
+        ["Divine Blade"] = {EquipIdleFake="82781088583962"},
+        ["Gingerbread Sword"] = {EquipIdleFake="106017647759827"},
+        ["Candy Cane Trident"] = {EquipIdleFake="131643088615283"},
+        ["Heartfelt Blade"] = {EquipIdleFake="111118151202469"},
+        ["Spirit Staff"] = {EquipIdleFake="77452908864699"},
+        ["Reaver Scythe"] = {EquipIdleFake="79066316609985"},
+        ["Pink Present Lance"] = {EquipIdleFake="101986838283328"},
+        ["Ornament Axe"] = {EquipIdleFake="90021589040653"},
+        ["Gingerbread Katana"] = {RodThrow="124037675493192"},
+        ["Xmas Tree Rod"] = {EquipIdleFake="97171752999251"},
+        ["Royal Spider"] = {EquipIdleFake="79263851052023"},
+        ["Kraken Anchor"] = {EquipIdleFake="126023229958416"}
+    }
+    
     local FishingAnims = {"ReelingIdle", "EquipIdleFake", "ReelStart", "ReelIntermission", "RodThrow", "FishCaught", "StartRodCharge", "LoopedRodCharge", "ReelingHold"}
-    
     local CurrentSkin = nil
     local IsEnabled = false
     local Animator = nil
     local LoadedTracks = {}
     local Connection = nil
     
-    -- [SECURITY] Semua fungsi sekarang local
-    local function ShouldReplace(animName)
-        for _, name in ipairs(FishingAnims) do
-            if animName == name then return true end
-        end
+     function ShouldReplace(animName)
+        for _, name in ipairs(FishingAnims) do if animName == name then return true end end
         return false
     end
     
-    local function GetReplacementTrack(animName)
+     function GetReplacementTrack(animName)
         if not Animator or not CurrentSkin then return nil end
         local skinData = SkinAnimations[CurrentSkin]
         if not skinData or not skinData[animName] then return nil end
@@ -5556,14 +5531,12 @@ local SkinAnimation = (function()
         return nil
     end
     
-    local function ClearTracks()
-        for _, track in pairs(LoadedTracks) do
-            pcall(function() track:Stop(); track:Destroy() end)
-        end
+     function ClearTracks()
+        for _, track in pairs(LoadedTracks) do pcall(function() track:Stop() track:Destroy() end) end
         LoadedTracks = {}
     end
     
-    local function SetupAnimator()
+     function SetupAnimator()
         local char = LocalPlayer.Character
         if not char then return end
         local hum = char:FindFirstChildOfClass("Humanoid")
@@ -5591,143 +5564,48 @@ local SkinAnimation = (function()
         end)
     end
     
-    -- ============================================
-    -- [SECURITY] Load Skin Data dari Game (Dinamis)
-    -- ============================================
-    local function LoadSkinDataFromGame()
-        SkinAnimations = {}  -- reset
-        
-        -- 1. Coba dari folder ReplicatedStorage.Skins (ModuleScript per skin)
-        local skinsFolder = ReplicatedStorage:FindFirstChild("Skins") or ReplicatedStorage:FindFirstChild("Assets"):FindFirstChild("Skins")
-        if skinsFolder then
-            for _, item in ipairs(skinsFolder:GetChildren()) do
-                if item:IsA("ModuleScript") then
-                    local ok, data = pcall(require, item)
-                    if ok and type(data) == "table" and data.Name then
-                        local anims = {}
-                        for _, animType in ipairs(FishingAnims) do
-                            if data[animType] then
-                                anims[animType] = tostring(data[animType])
-                            end
-                        end
-                        if next(anims) then
-                            SkinAnimations[data.Name] = anims
-                        end
-                    end
-                end
-            end
-        end
-        
-        -- 2. Coba dari SkinController (jika ada)
-        if not next(SkinAnimations) then
-            pcall(function()
-                local SkinController = require(ReplicatedStorage.Controllers:WaitForChild("SkinController"))
-                if SkinController.GetSkins then
-                    local skins = SkinController.GetSkins()
-                    for _, skin in ipairs(skins) do
-                        if skin.Name and skin.Animations then
-                            SkinAnimations[skin.Name] = skin.Animations
-                        end
-                    end
-                end
-            end)
-        end
-        
-        -- 3. Fallback ke hardcode (hanya jika gagal total)
-        if not next(SkinAnimations) then
-            SkinAnimations = {
-                ["Cursed Katana"] = {ReelingIdle="85246394508551",EquipIdleFake="87355322562067",ReelStart="84160502333903",StartRodCharge="75015195359151",FishCaught="75078942392746"},
-                -- ... (data hardcode lama, bisa disimpan di sini sebagai cadangan)
-                ["Kraken Anchor"] = {EquipIdleFake="126023229958416"}
-            }
-        end
-        
-        return SkinAnimations
-    end
-    
-    -- Panggil pertama kali
-    LoadSkinDataFromGame()
-    
-    -- API Module (lokal)
-    local function Enable()
+     function Enable()
         if IsEnabled then return end
         IsEnabled = true
         SetupAnimator()
         LocalPlayer.CharacterAdded:Connect(function()
-            task.wait(1)
-            if IsEnabled then SetupAnimator() end
+             task.wait(1)
+             if IsEnabled then SetupAnimator() end
         end)
     end
     
-    local function Disable()
+     function Disable()
         IsEnabled = false
         if Connection then Connection:Disconnect() end
         ClearTracks()
     end
     
-    local function SelectSkin(name)
+     function SelectSkin(name)
         CurrentSkin = name
         ClearTracks()
     end
     
-    local function GetSkins()
+     function GetSkins()
         local names = {}
         for name in pairs(SkinAnimations) do table.insert(names, name) end
         table.sort(names)
         return names
     end
     
-    local function RefreshSkins()
-        LoadSkinDataFromGame()
-        return GetSkins()
-    end
-    
-    return {
-        Enable = Enable,
-        Disable = Disable,
-        SelectSkin = SelectSkin,
-        GetSkins = GetSkins,
-        RefreshSkins = RefreshSkins
-    }
+    return { Enable = Enable, Disable = Disable, SelectSkin = SelectSkin, GetSkins = GetSkins }
 end)()
 
--- ============================================
--- UI: Skin Animation
--- ============================================
 MainTab:CreateSection({ Name = "Skin Animation", Icon = "rbxassetid://108886429866687" })
 
--- Dropdown skin (diperbarui otomatis setelah refresh)
-local skinDropdown
-local function updateSkinDropdown()
-    local skins = SkinAnimation.GetSkins()
-    if skinDropdown then
-        skinDropdown:Refresh(skins)
-    else
-        skinDropdown = MainTab:CreateDropdown({
-            Name = "Select Rod Skin",
-            Items = skins,
-            Default = "None",
-            Callback = function(val)
-                SkinAnimation.SelectSkin(val)
-            end
-        })
-    end
-end
-
--- Tombol Refresh
-MainTab:CreateButton({
-    Name = "Refresh Skin List",
-    Callback = function()
-        local newSkins = SkinAnimation.RefreshSkins()
-        if skinDropdown then
-            skinDropdown:Refresh(newSkins)
-        end
-        Window:Notify({ Title = "Refreshed", Content = "Skin list updated from game.", Duration = 3 })
+local skinList = SkinAnimation.GetSkins()
+MainTab:CreateDropdown({
+    Name = "Select Rod Skin",
+    Items = skinList,
+    Default = "None",
+    Callback = function(val)
+        SkinAnimation.SelectSkin(val)
     end
 })
-
--- Inisialisasi dropdown pertama kali
-updateSkinDropdown()
 
 MainTab:CreateToggle({
     Name = "Enable Skin Changer",
@@ -5740,6 +5618,7 @@ MainTab:CreateToggle({
         end
     end
 })
+
 
 AutoTab:CreateSection({ Name = "Crystal" })
 local AutoUseCaveCrystal = false
@@ -9796,4 +9675,3 @@ task.spawn(function()
     task.wait(2)
     Window:LoadConfig(CONFIG_FOLDER, "default")
 end)
-
