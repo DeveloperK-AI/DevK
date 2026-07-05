@@ -1,458 +1,265 @@
---[[
-    ╔═══════════════════════════════════════════════════════════════╗
-    ║     VORAHUB ULTIMATE - REFACTORED & OPTIMIZED               ║
-    ║            (Single File - Obfuscation Ready)                ║
-    ╚═══════════════════════════════════════════════════════════════╝
-    Perbaikan:
-    ✅ Remote Manager terpusat dengan caching & error handling.
-    ✅ Fishing Core: Fast Reeler, Blatant, Auto Farm dengan random delay & state check.
-    ✅ Auto Sell: Optimasi loop & deteksi isi tas lebih akurat.
-    ✅ Auto Weather: Cek cuaca aktif sebelum beli (hemat uang).
-    ✅ Semua variabel global dihilangkan, diganti dengan tabel lokal Vora.
-    ✅ Siap untuk di-obfuscate (minim global lookup).
---]]
 
--- =================================================================
--- SECTION 1: DEPENDENCY LOADER (External Files)
--- =================================================================
-local function loadExternal(url)
-    local httpFunc = syn and syn.request or http and http.request or http_request or request
-    if not httpFunc then return nil end
-    local ok, res = pcall(function() return httpFunc({ Url = url, Method = "GET" }) end)
-    if not ok or res.StatusCode ~= 200 then return nil end
-    return res.Body
-end
+    ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local netFolder = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net
+    local netChildren = netFolder:GetChildren()
 
--- Load Library UI
-local libContent = loadExternal("https://raw.githubusercontent.com/DeveloperK-AI/DevK/main/lib.lua")
-local VoraLib
-if libContent then
-    local fn, err = loadstring(libContent)
-    if fn then pcall(function() VoraLib = fn() end) end
-end
+    -- Deteksi nama hex hash (bukan nama plain)
+    function isHex(name)
+        local stripped = name:gsub("^R[FE]/", "")
+        return #stripped > 16 and stripped:match("^%x+$") ~= nil
+    end
 
--- Load DisplayName Modifier (opsional)
-local displayContent = loadExternal("https://raw.githubusercontent.com/DeveloperK-AI/DevK/main/DisplayName.lua")
-if displayContent then
-    local fn = loadstring(displayContent)
-    if fn then pcall(fn) end
-end
-
--- =================================================================
--- SECTION 2: MAIN CONTAINER (Hanya 1 Global)
--- =================================================================
-_G.VoraHub = { Modules = {}, State = {}, Config = {} }
-local Vora = _G.VoraHub
-local Services = {}; Vora.Modules.Services = Services
-local RemoteManager = {}; Vora.Modules.RemoteManager = RemoteManager
-local Utils = {}; Vora.Modules.Utils = Utils
-
--- =================================================================
--- SECTION 3: UTILITIES (SafeCall, Format, Parse)
--- =================================================================
-function Utils.safeCall(func, ...)
-    local args = {...}
-    local ok, res = xpcall(function() return func(unpack(args)) end,
-        function(err) warn("[Utils] " .. tostring(err) .. "\n" .. debug.traceback()) end)
-    return ok, res
-end
-
-function Utils.shortenNumber(n)
-    if type(n) ~= "number" then return "N/A" end
-    local scales = {{1e18,"Qi"},{1e15,"Qa"},{1e12,"T"},{1e9,"B"},{1e6,"M"},{1e3,"K"}}
-    for _, s in ipairs(scales) do
-        if n >= s[1] then
-            local v = n / s[1]
-            return (v % 1 == 0 and string.format("%.0f%s", v, s[2])) or string.format("%.2f%s", v, s[2])
+    -- Build map: "ChargeFishingRod" -> actual hashed Instance
+    local remoteMap = {}
+    for i, child in ipairs(netChildren) do
+        if not isHex(child.Name) then
+            local next = netChildren[i + 1]
+            if next and isHex(next.Name) then
+                local key = child.Name:gsub("^R[FE]/", "")
+                remoteMap[key] = next
+            end
         end
     end
-    return tostring(math.floor(n))
-end
 
-function Utils.parseDuration(text)
-    if type(text) ~= "string" then return nil end
-    text = text:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-    local h = tonumber(text:match("(%d+)%s*[Hh]")) or 0
-    local m = tonumber(text:match("(%d+)%s*[Mm]")) or 0
-    local s = tonumber(text:match("(%d+)%s*[Ss]"))
-    if s then return h * 3600 + m * 60 + s end
-    local hh, mm, ss = text:match("^(%d+):(%d+):(%d+)$")
-    if hh then return tonumber(hh) * 3600 + tonumber(mm) * 60 + tonumber(ss) end
-    local mm2, ss2 = text:match("^(%d+):(%d+)$")
-    if mm2 then return tonumber(mm2) * 60 + tonumber(ss2) end
-    return nil
-end
+function RF(name) return remoteMap[name] end
+function RE(name) return remoteMap[name] end
 
--- =================================================================
--- SECTION 4: SERVICES & REMOTE MANAGER (Net Detector)
--- =================================================================
-function Services:Get(name)
-    if not self._cache then self._cache = {} end
-    if not self._cache[name] then self._cache[name] = game:GetService(name) end
-    return self._cache[name]
-end
-
--- Remote Map Builder (sama persis dengan asli tapi di-cache)
-local netCache = {}
-local function isHex(s)
-    local stripped = s:gsub("^R[FE]/", "")
-    return #stripped > 16 and stripped:match("^%x+$") ~= nil
-end
-
-function RemoteManager:Init()
-    if self._initialized then return end
-    local rs = Services:Get("ReplicatedStorage")
-    local netFolder = rs:FindFirstChild("Packages._Index.sleitnick_net@0.2.0.net")
-    if not netFolder then return end
-    local children = netFolder:GetChildren()
-    for i = 1, #children - 1 do
-        local cur = children[i]; local nxt = children[i+1]
-        if not isHex(cur.Name) and nxt and isHex(nxt.Name) then
-            local key = cur.Name:gsub("^R[FE]/", "")
-            netCache[key] = nxt
-        end
-    end
-    self._initialized = true
-end
-
-function RemoteManager:Get(name)
-    self:Init()
-    return netCache[name]
-end
-
-function RemoteManager:Fire(name, ...)
-    local remote = self:Get(name)
-    if not remote then return false, "Remote not found: " .. tostring(name) end
-    local ok, err = pcall(function()
-        if remote:IsA("RemoteEvent") then remote:FireServer(...)
-        else remote:InvokeServer(...) end
-    end)
-    return ok, err
-end
-
--- Fallback untuk panggilan "InvokeServer" yang sering dipakai di kode lama
-function RemoteManager:Invoke(name, ...)
-    local remote = self:Get(name)
-    if not remote then return false end
-    local ok, res = pcall(function() return remote:InvokeServer(...) end)
-    return ok, res
-end
-
--- =================================================================
--- SECTION 5: OPTIMIZED FISHING CORE (Blatant, Fast Reel, Auto Farm)
--- =================================================================
-local FishingCore = { State = { running = false, session = 0, mode = "Idle" } }
-Vora.Modules.FishingCore = FishingCore
-
-local FISH_CONFIG = {
-    MIN_CAST_DELAY = 0.03, MAX_CAST_DELAY = 0.15,
-    MIN_REEL_DELAY = 3.2, MAX_REEL_DELAY = 4.5,
-    POWER_MIN = 0.82, POWER_MAX = 1.0,
-    AUTO_FARM_WAIT_MIN = 3.5, AUTO_FARM_WAIT_MAX = 5.5,
+-- Amblatant support: cached remote data & local event re-fire
+_G.SavedData = _G.SavedData or {
+    FishCaught = {},
+    CaughtVisual = {},
+    FishNotif = {}
 }
 
-function FishingCore:IsBobberActive()
-    local player = Services:Get("Players").LocalPlayer
-    if not player then return false end
-    local cf = workspace:FindFirstChild("CosmeticFolder")
-    if cf and cf:FindFirstChild(tostring(player.UserId)) then return true end
+function FireLocalEvent(remote, ...)
+    if not remote or not remote.OnClientEvent then return end
+    local args = {...}
+    local signal = remote.OnClientEvent
+    for _, connection in pairs(getconnections(signal)) do
+        if connection.Function then
+            task.spawn(function()
+                pcall(function()
+                    connection.Function(unpack(args))
+                end)
+            end)
+        end
+    end
+end
+
+local saveCount = 0
+
+function GetServerRemote(humanName)
+    local key = humanName:gsub("^R[FE]/", "")
+    return remoteMap[key]
+end
+
+function HookRemote(humanName, storageKey)
+    local remote = GetServerRemote(humanName)
+    if remote then
+        remote.OnClientEvent:Connect(function(...)
+            if saveCount < 7 then
+                _G.SavedData[storageKey] = {...}
+                local args = {...}
+                if storageKey == "CaughtVisual" then
+                    local lp = game:GetService("Players").LocalPlayer
+                    local myName = lp and lp.Name
+                    if myName and tostring(args[1]) == tostring(myName) then
+                        saveCount = saveCount + 1
+                    end
+                end
+            end
+        end)
+        return true
+    end
     return false
 end
 
-function FishingCore:GetRandomDelay(min, max) return min + (math.random() * (max - min)) end
-function FishingCore:GetPower() return FISH_CONFIG.POWER_MIN + (math.random() * (FISH_CONFIG.POWER_MAX - FISH_CONFIG.POWER_MIN)) end
+BuyRod              = RF("PurchaseFishingRod")
+BuyBait             = RF("PurchaseBait")
+BuyCharm            = RF("PurchaseCharm")
+REFishDone          = RF("CatchFishCompleted")
+REFishDoneRE        = RE("CatchFishCompleted")
+BuyWeather          = RF("PurchaseWeatherEvent")
+ChargeRod           = RF("ChargeFishingRod")
+StartMini           = RF("RequestFishingMinigameStarted")
+UpdateRadar         = RF("UpdateFishingRadar")
+Cancel              = RF("CancelFishingInputs")
+SellItem            = RF("SellAllItems")
+AutoEnabled         = RF("UpdateAutoFishingState")
+BuyMarket           = RF("PurchaseMarketItem")
+InitiateTrade       = RF("InitiateTrade")
+RFAwaitTradeResponse = RF("AwaitTradeResponse")
+EquipOxygen         = RF("EquipOxygenTank")
+UnequipOxygen       = RF("UnequipOxygenTank")
+ConsumeCrystal      = RF("ConsumeCaveCrystal")
+ConsumePotion       = RF("ConsumePotion")
+threselod           = RF("UpdateAutoSellThreshold")
+dialogevent         = RF("SpecialDialogueEvent")
 
--- --- MODE: Blatant / Fast Reeler (Cepat & Random) ---
-function FishingCore:StartBlatant()
-    if self.State.running then return false end
-    self.State.running = true; self.State.mode = "Blatant"
-    local session = self.State.session + 1; self.State.session = session
+RECutscene          = RE("ReplicateCutscene")
+REStop              = RE("StopCutscene")
+REFav               = RE("FavoriteItem")
+REFavChg            = RE("FavoriteStateChanged")
+REFishGot           = RE("FishCaught")
+RENotify            = RE("TextNotification")
+REEquip             = RE("EquipToolFromHotbar")
+REEquipItem         = RE("EquipItem")
+REAltar             = RE("ActivateEnchantingAltar")
+REAltar2            = RE("ActivateSecondEnchantingAltar")
+REPlayFishEffect    = RE("PlayFishingEffect")
+RETextEffect        = RE("ReplicateTextEffect")
+Totem               = RE("SpawnTotem")
+FishingMinigameChanged = RE("FishingMinigameChanged")
+FishingStopped      = RE("FishingStopped")
+REEvReward          = RE("ClaimEventReward")
+REEquipCharm        = RE("EquipCharm")
+REUnequipCharm      = RE("UnequipCharm")
+BaitSpawned         = RE("BaitSpawned")
+BaitDestroyed       = RE("BaitDestroyed")
+PirateChest         = RE("ClaimPirateChest")
+GainMaze            = RE("GainAccessToMaze")
+PlaceLever          = RE("PlaceLeverItem")
+REDialogueEnded      = RE("DialogueEnded")
+RFCreateTranscendedStone = RF("CreateTranscendedStone")
+EquipBait           = RE("EquipBait")
 
-    local charge = RemoteManager:Get("ChargeFishingRod") or ChargeRod
-    local start = RemoteManager:Get("RequestFishingMinigameStarted") or StartMini
-    local finish = RemoteManager:Get("CatchFishCompleted") or REFishDone
-    local cancel = RemoteManager:Get("CancelFishingInputs") or Cancel
+-- moons.lua: Config / Events / Tasks / needCast / skip / blatantFishCycleCount (FAST 3 KEDIP & UB)
+Config = {
+    HookNotif = false,
+    InstantFishingV2Active = false,
+    isMinig = false,
+    autoFishing = false,
+    AutoCatch = false,
+    antiOKOK = false,
+    amblatant = false,
+    UB = {
+        Active = false,
+        Settings = { CompleteDelay = 3.7, CancelDelay = 0.2, CastMode = "Fast" },
+        Remotes = {},
+        Stats = { castCount = 0, startTime = 0 },
+    },
+}
+Tasks = {}
+blatantFishCycleCount = 0
+needCast = false
+skip = false
+Events = {}
 
+function safeFire(func)
     task.spawn(function()
-        while self.State.running and session == self.State.session do
-            if self:IsBobberActive() then
-                pcall(function() if cancel then cancel:InvokeServer() end end)
-                task.wait(0.5)
-                continue
-            end
-            local t0 = workspace:GetServerTimeNow()
-            pcall(function() if charge then charge:InvokeServer(nil, nil, t0, nil) end end)
-            task.wait(self:GetRandomDelay(FISH_CONFIG.MIN_CAST_DELAY, FISH_CONFIG.MAX_CAST_DELAY))
-            local power = self:GetPower()
-            pcall(function() if start then start:InvokeServer(0, power, t0) end end)
-            task.wait(self:GetRandomDelay(FISH_CONFIG.MIN_REEL_DELAY, FISH_CONFIG.MAX_REEL_DELAY))
-            pcall(function() if finish then finish:InvokeServer(1) end end)
-            task.wait(self:GetRandomDelay(0.05, 0.25))
-        end
-    end)
-    return true
-end
-
--- --- MODE: Auto Farm (Instant) ---
-function FishingCore:StartAutoFarm()
-    if self.State.running then return false end
-    self.State.running = true; self.State.mode = "AutoFarm"
-    local session = self.State.session + 1; self.State.session = session
-
-    local charge = RemoteManager:Get("ChargeFishingRod") or ChargeRod
-    local start = RemoteManager:Get("RequestFishingMinigameStarted") or StartMini
-    local finish = RemoteManager:Get("CatchFishCompleted") or REFishDone
-
-    task.spawn(function()
-        while self.State.running and session == self.State.session do
-            if self:IsBobberActive() then
-                task.wait(1.5)
-                continue
-            end
-            local t0 = workspace:GetServerTimeNow()
-            pcall(function() if charge then charge:InvokeServer(nil, nil, t0, nil) end end)
-            task.wait(0.1 + (math.random() * 0.15))
-            local power = 0.92 + (math.random() * 0.08)
-            pcall(function() if start then start:InvokeServer(0, power, t0) end end)
-            task.wait(self:GetRandomDelay(FISH_CONFIG.AUTO_FARM_WAIT_MIN, FISH_CONFIG.AUTO_FARM_WAIT_MAX))
-            pcall(function() if finish then finish:InvokeServer(1) end end)
-            task.wait(0.3 + (math.random() * 0.5))
-        end
-    end)
-    return true
-end
-
--- --- STOP ALL ---
-function FishingCore:Stop()
-    self.State.running = false
-    self.State.session = self.State.session + 1
-    local cancel = RemoteManager:Get("CancelFishingInputs") or Cancel
-    pcall(function() if cancel then cancel:InvokeServer() end end)
-    pcall(function() if AutoEnabled then AutoEnabled:InvokeServer(false) end end)
-    return true
-end
-
--- =================================================================
--- SECTION 6: OPTIMIZED AUTO SELL
--- =================================================================
-local AutoSell = { active = false, count = 0 }
-Vora.Modules.AutoSell = AutoSell
-
-function AutoSell:GetCurrentBagCount()
-    local player = Services:Get("Players").LocalPlayer
-    local gui = player:FindFirstChild("PlayerGui")
-    if not gui then return 0 end
-    local inv = gui:FindFirstChild("Inventory")
-    if not inv then return 0 end
-    local main = inv:FindFirstChild("Main")
-    if not main then return 0 end
-    local top = main:FindFirstChild("Top")
-    if not top then return 0 end
-    local opts = top:FindFirstChild("Options")
-    if not opts then return 0 end
-    local fish = opts:FindFirstChild("Fish")
-    if not fish then return 0 end
-    local label = fish:FindFirstChild("Label")
-    if not label then return 0 end
-    local text = label.ContentText or label.Text or "0/4500"
-    return tonumber(string.match(text, "^(%d+)")) or 0
-end
-
-function AutoSell:Start(mode, value)
-    if self.active then return end
-    self.active = true
-    local sellRemote = RemoteManager:Get("SellAllItems") or SellItem
-
-    task.spawn(function()
-        while self.active do
-            local shouldSell = false
-            if mode == "Sell Delay" then
-                local delay = math.max(1, value or 10) + (math.random() * 2)
-                task.wait(delay)
-                shouldSell = true
-            elseif mode == "Sell By Count" then
-                local current = self:GetCurrentBagCount()
-                local limit = tonumber(value) or 100
-                if current >= limit then shouldSell = true end
-                task.wait(0.5 + (math.random() * 0.5))
-            end
-            if shouldSell then
-                local ok = pcall(function() if sellRemote then sellRemote:InvokeServer() end end)
-                if ok then self.count = self.count + 1; task.wait(0.5 + math.random()) end
-            end
-        end
+        pcall(func)
     end)
 end
 
-function AutoSell:Stop() self.active = false end
-
--- =================================================================
--- SECTION 7: OPTIMIZED AUTO WEATHER
--- =================================================================
-local AutoWeather = { active = false }
-Vora.Modules.AutoWeather = AutoWeather
-
-function AutoWeather:GetCurrentWeather()
-    local lighting = Services:Get("Lighting")
-    local amb = lighting.OutdoorAmbient
-    if amb.R > 0.8 and amb.G > 0.8 and amb.B > 0.8 then return "Radiant" end
-    if amb.R < 0.3 and amb.G < 0.3 and amb.B > 0.5 then return "Storm" end
-    if amb.R > 0.9 and amb.G < 0.2 and amb.B < 0.2 then return "Shark Hunt" end
-    -- Coba cek dari UI Weather Machine
-    local player = Services:Get("Players").LocalPlayer
-    local gui = player:FindFirstChild("PlayerGui")
-    if gui then
-        local wm = gui:FindFirstChild("WeatherMachine")
-        if wm then
-            local main = wm:FindFirstChild("Main")
-            if main then
-                local cur = main:FindFirstChild("Current")
-                if cur and cur:IsA("TextLabel") then
-                    return cur.Text:gsub("^%s+", ""):gsub("%s+$", "")
-                end
-            end
+-- sleitnick_net often exposes RF/* as RemoteEvent; use FireServer in that case.
+function CallRemoteServer(remote, ...)
+    if not remote then return false end
+    local ok
+    if remote:IsA("RemoteFunction") then
+        ok = select(1, pcall(function(...)
+            remote:InvokeServer(...)
+        end, ...))
+    elseif remote:IsA("RemoteEvent") then
+        ok = select(1, pcall(function(...)
+            remote:FireServer(...)
+        end, ...))
+    else
+        ok = select(1, pcall(function(...)
+            remote:InvokeServer(...)
+        end, ...))
+        if not ok then
+            ok = select(1, pcall(function(...)
+                remote:FireServer(...)
+            end, ...))
         end
     end
-    return "Normal"
+    return ok
 end
 
-function AutoWeather:Start(selectedWeathers)
-    if self.active or not selectedWeathers or #selectedWeathers == 0 then return end
-    self.active = true
-    local buyRemote = RemoteManager:Get("PurchaseWeatherEvent") or BuyWeather
+Events.equip = GetServerRemote("RF/EquipToolFromHotbar")
+Events.CancelFishingInputs = GetServerRemote("RF/CancelFishingInputs")
+Events.charge = GetServerRemote("RF/ChargeFishingRod")
+Events.minigame = GetServerRemote("RF/RequestFishingMinigameStarted")
+Events.UpdateAutoFishingState = GetServerRemote("RF/UpdateAutoFishingState")
 
-    task.spawn(function()
-        while self.active do
-            local current = self:GetCurrentWeather()
-            for _, name in ipairs(selectedWeathers) do
-                if name ~= current then
-                    pcall(function() if buyRemote then buyRemote:InvokeServer(name) end end)
-                    task.wait(0.3 + (math.random() * 0.4))
-                end
-            end
-            task.wait(10 + (math.random() * 10))
-        end
-    end)
+TweenService = game:GetService("TweenService")
+UserInputService = game:GetService("UserInputService")
+RunService = game:GetService("RunService")
+CoreGui = game:GetService("CoreGui")
+Players = game:GetService("Players")
+HttpService = game:GetService("HttpService")
+Lighting = game:GetService("Lighting")
+Terrain = workspace:FindFirstChildOfClass("Terrain")
+
+
+
+-- Performance Optimization: Data Cache System
+DataCache = {
+    equipped = nil,
+    rods = nil,
+    inventory = nil,
+    enchantStones = nil,
+    lastUpdate = 0,
+    cacheDuration = 3
+}
+
+function DataCache:Get(key)
+    if tick() - self.lastUpdate > self.cacheDuration then
+        self:Invalidate()
+    end
+    return self[key]
 end
 
-function AutoWeather:Stop() self.active = false end
+function DataCache:Set(key, value)
+    self[key] = value
+    self.lastUpdate = tick()
+end
 
--- =================================================================
--- SECTION 8: QUEST, INVENTORY, WEBHOOK HELPERS (Diambil dari asli)
--- =================================================================
--- ... (Saya akan tempelkan fungsi getQuestData, dsProcess, elemProcess, 
---      sendWebhook, dll dari kode asli Anda di sini untuk menjaga 
---      semua fitur quest dan monitoring tetap jalan)
--- =================================================================
--- [NOTE: Karena keterbatasan karakter, saya asumsikan fungsi-fungsi ini 
---  sudah ada di kode asli Anda. Saya akan mempertahankan logikanya 100%.
---  Yang saya ubah hanya bagian yang dipanggil oleh UI (Auto Farm, Sell, Weather).
---  Fungsi quest seperti dsProcessQuest tetap sama persis dengan aslinya.]
+function DataCache:Invalidate()
+    self.equipped = nil
+    self.rods = nil
+    self.inventory = nil
+    self.enchantStones = nil
+end
 
--- =================================================================
--- SECTION 9: UI CONSTRUCTION (Menggunakan VoraLib)
--- =================================================================
-local function BuildUI()
-    if not VoraLib then warn("VoraLib not loaded!"); return end
+local DevLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/DeveloperK-AI/DevK/main/lib.lua"))()
 
-    local Window = VoraLib:CreateWindow({ Name = "Vora Hub", Intro = true })
-    Vora.Window = Window
+ Window = DevLib:CreateWindow({
+	Name = "DeveloperK",
+	Intro = true
+})
 
-    -- ================================================================
-    -- TAB: INFO
-    -- ================================================================
-    local InfoTab = Window:CreateTab({ Name = "Info", Icon = "rbxassetid://7733964719" })
-    InfoTab:CreateSection({ Name = "Community Support" })
-    InfoTab:CreateButton({
-        Name = "Discord", SubText = "click to copy link", Icon = "rbxassetid://7733919427",
-        Callback = function() setclipboard("https://discord.gg/vorahub") 
-            Window:Notify({ Title = "Discord", Content = "Link copied!", Duration = 3 }) end
-    })
-    InfoTab:CreateParagraph({ Title = "Update", Content = "Every time there is a game update or someone reports something, I will fix it as soon as possible." })
 
-    -- ================================================================
-    -- TAB: MAIN (Fishing Controls)
-    -- ================================================================
-    local MainTab = Window:CreateTab({ Name = "Main", Icon = "rbxassetid://7733779610" })
 
-    MainTab:CreateSection({ Name = "Cast Mode" })
-    MainTab:CreateDropdown({
-        Name = "Global Cast Mode", Items = {"Perfect", "Fast", "Random"}, Default = "Fast",
-        Callback = function(v) Vora.Config.CastMode = v end
-    })
+ InfoTab = Window:CreateTab({
+	Name = "Info",
+	Icon = "rbxassetid://7733964719"
+})
 
-    MainTab:CreateSection({ Name = "Fishing" })
-    MainTab:CreateToggle({
-        Name = "Auto Rod", Default = false,
-        Callback = function(v) if v then RemoteManager:Fire("EquipToolFromHotbar", 1) end end
-    })
+InfoTab:CreateSection({
+	Name = "Community Support"
+})
 
-    MainTab:CreateDropdown({
-        Name = "Mode", Items = {"Legit", "Instant"}, Default = "Instant",
-        Callback = function(opt) Vora.Config.Mode = opt end
-    })
+InfoTab:CreateButton({
+	Name = "Discord",
+	SubText = "click to copy link",
+	Icon = "rbxassetid://7733919427",
+	Callback = function()
+		setclipboard("https://discord.gg/DevHub")
+		Window:Notify({
+			Title = "Discord",
+			Content = "Link copied to clipboard!",
+			Duration = 3
+		})
+	end
+})
 
-    MainTab:CreateToggle({
-        Name = "Auto Farm", Default = false,
-        Callback = function(v)
-            if v then
-                if Vora.Config.Mode == "Instant" then FishingCore:StartAutoFarm()
-                else FishingCore:StartBlatant() end -- Legit = Blatant
-            else FishingCore:Stop() end
-        end
-    })
+InfoTab:CreateParagraph({
+	Title = "Update",
+	Content = "Every time there is a game update or someone reports something, I will fix it as soon as possible."
+})
 
-    MainTab:CreateInput({
-        Name = "Fishing Delay", SideLabel = "Fishing Delay", Placeholder = "Contoh: 1.0",
-        Callback = function(v) local n=tonumber(v); if n and n>0 then Vora.Config.Delay = n end end
-    })
-
-    MainTab:CreateSection({ Name = "Instant Fishing V2" })
-    MainTab:CreateToggle({
-        Name = "Enable Instant Fishing V2", Default = false,
-        Callback = function(v)
-            if v then FishingCore:StartAutoFarm() else FishingCore:Stop() end
-        end
-    })
-
-    MainTab:CreateSection({ Name = "Blatant V1 (STABLE)" })
-    MainTab:CreateToggle({
-        Name = "Fast Reel", Default = false,
-        Callback = function(v) if v then FishingCore:StartBlatant() else FishingCore:Stop() end end
-    })
-
-    -- ================================================================
-    -- TAB: AUTO (Sell, Weather, Crystal, dll)
-    -- ================================================================
-    local AutoTab = Window:CreateTab({ Name = "Auto", Icon = "rbxassetid://7733799901" })
-
-    AutoTab:CreateSection({ Name = "Sell" })
-    local sellMode = "Sell Delay"; local sellValue = 10
-    AutoTab:CreateToggle({
-        Name = "Auto Sell", Default = false,
-        Callback = function(v) if v then AutoSell:Start(sellMode, sellValue) else AutoSell:Stop() end end
-    })
-    AutoTab:CreateDropdown({
-        Name = "Auto Sell Mode", Items = {"Sell Delay", "Sell By Count"}, Default = "Sell Delay",
-        Callback = function(v) sellMode = v end
-    })
-    AutoTab:CreateInput({
-        Name = "Auto Sell Value", Placeholder = "Delay or Count",
-        Callback = function(t) sellValue = tonumber(t) or 10 end
-    })
-
-    AutoTab:CreateSection({ Name = "Weather" })
-    local selectedWeathers = {}
-    AutoTab:CreateMultiDropdown({
-        Name = "Select Weather Events", Items = {"Wind", "Cloudy", "Snow", "Storm", "Radiant", "Shark Hunt"},
-        Callback = function(v) selectedWeathers = v end
-    })
-    AutoTab:CreateToggle({
-        Name = "Auto Buy Selected Weathers", Default = false,
-        Callback = function(v) if v then AutoWeather:Start(selectedWeathers) else AutoWeather:Stop() end end
-    })
-
-   ExclusiveTab = Window:CreateTab({
+ ExclusiveTab = Window:CreateTab({
 	Name = "Exclusive",
 	Icon = "rbxassetid://7733765398"
 })
@@ -2395,7 +2202,7 @@ function sendTestWebhook()
     end
 
     local payload = {
-        username = "VoraHub Webhook",
+        username = "DevHub Webhook",
         avatar_url = "https://cdn.discordapp.com/attachments/1434789394929287178/1448926732705988659/Swuppie.jpg?ex=693d09ac&is=693bb82c&hm=88d4c68207470eb4abc79d9b68227d85171aded5d3d99e9a76edcd823862f5fe",
         embeds = {{
             title = "Test Webhook Connected",
@@ -2443,9 +2250,9 @@ function sendNewFishWebhook(newlyCaughtFish)
     local payload = {
         content = nil,
         embeds = {{
-            title = "VoraHub Fish caught!",
+            title = "DevHub Fish caught!",
             description = string.format("Congrats! **%s** You obtained new **%s** here for full detail fish :", playerName, newFishRarity),
-            url = "https://discord.gg/vorahub",
+            url = "https://discord.gg/DevHub",
             color = 8900346,
             fields = {
                 { name = "Name Fish :",        value = "```\n"..newFishDetails.Name.."```" },
@@ -2457,7 +2264,7 @@ function sendNewFishWebhook(newlyCaughtFish)
                 { name = "Current Coin :",     value = "```"..currentCoins.."```" },
             },
             footer = {
-                text = "VoraHub Webhook",
+                text = "DevHub Webhook",
                 icon_url = "https://cdn.discordapp.com/attachments/1434789394929287178/1448926732705988659/Swuppie.jpg?ex=693d09ac&is=693bb82c&hm=88d4c68207470eb4abc79d9b68227d85171aded5d3d99e9a76edcd823862f5fe"
             },
             timestamp = os.date("!%Y-%m-%dT%H:%M:%S.000Z"),
@@ -2465,7 +2272,7 @@ function sendNewFishWebhook(newlyCaughtFish)
                 url = getThumbnailURL(newFishDetails.Icon)
             }
         }},
-        username = "VoraHub Webhook",
+        username = "DevHub Webhook",
         avatar_url = "https://cdn.discordapp.com/attachments/1434789394929287178/1448926732705988659/Swuppie.jpg?ex=693d09ac&is=693bb82c&hm=88d4c68207470eb4abc79d9b68227d85171aded5d3d99e9a76edcd823862f5fe",
         attachments = {}
     }
@@ -2513,7 +2320,7 @@ function sendGlobalTrackerWebhook(newlyCaughtFish)
     local payload = {
         content = nil,
         embeds = {{
-            title = string.format(":fish: VoraHub | Global Tracker\n\nGLOBAL CATCH! %s", fishDetails.Name),
+            title = string.format(":fish: DevHub | Global Tracker\n\nGLOBAL CATCH! %s", fishDetails.Name),
             description = string.format("Pemain **%s** baru saja menangkap ikan **SECRET**!", censoredName),
             color = 16766720,
             fields = {
@@ -2522,9 +2329,9 @@ function sendGlobalTrackerWebhook(newlyCaughtFish)
                 { name = "Mutation", value = string.format("`%s`", mutationDisplay), inline = true },
             },
             thumbnail = { url = imageUrl },
-            footer = { text = string.format("VoraHub Community | Player: %s | %s", censoredName, timestamp) },
+            footer = { text = string.format("DevHub Community | Player: %s | %s", censoredName, timestamp) },
         }},
-        username = "VoraHub | Community",
+        username = "DevHub | Community",
         attachments = {}
     }
 
@@ -2549,7 +2356,7 @@ function sendTestGlobalWebhook()
     local testPayload = {
         content = nil,
         embeds = {{
-            title = ":fish: VoraHub | Global Tracker\n\nGLOBAL CATCH! Blob Shark",
+            title = ":fish: DevHub | Global Tracker\n\nGLOBAL CATCH! Blob Shark",
             description = string.format("Pemain **%s** baru saja menangkap ikan **SECRET**! (TEST)", censoredName),
             color = 16766720,
             fields = {
@@ -2558,9 +2365,9 @@ function sendTestGlobalWebhook()
                 { name = "Mutation", value = "`N/A`", inline = true },
             },
             thumbnail = { url = "https://tr.rbxcdn.com/53eb9b170bea9855c45c9356fb33c070/420/420/Image/Png" },
-            footer = { text = string.format("VoraHub Community | Player: %s | %s", censoredName, timestamp) },
+            footer = { text = string.format("DevHub Community | Player: %s | %s", censoredName, timestamp) },
         }},
-        username = "VoraHub | Community",
+        username = "DevHub | Community",
         attachments = {}
     }
     pcall(function()
@@ -2653,7 +2460,7 @@ function sendFishToWhatsApp_API(fish)
     if not _G.WA_NumberID or _G.WA_NumberID == "" or
        not _G.WA_AccessToken or _G.WA_AccessToken == "" or
        not _G.WA_TargetPhone or _G.WA_TargetPhone == "" then
-        warn("[VoraHub WA] Missing WhatsApp API credentials")
+        warn("[DevHub WA] Missing WhatsApp API credentials")
         return
     end
 
@@ -2683,7 +2490,7 @@ function sendFishToWhatsApp_API(fish)
         "💰 *Sell Price:* %s\n" ..
         "🎒 *Backpack:* %d/4500\n" ..
         "🪙 *Coins:* %s\n\n" ..
-        "— VoraHub Auto Fishing",
+        "— DevHub Auto Fishing",
         fishInfo.Name, rarity, weight, mutation, price, totalFish, coins
     )
 
@@ -2853,14 +2660,14 @@ end
             { name = "Chance",  value = string.format("`1 in %s`", chance),   inline = true },
             { name = "Player",  value = string.format("`%s`", censored),      inline = true },
         },
-        footer    = { text = "VoraHub Server Tracker" },
+        footer    = { text = "DevHub Server Tracker" },
         timestamp = os.date("!%Y-%m-%dT%H:%M:%S.000Z"),
     }
     if imageUrl and imageUrl ~= "" then
         embed.thumbnail = { url = imageUrl }
     end
     local payload = {
-        username   = "VoraHub | Server Tracker",
+        username   = "DevHub | Server Tracker",
         avatar_url = "https://cdn.discordapp.com/attachments/1434789394929287178/1448926732705988659/Swuppie.jpg?ex=693d09ac&is=693bb82c&hm=88d4c68207470eb4abc79d9b68227d85171aded5d3d99e9a76edcd823862f5fe",
         embeds = { embed }
     }
@@ -2948,9 +2755,9 @@ MonitoringTab:CreateToggle({
 })
 
 -- =========================================================================
--- VORAHUB WEB MONITORING
+-- DevHub WEB MONITORING
 -- =========================================================================
-MonitoringTab:CreateSection({ Name = "VoraHub Web Monitoring" })
+MonitoringTab:CreateSection({ Name = "DevHub Web Monitoring" })
 
 local VoraMonitoringSettings = {
     VoraKey = "", -- Replace in UI
@@ -2959,11 +2766,11 @@ local VoraMonitoringSettings = {
     Enabled = false -- Master Toggle State
 }
 
-local VORA_API_URL = "https://monitor.vorahub.xyz/api/inventory/sync"
+local VORA_API_URL = "https://monitor.DevHub.xyz/api/inventory/sync"
 
 MonitoringTab:CreateInput({
-    Name = "VoraHub Key",
-    Placeholder = "Enter VoraHub Key...",
+    Name = "DevHub Key",
+    Placeholder = "Enter DevHub Key...",
     Default = VoraMonitoringSettings.VoraKey,
     Callback = function(val)
         VoraMonitoringSettings.VoraKey = val
@@ -3195,7 +3002,7 @@ end
     end)
 end
 
--- Auto-sync loop for VoraHub
+-- Auto-sync loop for DevHub
 task.spawn(function()
     while true do
         task.wait(VoraMonitoringSettings.Interval)
@@ -3949,7 +3756,7 @@ task.spawn(function()
 end)
 
 -- =============================================================================
--- STATUS OVERLAY UI (ported from CompleteVorahub/mainkaitun.lua)
+-- STATUS OVERLAY UI (ported from CompleteDevHub/mainkaitun.lua)
 -- - ScreenGui shows quest progress + best rod/bait/coins
 -- - Visible when any quest mode is ON (or forced by toggle)
 -- =============================================================================
@@ -3958,7 +3765,7 @@ PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 Lighting = game:GetService("Lighting")
 
 screenGui = Instance.new("ScreenGui")
-screenGui.Name = "VoraHub Status"
+screenGui.Name = "DevHub Status"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = PlayerGui
 
@@ -3985,7 +3792,7 @@ function makeLabel(name, size, pos, text, fontSize)
     return l
 end
 
-titleLabel = makeLabel("Title", UDim2.new(0, 300, 0, 40), UDim2.new(0.5, 0, 0.25, 0), "VoraHub Status", 24)
+titleLabel = makeLabel("Title", UDim2.new(0, 300, 0, 40), UDim2.new(0.5, 0, 0.25, 0), "DevHub Status", 24)
 titleLabel.TextColor3 = Color3.fromRGB(64, 224, 208)
 titleLabel.TextScaled = true
 
@@ -4876,7 +4683,7 @@ spawn(function()
             for name, rod in pairs(FishingRods) do
                 local uuid = getRodUUID(rod.id)
                 if not uuid and coins >= rod.price then
-                    print("[VoraHub] Buying " .. name .. " (Price: " .. rod.price .. ")")
+                    print("[DevHub] Buying " .. name .. " (Price: " .. rod.price .. ")")
                     local wasDeepSea = _G.DeepSeaQuestMode
                     local wasElement = _G.ElementQuestMode
                     local wasDiamond = _G.DiamondQuestMode
@@ -4913,7 +4720,7 @@ spawn(function()
                                     equipTool:FireServer(1)
                                 end)
                             end
-                            print("[VoraHub] " .. name .. " equipped!")
+                            print("[DevHub] " .. name .. " equipped!")
                         end
 
                         teleportBasedOnCondition(getBestRod())
@@ -4941,7 +4748,7 @@ spawn(function()
 
             for baitId, bait in pairs(Baits) do
                 if not hasBait(baitId) and coins >= bait.price then
-                    print("[VoraHub] Buying " .. bait.name .. "...")
+                    print("[DevHub] Buying " .. bait.name .. "...")
                     local wasDeepSea = _G.DeepSeaQuestMode
                     local wasElement = _G.ElementQuestMode
                     local wasDiamond = _G.DiamondQuestMode
@@ -6380,18 +6187,18 @@ AutoTab:CreateToggle({
                                     local args = { chestId }
                                     RE:FireServer(unpack(args))
                                     chestsFound = chestsFound + 1
-                                    print("[VoraHub] Claiming chest: " .. chestId)
+                                    print("[DevHub] Claiming chest: " .. chestId)
                                     task.wait(0.3)
                                 end
                             end
                             
                             if chestsFound > 0 then
-                                print("[VoraHub] Successfully claimed " .. chestsFound .. " pirate chests!")
+                                print("[DevHub] Successfully claimed " .. chestsFound .. " pirate chests!")
                             else
-                                print("[VoraHub] No pirate chests found in PirateChestStorage")
+                                print("[DevHub] No pirate chests found in PirateChestStorage")
                             end
                         else
-                            print("[VoraHub] PirateChestStorage not found in workspace")
+                            print("[DevHub] PirateChestStorage not found in workspace")
                         end
                     end)
                     task.wait(2) -- Wait 2 seconds before scanning again
@@ -8539,7 +8346,7 @@ SettingsTab:CreateToggle({
         if not replicateConn and RE.ReplicateCutscene then
             replicateConn = RE.ReplicateCutscene and RE.ReplicateCutscene.OnClientEvent:Connect(function(...)
                 if skipCutscene then
-                    warn("[VoraHub] Blocked ReplicateCutscene event!")
+                    warn("[DevHub] Blocked ReplicateCutscene event!")
                 end
             end)
         end
@@ -8547,7 +8354,7 @@ SettingsTab:CreateToggle({
         if not stopConn and RE.StopCutscene then
             stopConn = RE.StopCutscene and RE.StopCutscene.OnClientEvent:Connect(function()
                 if skipCutscene then
-                    warn("[VoraHub] Blocked StopCutscene event!")
+                    warn("[DevHub] Blocked StopCutscene event!")
                 end
             end)
         end
@@ -8562,7 +8369,7 @@ SettingsTab:CreateToggle({
             end)
 
             if not ok or not CutsceneController then
-                warn("[VoraHub] CutsceneController not found.")
+                warn("[DevHub] CutsceneController not found.")
                 return
             end
 
@@ -8573,10 +8380,10 @@ SettingsTab:CreateToggle({
             while true do
                 if skipCutscene then
                     CutsceneController.Play = function(...)
-                        warn("[VoraHub] Cutscene skipped (Play).")
+                        warn("[DevHub] Cutscene skipped (Play).")
                     end
                     CutsceneController.Stop = function(...)
-                        warn("[VoraHub] Cutscene skipped (Stop).")
+                        warn("[DevHub] Cutscene skipped (Stop).")
                     end
                 else
                     CutsceneController.Play = originalPlay
@@ -9104,9 +8911,9 @@ defaultHeader = header.Text
 defaultLevel = levelLabel.Text
 
 -- Configuration Defaults
-local FakeName = "discord.gg/vorahub"
+local FakeName = "discord.gg/DevHub"
 local FakeLevel = "MAX"
-local ScriptName = "Vorahub"
+local ScriptName = "DevHub"
 local HideStatsEnabled = false
 
 -- Storage
@@ -9160,11 +8967,11 @@ function createMovingGradient(label)
     return gradient
 end
 
--- Helper: Create Script Name Label (Vorahub)
+-- Helper: Create Script Name Label (DevHub)
 function createScriptNameLabel(nameLabel, billboard)
     if not nameLabel or not billboard then return end
     
-    local existingFrame = billboard:FindFirstChild("VorahubFrame")
+    local existingFrame = billboard:FindFirstChild("DevHubFrame")
     if existingFrame then return existingFrame end
     
     local nameFrame = nameLabel.Parent
@@ -9179,14 +8986,14 @@ function createScriptNameLabel(nameLabel, billboard)
     )
     
     local voraFrame = Instance.new("Frame")
-    voraFrame.Name = "VorahubFrame"
+    voraFrame.Name = "DevHubFrame"
     voraFrame.Size = nameFrame.Size
     voraFrame.Position = originalNamePos
     voraFrame.BackgroundTransparency = 1
     voraFrame.Parent = billboard
     
     local scriptLabel = nameLabel:Clone()
-    scriptLabel.Name = "VorahubLabel"
+    scriptLabel.Name = "DevHubLabel"
     scriptLabel.Text = ScriptName
     scriptLabel.TextScaled = true
     scriptLabel.Font = Enum.Font.GothamBold
@@ -9207,7 +9014,7 @@ function removeAllScriptNames()
     local overhead = hrp:FindFirstChild("Overhead")
     if not overhead then return end
     
-    local voraFrame = overhead:FindFirstChild("VorahubFrame")
+    local voraFrame = overhead:FindFirstChild("DevHubFrame")
     if voraFrame then
         for threadId, _ in pairs(ActiveGradientThreads) do
             ActiveGradientThreads[threadId] = nil
@@ -9254,7 +9061,7 @@ function updateStats()
             local originalText = OriginalTexts[fullPath]
             if originalText and originalText ~= "" then
                 if obj.Name == "Header" then
-                    if not overhead:FindFirstChild("VorahubFrame") then
+                    if not overhead:FindFirstChild("DevHubFrame") then
                         createScriptNameLabel(obj, overhead)
                     end
                     obj.Text = FakeName
@@ -9308,7 +9115,7 @@ SettingsTab:CreateToggle({
         if state then
             startUpdateLoop()
             updateStats()
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/DeveloperK-AI/DevK/main/DisplayName.lua"))()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/CF-Trail/NameHider/main/MainScript.lua"))()
         else
             -- Restore original texts
             for path, originalText in pairs(OriginalTexts) do
@@ -9683,7 +9490,7 @@ TabConfig:CreateSection({
  configName = ""
  selectedConfig = ""
  configDropdown = nil
- CONFIG_FOLDER = "VoraHubConfigs"
+ CONFIG_FOLDER = "DevHubConfigs"
 
 function sanitizeConfigName(name)
     name = tostring(name or ""):gsub("^%s+", ""):gsub("%s+$", "")
@@ -9820,482 +9627,3 @@ task.spawn(function()
     Window:LoadConfig(CONFIG_FOLDER, "default")
 end)
 
-
--- Lynx Panel - Ping & FPS Monitor with Notification Counter
--- Real ping dari Roblox Stats (Shift+F3)
- Players = game:GetService("Players")
- RunService = game:GetService("RunService")
- Stats = game:GetService("Stats")
- CoreGui = game:GetService("CoreGui")
-
- player = Players.LocalPlayer
- playerGui = player:WaitForChild("PlayerGui")
-
--- Module untuk monitoring
-local MonitorModule = {}
-MonitorModule.GUI = nil
-
--- Variables untuk FPS calculation
-local lastFrameTime = tick()
-local fpsHistory = {}
-local maxFPSHistory = 20
-local updateConnection
-local pingUpdateConnection
-local notificationConnection
-
--- Fungsi untuk membuat GUI
-function createMonitorGUI()
-    local parentGui = playerGui
-    local useCoreGui = pcall(function()
-        local testGui = Instance.new("ScreenGui")
-        testGui.Parent = CoreGui
-        testGui:Destroy()
-    end)
-    
-    if useCoreGui then
-        parentGui = CoreGui
-    end
-    
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "VoraHubMonitor_" .. math.random(1, 999999)
-    screenGui.ResetOnSpawn = false
-    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    screenGui.DisplayOrder = 2147483647
-    screenGui.Enabled = true
-    screenGui.IgnoreGuiInset = true
-    
-    local container = Instance.new("Frame")
-    container.Name = "Container"
-    container.Size = UDim2.new(0, 200, 0, 100)  -- Increased height untuk notifications
-    container.Position = UDim2.new(0, 250, 0, 100)  -- Moved to the right
-    container.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
-    container.BackgroundTransparency = 0.15
-    container.BorderSizePixel = 0
-    container.Visible = true
-    container.ZIndex = 10000
-    container.Active = true
-    container.Parent = screenGui
-    
-    local containerCorner = Instance.new("UICorner")
-    containerCorner.CornerRadius = UDim.new(0, 10)
-    containerCorner.Parent = container
-    
-    local containerStroke = Instance.new("UIStroke")
-    containerStroke.Color = Color3.fromRGB(50, 150, 255)
-    containerStroke.Thickness = 2
-    containerStroke.Transparency = 0.3
-    containerStroke.Parent = container
-    
-    local header = Instance.new("Frame")
-    header.Name = "Header"
-    header.Size = UDim2.new(1, 0, 0, 35)
-    header.BackgroundTransparency = 1
-    header.ZIndex = 10001
-    header.Parent = container
-    
-    local logoIcon = Instance.new("ImageLabel")
-    logoIcon.Name = "LogoIcon"
-    logoIcon.Size = UDim2.new(0, 24, 0, 24)
-    logoIcon.Position = UDim2.new(0, 8, 0, 5)
-    logoIcon.BackgroundTransparency = 1
-    logoIcon.Image = "rbxassetid://112067161065104"
-    logoIcon.ScaleType = Enum.ScaleType.Fit
-    logoIcon.ImageColor3 = Color3.fromRGB(100, 180, 255)
-    logoIcon.ZIndex = 10002
-    logoIcon.Parent = header
-    
-    local logoCorner = Instance.new("UICorner")
-    logoCorner.CornerRadius = UDim.new(0, 6)
-    logoCorner.Parent = logoIcon
-    
-    local titleLabel = Instance.new("TextLabel")
-    titleLabel.Name = "TitleLabel"
-    titleLabel.Size = UDim2.new(1, -40, 1, 0)
-    titleLabel.Position = UDim2.new(0, 36, 0, 0)
-    titleLabel.BackgroundTransparency = 1
-    titleLabel.Text = "VORAHUB PANEL"
-    titleLabel.TextColor3 = Color3.fromRGB(100, 180, 255)
-    titleLabel.TextSize = 13
-    titleLabel.Font = Enum.Font.GothamBold
-    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    titleLabel.ZIndex = 10002
-    titleLabel.Parent = header
-    
-    local separator = Instance.new("Frame")
-    separator.Name = "Separator"
-    separator.Size = UDim2.new(1, -16, 0, 1)
-    separator.Position = UDim2.new(0, 8, 0, 35)
-    separator.BackgroundColor3 = Color3.fromRGB(50, 150, 255)
-    separator.BackgroundTransparency = 0.5
-    separator.BorderSizePixel = 0
-    separator.ZIndex = 10001
-    separator.Parent = container
-    
-    local content = Instance.new("Frame")
-    content.Name = "Content"
-    content.Size = UDim2.new(1, -16, 0, 60)  -- Fixed height untuk content
-    content.Position = UDim2.new(0, 8, 0, 40)
-    content.BackgroundTransparency = 1
-    content.ZIndex = 10001
-    content.Parent = container
-    
-    -- Row 1: Ping & FPS
-    local pingLabel = Instance.new("TextLabel")
-    pingLabel.Name = "PingLabel"
-    pingLabel.Size = UDim2.new(0.5, -6, 0, 25)
-    pingLabel.Position = UDim2.new(0, 0, 0, 0)
-    pingLabel.BackgroundTransparency = 1
-    pingLabel.Text = "Ping: 0 ms"
-    pingLabel.TextColor3 = Color3.fromRGB(150, 200, 255)
-    pingLabel.TextSize = 13
-    pingLabel.Font = Enum.Font.GothamBold
-    pingLabel.TextXAlignment = Enum.TextXAlignment.Center
-    pingLabel.ZIndex = 10002
-    pingLabel.Parent = content
-    
-    local verticalSeparator = Instance.new("Frame")
-    verticalSeparator.Name = "VerticalSeparator"
-    verticalSeparator.Size = UDim2.new(0, 1, 0, 25)
-    verticalSeparator.Position = UDim2.new(0.5, 0, 0, 0)
-    verticalSeparator.BackgroundColor3 = Color3.fromRGB(50, 150, 255)
-    verticalSeparator.BackgroundTransparency = 0.5
-    verticalSeparator.BorderSizePixel = 0
-    verticalSeparator.ZIndex = 10001
-    verticalSeparator.Parent = content
-    
-    local fpsLabel = Instance.new("TextLabel")
-    fpsLabel.Name = "FPSLabel"
-    fpsLabel.Size = UDim2.new(0.5, -6, 0, 25)
-    fpsLabel.Position = UDim2.new(0.5, 6, 0, 0)
-    fpsLabel.BackgroundTransparency = 1
-    fpsLabel.Text = "FPS: 60"
-    fpsLabel.TextColor3 = Color3.fromRGB(100, 255, 200)
-    fpsLabel.TextSize = 13
-    fpsLabel.Font = Enum.Font.GothamBold
-    fpsLabel.TextXAlignment = Enum.TextXAlignment.Center
-    fpsLabel.ZIndex = 10002
-    fpsLabel.Parent = content
-    
-    -- Horizontal separator
-    local horizontalSeparator = Instance.new("Frame")
-    horizontalSeparator.Name = "HorizontalSeparator"
-    horizontalSeparator.Size = UDim2.new(1, 0, 0, 1)
-    horizontalSeparator.Position = UDim2.new(0, 0, 0, 30)
-    horizontalSeparator.BackgroundColor3 = Color3.fromRGB(50, 150, 255)
-    horizontalSeparator.BackgroundTransparency = 0.5
-    horizontalSeparator.BorderSizePixel = 0
-    horizontalSeparator.ZIndex = 10001
-    horizontalSeparator.Parent = content
-    
-    -- Row 2: Notifications
-    local notifLabel = Instance.new("TextLabel")
-    notifLabel.Name = "NotifLabel"
-    notifLabel.Size = UDim2.new(1, 0, 0, 25)
-    notifLabel.Position = UDim2.new(0, 0, 0, 35)
-    notifLabel.BackgroundTransparency = 1
-    notifLabel.Text = "Notifications: 0"
-    notifLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
-    notifLabel.TextSize = 13
-    notifLabel.Font = Enum.Font.GothamBold
-    notifLabel.TextXAlignment = Enum.TextXAlignment.Center
-    notifLabel.ZIndex = 10002
-    notifLabel.Parent = content
-    
-    -- Make draggable
-    local dragging = false
-    local dragInput, dragStart, startPos
-    local UserInputService = game:GetService("UserInputService")
-    
-    container.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = container.Position
-            
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
-        end
-    end)
-    
-    container.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-            dragInput = input
-        end
-    end)
-    
-    UserInputService.InputChanged:Connect(function(input)
-        if input == dragInput and dragging then
-            local delta = input.Position - dragStart
-            container.Position = UDim2.new(
-                startPos.X.Scale,
-                startPos.X.Offset + delta.X,
-                startPos.Y.Scale,
-                startPos.Y.Offset + delta.Y
-            )
-        end
-    end)
-    
-    screenGui.Parent = parentGui
-    
-    task.spawn(function()
-        while screenGui and screenGui.Parent do
-            task.wait(1)
-            if screenGui and screenGui.Parent then
-                screenGui.DisplayOrder = 2147483647
-            end
-        end
-    end)
-    
-    return {
-        ScreenGui = screenGui,
-        Container = container,
-        PingLabel = pingLabel,
-        FPSLabel = fpsLabel,
-        NotifLabel = notifLabel,
-        LogoIcon = logoIcon,
-        ParentType = useCoreGui and "CoreGui" or "PlayerGui"
-    }
-end
-
--- Get real ping from Roblox Stats (sama seperti Shift+F3)
-function getRealPing()
-    local success, ping = pcall(function()
-        -- Ambil dari Stats.Network.ServerStatsItem["Data Ping"]
-        local networkStats = Stats:FindFirstChild("Network")
-        if networkStats then
-            local serverStats = networkStats:FindFirstChild("ServerStatsItem")
-            if serverStats then
-                local dataPing = serverStats:FindFirstChild("Data Ping")
-                if dataPing then
-                    local pingValue = dataPing:GetValue()
-                    return math.floor(pingValue)
-                end
-            end
-        end
-        -- Fallback ke GetNetworkPing
-        return math.floor(player:GetNetworkPing() * 1000)
-    end)
-    return success and ping or 0
-end
-
--- Get FPS
-function getFPS()
-    local currentTime = tick()
-    local deltaTime = currentTime - lastFrameTime
-    lastFrameTime = currentTime
-    
-    local currentFPS = 0
-    if deltaTime > 0 then
-        currentFPS = 1 / deltaTime
-    end
-    
-    table.insert(fpsHistory, currentFPS)
-    
-    if #fpsHistory > maxFPSHistory then
-        table.remove(fpsHistory, 1)
-    end
-    
-    local sum = 0
-    for _, fps in ipairs(fpsHistory) do
-        sum = sum + fps
-    end
-    
-    local averageFPS = sum / #fpsHistory
-    return math.floor(math.clamp(averageFPS, 0, 240))
-end
-
--- Get total notifications (count semua object bernama "Tile")
-function getTotalNotifications()
-    local success, count = pcall(function()
-        local textNotifications = playerGui:FindFirstChild("Text Notifications")
-        if textNotifications then
-            local frame = textNotifications:FindFirstChild("Frame")
-            if frame then
-                -- Count semua object yang bernama "Tile"
-                local notifCount = 0
-                for _, child in ipairs(frame:GetChildren()) do
-                    if child.Name == "Tile" then
-                        notifCount = notifCount + 1
-                    end
-                end
-                return notifCount
-            end
-        end
-        return 0
-    end)
-    return success and count or 0
-end
-
--- Update colors
- function updatePingColor(pingLabel, value)
-    local ping = tonumber(value)
-    if ping <= 50 then
-        pingLabel.TextColor3 = Color3.fromRGB(100, 255, 200)
-    elseif ping <= 100 then
-        pingLabel.TextColor3 = Color3.fromRGB(150, 200, 255)
-    elseif ping <= 150 then
-        pingLabel.TextColor3 = Color3.fromRGB(180, 140, 255)
-    else
-        pingLabel.TextColor3 = Color3.fromRGB(255, 100, 150)
-    end
-end
-
- function updateFPSColor(fpsLabel, value)
-    local fps = tonumber(value)
-    if fps >= 55 then
-        fpsLabel.TextColor3 = Color3.fromRGB(100, 255, 200)
-    elseif fps >= 40 then
-        fpsLabel.TextColor3 = Color3.fromRGB(150, 200, 255)
-    elseif fps >= 25 then
-        fpsLabel.TextColor3 = Color3.fromRGB(180, 140, 255)
-    else
-        fpsLabel.TextColor3 = Color3.fromRGB(255, 100, 150)
-    end
-end
-
- function updateNotifColor(notifLabel, value)
-    local count = tonumber(value)
-    if count == 0 then
-        notifLabel.TextColor3 = Color3.fromRGB(150, 200, 255)
-    elseif count <= 5 then
-        notifLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
-    elseif count <= 10 then
-        notifLabel.TextColor3 = Color3.fromRGB(255, 150, 100)
-    else
-        notifLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-    end
-end
-
--- Show panel
-function MonitorModule:Show()
-    if self.GUI then
-        self.GUI.ScreenGui.Enabled = true
-        return
-    end
-    
-    self.GUI = createMonitorGUI()
-    print("[VoraHub Monitor] Started in:", self.GUI.ParentType)
-    
-    -- Update FPS
-    updateConnection = RunService.RenderStepped:Connect(function()
-        if not self.GUI or not self.GUI.ScreenGui or not self.GUI.ScreenGui.Parent then
-            if updateConnection then
-                updateConnection:Disconnect()
-            end
-            return
-        end
-        if not self.GUI.FPSLabel then
-            return
-        end
-        
-        local fps = getFPS()
-        self.GUI.FPSLabel.Text = "FPS: " .. tostring(fps)
-        updateFPSColor(self.GUI.FPSLabel, fps)
-    end)
-    
-    -- Update ping (real ping dari Stats)
-    local lastPingUpdate = 0
-    pingUpdateConnection = RunService.Heartbeat:Connect(function()
-        if not self.GUI or not self.GUI.ScreenGui or not self.GUI.ScreenGui.Parent then
-            if pingUpdateConnection then
-                pingUpdateConnection:Disconnect()
-            end
-            return
-        end
-        if not self.GUI.PingLabel then
-            return
-        end
-        
-        local currentTime = tick()
-        if currentTime - lastPingUpdate >= 0.5 then
-            local ping = getRealPing()
-            self.GUI.PingLabel.Text = "Ping: " .. ping .. " ms"
-            updatePingColor(self.GUI.PingLabel, ping)
-            lastPingUpdate = currentTime
-        end
-    end)
-    
-    -- Update notifications count
-    local lastNotifUpdate = 0
-    notificationConnection = RunService.Heartbeat:Connect(function()
-        if not self.GUI or not self.GUI.ScreenGui or not self.GUI.ScreenGui.Parent then
-            if notificationConnection then
-                notificationConnection:Disconnect()
-            end
-            return
-        end
-        if not self.GUI.NotifLabel then
-            return
-        end
-        
-        local currentTime = tick()
-        if currentTime - lastNotifUpdate >= 1 then  -- Update every 1 second
-            local notifCount = getTotalNotifications()
-            self.GUI.NotifLabel.Text = "Notifications: " .. notifCount
-            updateNotifColor(self.GUI.NotifLabel, notifCount)
-            lastNotifUpdate = currentTime
-        end
-    end)
-end
-
--- Hide, Toggle, Destroy methods
-function MonitorModule:Hide()
-    if self.GUI and self.GUI.ScreenGui then
-        self.GUI.ScreenGui.Enabled = false
-    end
-end
-
-function MonitorModule:Toggle()
-    if self.GUI and self.GUI.ScreenGui then
-        self.GUI.ScreenGui.Enabled = not self.GUI.ScreenGui.Enabled
-    else
-        self:Show()
-    end
-end
-
-function MonitorModule:Destroy()
-    if updateConnection then
-        updateConnection:Disconnect()
-        updateConnection = nil
-    end
-    
-    if pingUpdateConnection then
-        pingUpdateConnection:Disconnect()
-        pingUpdateConnection = nil
-    end
-    
-    if notificationConnection then
-        notificationConnection:Disconnect()
-        notificationConnection = nil
-    end
-    
-    if self.GUI and self.GUI.ScreenGui then
-        self.GUI.ScreenGui:Destroy()
-        self.GUI = nil
-    end
-    
-    fpsHistory = {}
-end
-
--- Auto-start monitor
-MonitorModule:Show()
-
-    Window:Notify({ Title = "VoraHub Ultimate", Content = "Loaded successfully!", Duration = 3 })
-end
-
--- =================================================================
--- SECTION 10: MAIN ENTRY POINT
--- =================================================================
-local function Initialize()
-    RemoteManager:Init()
-    task.defer(BuildUI)
-    print("[VoraHub] Initialized! (Refactored & Optimized)")
-end
-
-local ok, err = xpcall(Initialize, function(e) warn("[CRITICAL] " .. tostring(e) .. "\n" .. debug.traceback()) end)
-if not ok then warn("Init failed, but core functions might still work.") end
-
-return _G.VoraHub
