@@ -297,49 +297,82 @@ InfoTab:CreateParagraph({
 
 ShopTab:CreateSection({ Name = "Charms Shop" })
 
- SelectedCharm = "Bone Charm"
- CharmIDs = {}
+-- [SECURITY] Semua variabel lokal
+local SelectedCharm = nil
+local CharmIDs = {}       -- map nama charm -> ID
+local PurchaseQuantity = 1
 
- local function loadCharms()
-    local success, charms_module = pcall(function()
+-- Fungsi untuk memuat daftar charm dari game (tanpa fallback manual)
+local function loadCharms()
+    local charmNames = {}
+    CharmIDs = {}
+
+    local success, charmsModule = pcall(function()
         return require(game:GetService("ReplicatedStorage"):WaitForChild("Charms", 5))
     end)
-    
-    local charm_names = {}
-    if success and type(charms_module) == "table" then
-        for _, charm in pairs(charms_module) do
+
+    if success and type(charmsModule) == "table" then
+        for _, charm in pairs(charmsModule) do
             if charm.Data and charm.Data.Name and charm.Data.Id then
-                CharmIDs[charm.Data.Name] = charm.Data.Id
-                table.insert(charm_names, charm.Data.Name)
+                local name = tostring(charm.Data.Name)
+                local id = tonumber(charm.Data.Id)
+                if name and id then
+                    CharmIDs[name] = id
+                    table.insert(charmNames, name)
+                end
             end
         end
+        table.sort(charmNames)
+    else
+        Window:Notify({
+            Title = "Load Failed",
+            Content = "Could not load charms from game. Press 'Refresh' to try again.",
+            Duration = 5
+        })
     end
-    table.sort(charm_names)
-    return charm_names
- end
 
- local charmItems = loadCharms()
- if #charmItems == 0 then
-    charmItems = {"Bone Charm", "Algae Charm", "Magma Charm", "Clover Charm", "Heart Charm"}
-    CharmIDs = {
-        ["Bone Charm"] = 1,
-        ["Algae Charm"] = 2,
-        ["Magma Charm"] = 3,
-        ["Clover Charm"] = 4,
-        ["Heart Charm"] = 14,
-    }
- end
+    return charmNames
+end
 
- local charmDropdown = ShopTab:CreateDropdown({
+-- Dropdown charm (akan diisi ulang oleh fungsi update)
+local charmDropdown = ShopTab:CreateDropdown({
     Name = "Select Charm",
-    Items = charmItems,
-    Default = charmItems[1] or "Bone Charm",
+    Items = {},  -- kosong dulu, diisi setelah load
+    Default = nil,
     Callback = function(val)
         SelectedCharm = val
     end
 })
 
- PurchaseQuantity = 1
+-- Fungsi untuk memperbarui dropdown dengan daftar charm terbaru
+local function refreshCharmDropdown()
+    local charmItems = loadCharms()
+    if #charmItems > 0 then
+        charmDropdown:Refresh(charmItems)  -- Refresh() sudah ada di library dropdown
+        if not SelectedCharm or not CharmIDs[SelectedCharm] then
+            SelectedCharm = charmItems[1]
+            charmDropdown:Set(SelectedCharm)
+        end
+    end
+end
+
+-- Tombol Refresh (selalu tampil, untuk memuat ulang charm)
+ShopTab:CreateButton({
+    Name = "Refresh Charm List",
+    Callback = function()
+        refreshCharmDropdown()
+        Window:Notify({
+            Title = "Refreshed",
+            Content = "Charm list updated from game.",
+            Duration = 2
+        })
+    end
+})
+
+-- Panggil pertama kali
+refreshCharmDropdown()
+
+-- Input quantity
 ShopTab:CreateInput({
     Name = "Quantity",
     PlaceholderText = "1",
@@ -350,29 +383,30 @@ ShopTab:CreateInput({
     end
 })
 
+-- Tombol Purchase
 ShopTab:CreateButton({
     Name = "Purchase Charm",
     Callback = function()
-        local id = CharmIDs[SelectedCharm]
-        if not id then 
-            Window:Notify({
-                Title = "Error",
-                Content = "Charm ID not found for " .. tostring(SelectedCharm),
-                Duration = 3
-            })
-            return 
+        if not SelectedCharm then
+            Window:Notify({ Title = "Error", Content = "No charm selected.", Duration = 3 })
+            return
         end
-        
+        local id = CharmIDs[SelectedCharm]
+        if not id then
+            Window:Notify({ Title = "Error", Content = "Charm ID not found.", Duration = 3 })
+            return
+        end
+
         Window:Notify({
             Title = "Purchase",
             Content = "Buying " .. PurchaseQuantity .. " " .. SelectedCharm .. "...",
             Duration = 2
         })
-        
+
         task.spawn(function()
             for i = 1, PurchaseQuantity do
                 pcall(function()
-                    CallRemoteServer(BuyCharm, id)
+                    CallRemoteServer(BuyCharm, id)  -- BuyCharm sudah local dari perbaikan sebelumnya
                 end)
                 task.wait(0.1)
             end
@@ -385,16 +419,14 @@ ShopTab:CreateButton({
     end
 })
 
+-- Tombol Equip
 ShopTab:CreateButton({
     Name = "Equip Charm",
     Callback = function()
         if not SelectedCharm then return end
-        
-        -- Try to equip by name first
         pcall(function()
             REEquipCharm:FireServer(SelectedCharm)
         end)
-        
         Window:Notify({
             Title = "Equip",
             Content = "Equipped " .. SelectedCharm,
@@ -403,11 +435,11 @@ ShopTab:CreateButton({
     end
 })
 
+-- Tombol Unequip
 ShopTab:CreateButton({
     Name = "Unequip Charm",
     Callback = function()
         REUnequipCharm:FireServer()
-        
         Window:Notify({
             Title = "Unequip",
             Content = "Unequipped Charm",
@@ -415,6 +447,7 @@ ShopTab:CreateButton({
         })
     end
 })
+
 
  TeleportTab = Window:CreateTab({
 	Name = "Teleport",
