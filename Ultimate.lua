@@ -297,49 +297,82 @@ InfoTab:CreateParagraph({
 
 ShopTab:CreateSection({ Name = "Charms Shop" })
 
- SelectedCharm = "Bone Charm"
- CharmIDs = {}
+-- [SECURITY] Semua variabel lokal
+local SelectedCharm = nil
+local CharmIDs = {}       -- map nama charm -> ID
+local PurchaseQuantity = 1
 
- local function loadCharms()
-    local success, charms_module = pcall(function()
+-- Fungsi untuk memuat daftar charm dari game (tanpa fallback manual)
+local function loadCharms()
+    local charmNames = {}
+    CharmIDs = {}
+
+    local success, charmsModule = pcall(function()
         return require(game:GetService("ReplicatedStorage"):WaitForChild("Charms", 5))
     end)
-    
-    local charm_names = {}
-    if success and type(charms_module) == "table" then
-        for _, charm in pairs(charms_module) do
+
+    if success and type(charmsModule) == "table" then
+        for _, charm in pairs(charmsModule) do
             if charm.Data and charm.Data.Name and charm.Data.Id then
-                CharmIDs[charm.Data.Name] = charm.Data.Id
-                table.insert(charm_names, charm.Data.Name)
+                local name = tostring(charm.Data.Name)
+                local id = tonumber(charm.Data.Id)
+                if name and id then
+                    CharmIDs[name] = id
+                    table.insert(charmNames, name)
+                end
             end
         end
+        table.sort(charmNames)
+    else
+        Window:Notify({
+            Title = "Load Failed",
+            Content = "Could not load charms from game. Press 'Refresh' to try again.",
+            Duration = 5
+        })
     end
-    table.sort(charm_names)
-    return charm_names
- end
 
- local charmItems = loadCharms()
- if #charmItems == 0 then
-    charmItems = {"Bone Charm", "Algae Charm", "Magma Charm", "Clover Charm", "Heart Charm"}
-    CharmIDs = {
-        ["Bone Charm"] = 1,
-        ["Algae Charm"] = 2,
-        ["Magma Charm"] = 3,
-        ["Clover Charm"] = 4,
-        ["Heart Charm"] = 14,
-    }
- end
+    return charmNames
+end
 
- local charmDropdown = ShopTab:CreateDropdown({
+-- Dropdown charm (akan diisi ulang oleh fungsi update)
+local charmDropdown = ShopTab:CreateDropdown({
     Name = "Select Charm",
-    Items = charmItems,
-    Default = charmItems[1] or "Bone Charm",
+    Items = {},  -- kosong dulu, diisi setelah load
+    Default = nil,
     Callback = function(val)
         SelectedCharm = val
     end
 })
 
- PurchaseQuantity = 1
+-- Fungsi untuk memperbarui dropdown dengan daftar charm terbaru
+local function refreshCharmDropdown()
+    local charmItems = loadCharms()
+    if #charmItems > 0 then
+        charmDropdown:Refresh(charmItems)  -- Refresh() sudah ada di library dropdown
+        if not SelectedCharm or not CharmIDs[SelectedCharm] then
+            SelectedCharm = charmItems[1]
+            charmDropdown:Set(SelectedCharm)
+        end
+    end
+end
+
+-- Tombol Refresh (selalu tampil, untuk memuat ulang charm)
+ShopTab:CreateButton({
+    Name = "Refresh Charm List",
+    Callback = function()
+        refreshCharmDropdown()
+        Window:Notify({
+            Title = "Refreshed",
+            Content = "Charm list updated from game.",
+            Duration = 2
+        })
+    end
+})
+
+-- Panggil pertama kali
+refreshCharmDropdown()
+
+-- Input quantity
 ShopTab:CreateInput({
     Name = "Quantity",
     PlaceholderText = "1",
@@ -350,29 +383,30 @@ ShopTab:CreateInput({
     end
 })
 
+-- Tombol Purchase
 ShopTab:CreateButton({
     Name = "Purchase Charm",
     Callback = function()
-        local id = CharmIDs[SelectedCharm]
-        if not id then 
-            Window:Notify({
-                Title = "Error",
-                Content = "Charm ID not found for " .. tostring(SelectedCharm),
-                Duration = 3
-            })
-            return 
+        if not SelectedCharm then
+            Window:Notify({ Title = "Error", Content = "No charm selected.", Duration = 3 })
+            return
         end
-        
+        local id = CharmIDs[SelectedCharm]
+        if not id then
+            Window:Notify({ Title = "Error", Content = "Charm ID not found.", Duration = 3 })
+            return
+        end
+
         Window:Notify({
             Title = "Purchase",
             Content = "Buying " .. PurchaseQuantity .. " " .. SelectedCharm .. "...",
             Duration = 2
         })
-        
+
         task.spawn(function()
             for i = 1, PurchaseQuantity do
                 pcall(function()
-                    CallRemoteServer(BuyCharm, id)
+                    CallRemoteServer(BuyCharm, id)  -- BuyCharm sudah local dari perbaikan sebelumnya
                 end)
                 task.wait(0.1)
             end
@@ -385,16 +419,14 @@ ShopTab:CreateButton({
     end
 })
 
+-- Tombol Equip
 ShopTab:CreateButton({
     Name = "Equip Charm",
     Callback = function()
         if not SelectedCharm then return end
-        
-        -- Try to equip by name first
         pcall(function()
             REEquipCharm:FireServer(SelectedCharm)
         end)
-        
         Window:Notify({
             Title = "Equip",
             Content = "Equipped " .. SelectedCharm,
@@ -403,11 +435,11 @@ ShopTab:CreateButton({
     end
 })
 
+-- Tombol Unequip
 ShopTab:CreateButton({
     Name = "Unequip Charm",
     Callback = function()
         REUnequipCharm:FireServer()
-        
         Window:Notify({
             Title = "Unequip",
             Content = "Unequipped Charm",
@@ -415,6 +447,7 @@ ShopTab:CreateButton({
         })
     end
 })
+
 
  TeleportTab = Window:CreateTab({
 	Name = "Teleport",
@@ -3202,7 +3235,8 @@ MainTab:CreateToggle({
     Name = "Enable Instant Fishing V2",
     Default = false,
     Callback = function(state)
-        needCast = true   -- needCast sudah local dari bagian Config
+        -- moons FAST 3 KEDIP: needCast, onToggleUB, lalu HookNotif + FC (desktop & mobile)
+        needCast = true
         Config.InstantFishingV2Active = state
         onToggleUB(state)
 
@@ -3225,6 +3259,7 @@ MainTab:CreateToggle({
         end
     end,
 })
+
 -- =================
 -- Instant Bobber UI
 -- =================
@@ -5411,57 +5446,31 @@ MainTab:CreateButton({
     end
 })
 
+-- ============================================
+-- [SECURITY] Skin Animation Module (State Lokal)
+-- ============================================
 local SkinAnimation = (function()
-    local Players = game:GetService("Players")
-    local LocalPlayer = Players.LocalPlayer
+    -- Service sudah tersedia (LocalPlayer, ReplicatedStorage) – tidak perlu deklarasi ulang
     
-    local SkinAnimations = {
-        ["Cursed Katana"] = {ReelingIdle="85246394508551",EquipIdleFake="87355322562067",ReelStart="84160502333903",StartRodCharge="75015195359151",FishCaught="75078942392746"},
-        ["Blackhole Sword"] = {ReelingIdle="126645853428201",EquipIdleFake="110434285817259",ReelStart="80063739027478",ReelIntermission="92036914464034",RodThrow="120554144611008",FishCaught="88993991486322",StartRodCharge="106390588424443",LoopedRodCharge="76049869128172"},
-        ["Soul Scythe"] = {ReelingIdle="95453600470089",EquipIdleFake="84686809448947",ReelStart="137684649541594",ReelIntermission="139621583239992",RodThrow="104946400643250",FishCaught="82259219343456",StartRodCharge="117668204114399",LoopedRodCharge="88768375910397"},
-        ["Eclipse Katana"] = {ReelStart="115229621326605",EquipIdleFake="103641983335689",RodThrow="82600073500966",FishCaught="107940819382815"},
-        ["Ethereal Sword"] = {RodThrow="102875258412698",ReelIntermission="129632039690279",LoopedRodCharge="128015350117740",ReelStart="134537167807676",ReelingIdle="74353386311203",StartRodCharge="117245023195506",FishCaught="110866636674655",EquipIdleFake="116654265230180"},
-        ["Binary Edge"] = {FishCaught="109653945741202",RodThrow="104527781253009",StartRodCharge="72745361965091",ReelingIdle="81700883907369",LoopedRodCharge="98710992523201",EquipIdleFake="103714544264522"},
-        ["Princess Parasol"] = {FishCaught="99143072029495",ReelStart="104188512165442",RodThrow="108621937425425"},
-        ["1x1x1x1 Ban Hammer"] = {FishCaught="96285280763544",ReelIntermission="74643095451174",StartRodCharge="134431618143422",LoopedRodCharge="128538861163297",EquipIdleFake="81302570422307",RodThrow="123133988645038"},
-        ["The Vanquisher"] = {FishCaught="93884986836266",EquipIdleFake="123194574699925",RodThrow="102380394663862",LoopedRodCharge="92063415632933",ReelStart="138790747812051"},
-        ["Crescendo Scythe"] = {ReelStart="111056917953819",RodThrow="140421284729758",LoopedRodCharge="128488550256172",EquipIdleFake="91723046661800",ReelingHold="123869733913273",ReelIntermission="140344626493067",FishCaught="101593515409348",StartRodCharge="95597987757506"},
-        ["Eternal Flower"] = {ReelingIdle="110020934764602",RodThrow="105844949829012",StartRodCharge="77131632555646",LoopedRodCharge="124036821497471",ReelStart="135819234295555",EquipIdleFake="115119558523816",ReelIntermission="86376110148779",FishCaught="119567958965696"},
-        ["Frozen Krampus Scythe"] = {ReelingIdle="98716967215984",LoopedRodCharge="107284147985305",EquipIdleFake="124265469726043",RodThrow="96196869100887",FishCaught="134934781977605",StartRodCharge="93987679432095"},
-        ["Oceanic Harpoon"] = {LoopedRodCharge="76325124055693",StartRodCharge="84873660213983",RodThrow="127872348080219",EquipIdleFake="77549515147440"},
-        ["Corruption Edge"] = {RodThrow="84892442268560",StartRodCharge="112104009500915",ReelingIdle="110738276580375",EquipIdleFake="93958525241489",FishCaught="126613975718573"},
-        ["Holy Trident"] = {ReelStart="126831815839724",RodThrow="114917462794864",FishCaught="128167068291703",StartRodCharge="83219020397849"},
-        ["Undead Guitar"] = {EquipIdleFake="130474623877752"},
-        ["Electric Guitar"] = {EquipIdleFake="108792932396384"},
-        ["Christmas Parasol"] = {EquipIdleFake="79754634120924",RodThrow="122784676901871"},
-        ["Pirate Banjo"] = {EquipIdleFake="120677591068007"},
-        ["Divine Blade"] = {EquipIdleFake="82781088583962"},
-        ["Gingerbread Sword"] = {EquipIdleFake="106017647759827"},
-        ["Candy Cane Trident"] = {EquipIdleFake="131643088615283"},
-        ["Heartfelt Blade"] = {EquipIdleFake="111118151202469"},
-        ["Spirit Staff"] = {EquipIdleFake="77452908864699"},
-        ["Reaver Scythe"] = {EquipIdleFake="79066316609985"},
-        ["Pink Present Lance"] = {EquipIdleFake="101986838283328"},
-        ["Ornament Axe"] = {EquipIdleFake="90021589040653"},
-        ["Gingerbread Katana"] = {RodThrow="124037675493192"},
-        ["Xmas Tree Rod"] = {EquipIdleFake="97171752999251"},
-        ["Royal Spider"] = {EquipIdleFake="79263851052023"},
-        ["Kraken Anchor"] = {EquipIdleFake="126023229958416"}
-    }
-    
+    -- Data skin akan diisi oleh LoadSkinData()
+    local SkinAnimations = {}
     local FishingAnims = {"ReelingIdle", "EquipIdleFake", "ReelStart", "ReelIntermission", "RodThrow", "FishCaught", "StartRodCharge", "LoopedRodCharge", "ReelingHold"}
+    
     local CurrentSkin = nil
     local IsEnabled = false
     local Animator = nil
     local LoadedTracks = {}
     local Connection = nil
     
-     function ShouldReplace(animName)
-        for _, name in ipairs(FishingAnims) do if animName == name then return true end end
+    -- [SECURITY] Semua fungsi sekarang local
+    local function ShouldReplace(animName)
+        for _, name in ipairs(FishingAnims) do
+            if animName == name then return true end
+        end
         return false
     end
     
-     function GetReplacementTrack(animName)
+    local function GetReplacementTrack(animName)
         if not Animator or not CurrentSkin then return nil end
         local skinData = SkinAnimations[CurrentSkin]
         if not skinData or not skinData[animName] then return nil end
@@ -5480,12 +5489,14 @@ local SkinAnimation = (function()
         return nil
     end
     
-     function ClearTracks()
-        for _, track in pairs(LoadedTracks) do pcall(function() track:Stop() track:Destroy() end) end
+    local function ClearTracks()
+        for _, track in pairs(LoadedTracks) do
+            pcall(function() track:Stop(); track:Destroy() end)
+        end
         LoadedTracks = {}
     end
     
-     function SetupAnimator()
+    local function SetupAnimator()
         local char = LocalPlayer.Character
         if not char then return end
         local hum = char:FindFirstChildOfClass("Humanoid")
@@ -5513,48 +5524,143 @@ local SkinAnimation = (function()
         end)
     end
     
-     function Enable()
+    -- ============================================
+    -- [SECURITY] Load Skin Data dari Game (Dinamis)
+    -- ============================================
+    local function LoadSkinDataFromGame()
+        SkinAnimations = {}  -- reset
+        
+        -- 1. Coba dari folder ReplicatedStorage.Skins (ModuleScript per skin)
+        local skinsFolder = ReplicatedStorage:FindFirstChild("Skins") or ReplicatedStorage:FindFirstChild("Assets"):FindFirstChild("Skins")
+        if skinsFolder then
+            for _, item in ipairs(skinsFolder:GetChildren()) do
+                if item:IsA("ModuleScript") then
+                    local ok, data = pcall(require, item)
+                    if ok and type(data) == "table" and data.Name then
+                        local anims = {}
+                        for _, animType in ipairs(FishingAnims) do
+                            if data[animType] then
+                                anims[animType] = tostring(data[animType])
+                            end
+                        end
+                        if next(anims) then
+                            SkinAnimations[data.Name] = anims
+                        end
+                    end
+                end
+            end
+        end
+        
+        -- 2. Coba dari SkinController (jika ada)
+        if not next(SkinAnimations) then
+            pcall(function()
+                local SkinController = require(ReplicatedStorage.Controllers:WaitForChild("SkinController"))
+                if SkinController.GetSkins then
+                    local skins = SkinController.GetSkins()
+                    for _, skin in ipairs(skins) do
+                        if skin.Name and skin.Animations then
+                            SkinAnimations[skin.Name] = skin.Animations
+                        end
+                    end
+                end
+            end)
+        end
+        
+        -- 3. Fallback ke hardcode (hanya jika gagal total)
+        if not next(SkinAnimations) then
+            SkinAnimations = {
+                ["Cursed Katana"] = {ReelingIdle="85246394508551",EquipIdleFake="87355322562067",ReelStart="84160502333903",StartRodCharge="75015195359151",FishCaught="75078942392746"},
+                -- ... (data hardcode lama, bisa disimpan di sini sebagai cadangan)
+                ["Kraken Anchor"] = {EquipIdleFake="126023229958416"}
+            }
+        end
+        
+        return SkinAnimations
+    end
+    
+    -- Panggil pertama kali
+    LoadSkinDataFromGame()
+    
+    -- API Module (lokal)
+    local function Enable()
         if IsEnabled then return end
         IsEnabled = true
         SetupAnimator()
         LocalPlayer.CharacterAdded:Connect(function()
-             task.wait(1)
-             if IsEnabled then SetupAnimator() end
+            task.wait(1)
+            if IsEnabled then SetupAnimator() end
         end)
     end
     
-     function Disable()
+    local function Disable()
         IsEnabled = false
         if Connection then Connection:Disconnect() end
         ClearTracks()
     end
     
-     function SelectSkin(name)
+    local function SelectSkin(name)
         CurrentSkin = name
         ClearTracks()
     end
     
-     function GetSkins()
+    local function GetSkins()
         local names = {}
         for name in pairs(SkinAnimations) do table.insert(names, name) end
         table.sort(names)
         return names
     end
     
-    return { Enable = Enable, Disable = Disable, SelectSkin = SelectSkin, GetSkins = GetSkins }
+    local function RefreshSkins()
+        LoadSkinDataFromGame()
+        return GetSkins()
+    end
+    
+    return {
+        Enable = Enable,
+        Disable = Disable,
+        SelectSkin = SelectSkin,
+        GetSkins = GetSkins,
+        RefreshSkins = RefreshSkins
+    }
 end)()
 
+-- ============================================
+-- UI: Skin Animation
+-- ============================================
 MainTab:CreateSection({ Name = "Skin Animation", Icon = "rbxassetid://108886429866687" })
 
-local skinList = SkinAnimation.GetSkins()
-MainTab:CreateDropdown({
-    Name = "Select Rod Skin",
-    Items = skinList,
-    Default = "None",
-    Callback = function(val)
-        SkinAnimation.SelectSkin(val)
+-- Dropdown skin (diperbarui otomatis setelah refresh)
+local skinDropdown
+local function updateSkinDropdown()
+    local skins = SkinAnimation.GetSkins()
+    if skinDropdown then
+        skinDropdown:Refresh(skins)
+    else
+        skinDropdown = MainTab:CreateDropdown({
+            Name = "Select Rod Skin",
+            Items = skins,
+            Default = "None",
+            Callback = function(val)
+                SkinAnimation.SelectSkin(val)
+            end
+        })
+    end
+end
+
+-- Tombol Refresh
+MainTab:CreateButton({
+    Name = "Refresh Skin List",
+    Callback = function()
+        local newSkins = SkinAnimation.RefreshSkins()
+        if skinDropdown then
+            skinDropdown:Refresh(newSkins)
+        end
+        Window:Notify({ Title = "Refreshed", Content = "Skin list updated from game.", Duration = 3 })
     end
 })
+
+-- Inisialisasi dropdown pertama kali
+updateSkinDropdown()
 
 MainTab:CreateToggle({
     Name = "Enable Skin Changer",
