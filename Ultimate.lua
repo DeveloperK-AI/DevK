@@ -1,79 +1,37 @@
 
-    -- ============================================
--- [SECURITY] Inisialisasi awal: Service & Deteksi Remote
--- ============================================
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local netFolder = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net
-local netChildren = netFolder:GetChildren()
+    ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local netFolder = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net
+    local netChildren = netFolder:GetChildren()
 
-local function isHex(name)
-    local stripped = name:gsub("^R[FE]/", "")
-    return #stripped > 16 and stripped:match("^%x+$") ~= nil
-end
+    -- Deteksi nama hex hash (bukan nama plain)
+    function isHex(name)
+        local stripped = name:gsub("^R[FE]/", "")
+        return #stripped > 16 and stripped:match("^%x+$") ~= nil
+    end
 
-local remoteMap = {}
-for i, child in ipairs(netChildren) do
-    if not isHex(child.Name) then
-        local next = netChildren[i + 1]
-        if next and isHex(next.Name) then
-            local key = child.Name:gsub("^R[FE]/", "")
-            remoteMap[key] = next
+    -- Build map: "ChargeFishingRod" -> actual hashed Instance
+    local remoteMap = {}
+    for i, child in ipairs(netChildren) do
+        if not isHex(child.Name) then
+            local next = netChildren[i + 1]
+            if next and isHex(next.Name) then
+                local key = child.Name:gsub("^R[FE]/", "")
+                remoteMap[key] = next
+            end
         end
     end
-end
 
-local function RF(name) return remoteMap[name] end
-local function RE(name) return remoteMap[name] end
+function RF(name) return remoteMap[name] end
+function RE(name) return remoteMap[name] end
 
--- ============================================
--- [SECURITY] DataStore Terenkripsi (pengganti _G.SavedData)
--- ============================================
-local DataStore = {}
-local DataEncryptionKey = "MySecretDataKey123"  -- Ganti dengan string acak panjang
+-- Amblatant support: cached remote data & local event re-fire
+_G.SavedData = _G.SavedData or {
+    FishCaught = {},
+    CaughtVisual = {},
+    FishNotif = {}
+}
 
-local function encryptData(data)
-    local json = game:GetService("HttpService"):JSONEncode(data)
-    local result = {}
-    for i = 1, #json do
-        local byte = string.byte(json, i)
-        local keyByte = string.byte(DataEncryptionKey, (i % #DataEncryptionKey) + 1)
-        table.insert(result, string.char(bit32.bxor(byte, keyByte)))
-    end
-    return table.concat(result)
-end
-
-local function decryptData(encrypted)
-    local result = {}
-    for i = 1, #encrypted do
-        local byte = string.byte(encrypted, i)
-        local keyByte = string.byte(DataEncryptionKey, (i % #DataEncryptionKey) + 1)
-        table.insert(result, string.char(bit32.bxor(byte, keyByte)))
-    end
-    local ok, data = pcall(function()
-        return game:GetService("HttpService"):JSONDecode(table.concat(result))
-    end)
-    return ok and data or nil
-end
-
--- Inisialisasi default terenkripsi
-DataStore["FishCaught"]   = encryptData({})
-DataStore["CaughtVisual"] = encryptData({})
-DataStore["FishNotif"]    = encryptData({})
-
--- API internal (hanya untuk digunakan oleh fungsi di bawah)
-local function SetSavedData(key, value)
-    DataStore[key] = encryptData(value)
-end
-
-local function GetSavedData(key)
-    local enc = DataStore[key]
-    return enc and decryptData(enc)
-end
-
--- ============================================
--- [SECURITY] Event Re-Fire yang Terkontrol
--- ============================================
-local function FireLocalEvent(remote, ...)
+function FireLocalEvent(remote, ...)
     if not remote or not remote.OnClientEvent then return end
     local args = {...}
     local signal = remote.OnClientEvent
@@ -88,92 +46,85 @@ local function FireLocalEvent(remote, ...)
     end
 end
 
--- ============================================
--- [SECURITY] Semua remote sebagai LOCAL
--- ============================================
-local BuyRod              = RF("PurchaseFishingRod")
-local BuyBait             = RF("PurchaseBait")
-local BuyCharm            = RF("PurchaseCharm")
-local REFishDone          = RF("CatchFishCompleted")
-local REFishDoneRE        = RE("CatchFishCompleted")
-local BuyWeather          = RF("PurchaseWeatherEvent")
-local ChargeRod           = RF("ChargeFishingRod")
-local StartMini           = RF("RequestFishingMinigameStarted")
-local UpdateRadar         = RF("UpdateFishingRadar")
-local Cancel              = RF("CancelFishingInputs")
-local SellItem            = RF("SellAllItems")
-local AutoEnabled         = RF("UpdateAutoFishingState")
-local BuyMarket           = RF("PurchaseMarketItem")
-local InitiateTrade       = RF("InitiateTrade")
-local RFAwaitTradeResponse = RF("AwaitTradeResponse")
-local EquipOxygen         = RF("EquipOxygenTank")
-local UnequipOxygen       = RF("UnequipOxygenTank")
-local ConsumeCrystal      = RF("ConsumeCaveCrystal")
-local ConsumePotion       = RF("ConsumePotion")
-local threselod           = RF("UpdateAutoSellThreshold")
-local dialogevent         = RF("SpecialDialogueEvent")
-
-local RECutscene          = RE("ReplicateCutscene")
-local REStop              = RE("StopCutscene")
-local REFav               = RE("FavoriteItem")
-local REFavChg            = RE("FavoriteStateChanged")
-local REFishGot           = RE("FishCaught")
-local RENotify            = RE("TextNotification")
-local REEquip             = RE("EquipToolFromHotbar")
-local REEquipItem         = RE("EquipItem")
-local REAltar             = RE("ActivateEnchantingAltar")
-local REAltar2            = RE("ActivateSecondEnchantingAltar")
-local REPlayFishEffect    = RE("PlayFishingEffect")
-local RETextEffect        = RE("ReplicateTextEffect")
-local Totem               = RE("SpawnTotem")
-local FishingMinigameChanged = RE("FishingMinigameChanged")
-local FishingStopped      = RE("FishingStopped")
-local REEvReward          = RE("ClaimEventReward")
-local REEquipCharm        = RE("EquipCharm")
-local REUnequipCharm      = RE("UnequipCharm")
-local BaitSpawned         = RE("BaitSpawned")
-local BaitDestroyed       = RE("BaitDestroyed")
-local PirateChest         = RE("ClaimPirateChest")
-local GainMaze            = RE("GainAccessToMaze")
-local PlaceLever          = RE("PlaceLeverItem")
-local REDialogueEnded      = RE("DialogueEnded")
-local RFCreateTranscendedStone = RF("CreateTranscendedStone")
-local EquipBait           = RE("EquipBait")
-
--- ============================================
--- [SECURITY] Hook & Save Counter (local)
--- ============================================
 local saveCount = 0
-local MAX_SAVES = 7
 
-local function GetServerRemote(humanName)
+function GetServerRemote(humanName)
     local key = humanName:gsub("^R[FE]/", "")
     return remoteMap[key]
 end
 
 function HookRemote(humanName, storageKey)
     local remote = GetServerRemote(humanName)
-    if not remote then return false end
-
-    remote.OnClientEvent:Connect(function(...)
-        if saveCount >= MAX_SAVES then return end
-
-        local args = {...}
-        SetSavedData(storageKey, args)   -- sekarang aman & terenkripsi
-
-        if storageKey == "CaughtVisual" then
-            local lp = game:GetService("Players").LocalPlayer
-            if lp and tostring(args[1]) == lp.Name then
-                saveCount = saveCount + 1
+    if remote then
+        remote.OnClientEvent:Connect(function(...)
+            if saveCount < 7 then
+                _G.SavedData[storageKey] = {...}
+                local args = {...}
+                if storageKey == "CaughtVisual" then
+                    local lp = game:GetService("Players").LocalPlayer
+                    local myName = lp and lp.Name
+                    if myName and tostring(args[1]) == tostring(myName) then
+                        saveCount = saveCount + 1
+                    end
+                end
             end
-        end
-    end)
-    return true
+        end)
+        return true
+    end
+    return false
 end
--- ============================================
--- [SECURITY] Semua state sekarang LOCAL
--- ============================================
-local Config = {
+
+BuyRod              = RF("PurchaseFishingRod")
+BuyBait             = RF("PurchaseBait")
+BuyCharm            = RF("PurchaseCharm")
+REFishDone          = RF("CatchFishCompleted")
+REFishDoneRE        = RE("CatchFishCompleted")
+BuyWeather          = RF("PurchaseWeatherEvent")
+ChargeRod           = RF("ChargeFishingRod")
+StartMini           = RF("RequestFishingMinigameStarted")
+UpdateRadar         = RF("UpdateFishingRadar")
+Cancel              = RF("CancelFishingInputs")
+SellItem            = RF("SellAllItems")
+AutoEnabled         = RF("UpdateAutoFishingState")
+BuyMarket           = RF("PurchaseMarketItem")
+InitiateTrade       = RF("InitiateTrade")
+RFAwaitTradeResponse = RF("AwaitTradeResponse")
+EquipOxygen         = RF("EquipOxygenTank")
+UnequipOxygen       = RF("UnequipOxygenTank")
+ConsumeCrystal      = RF("ConsumeCaveCrystal")
+ConsumePotion       = RF("ConsumePotion")
+threselod           = RF("UpdateAutoSellThreshold")
+dialogevent         = RF("SpecialDialogueEvent")
+
+RECutscene          = RE("ReplicateCutscene")
+REStop              = RE("StopCutscene")
+REFav               = RE("FavoriteItem")
+REFavChg            = RE("FavoriteStateChanged")
+REFishGot           = RE("FishCaught")
+RENotify            = RE("TextNotification")
+REEquip             = RE("EquipToolFromHotbar")
+REEquipItem         = RE("EquipItem")
+REAltar             = RE("ActivateEnchantingAltar")
+REAltar2            = RE("ActivateSecondEnchantingAltar")
+REPlayFishEffect    = RE("PlayFishingEffect")
+RETextEffect        = RE("ReplicateTextEffect")
+Totem               = RE("SpawnTotem")
+FishingMinigameChanged = RE("FishingMinigameChanged")
+FishingStopped      = RE("FishingStopped")
+REEvReward          = RE("ClaimEventReward")
+REEquipCharm        = RE("EquipCharm")
+REUnequipCharm      = RE("UnequipCharm")
+BaitSpawned         = RE("BaitSpawned")
+BaitDestroyed       = RE("BaitDestroyed")
+PirateChest         = RE("ClaimPirateChest")
+GainMaze            = RE("GainAccessToMaze")
+PlaceLever          = RE("PlaceLeverItem")
+REDialogueEnded      = RE("DialogueEnded")
+RFCreateTranscendedStone = RF("CreateTranscendedStone")
+EquipBait           = RE("EquipBait")
+
+-- moons.lua: Config / Events / Tasks / needCast / skip / blatantFishCycleCount (FAST 3 KEDIP & UB)
+Config = {
     HookNotif = false,
     InstantFishingV2Active = false,
     isMinig = false,
@@ -188,13 +139,13 @@ local Config = {
         Stats = { castCount = 0, startTime = 0 },
     },
 }
-local Tasks = {}
-local blatantFishCycleCount = 0
-local needCast = false
-local skip = false
-local Events = {}
+Tasks = {}
+blatantFishCycleCount = 0
+needCast = false
+skip = false
+Events = {}
 
-local function safeFire(func)
+function safeFire(func)
     task.spawn(function()
         pcall(func)
     end)
@@ -346,49 +297,82 @@ InfoTab:CreateParagraph({
 
 ShopTab:CreateSection({ Name = "Charms Shop" })
 
- SelectedCharm = "Bone Charm"
- CharmIDs = {}
+-- [SECURITY] Semua variabel lokal
+local SelectedCharm = nil
+local CharmIDs = {}       -- map nama charm -> ID
+local PurchaseQuantity = 1
 
- local function loadCharms()
-    local success, charms_module = pcall(function()
+-- Fungsi untuk memuat daftar charm dari game (tanpa fallback manual)
+local function loadCharms()
+    local charmNames = {}
+    CharmIDs = {}
+
+    local success, charmsModule = pcall(function()
         return require(game:GetService("ReplicatedStorage"):WaitForChild("Charms", 5))
     end)
-    
-    local charm_names = {}
-    if success and type(charms_module) == "table" then
-        for _, charm in pairs(charms_module) do
+
+    if success and type(charmsModule) == "table" then
+        for _, charm in pairs(charmsModule) do
             if charm.Data and charm.Data.Name and charm.Data.Id then
-                CharmIDs[charm.Data.Name] = charm.Data.Id
-                table.insert(charm_names, charm.Data.Name)
+                local name = tostring(charm.Data.Name)
+                local id = tonumber(charm.Data.Id)
+                if name and id then
+                    CharmIDs[name] = id
+                    table.insert(charmNames, name)
+                end
             end
         end
+        table.sort(charmNames)
+    else
+        Window:Notify({
+            Title = "Load Failed",
+            Content = "Could not load charms from game. Press 'Refresh' to try again.",
+            Duration = 5
+        })
     end
-    table.sort(charm_names)
-    return charm_names
- end
 
- local charmItems = loadCharms()
- if #charmItems == 0 then
-    charmItems = {"Bone Charm", "Algae Charm", "Magma Charm", "Clover Charm", "Heart Charm"}
-    CharmIDs = {
-        ["Bone Charm"] = 1,
-        ["Algae Charm"] = 2,
-        ["Magma Charm"] = 3,
-        ["Clover Charm"] = 4,
-        ["Heart Charm"] = 14,
-    }
- end
+    return charmNames
+end
 
- local charmDropdown = ShopTab:CreateDropdown({
+-- Dropdown charm (akan diisi ulang oleh fungsi update)
+local charmDropdown = ShopTab:CreateDropdown({
     Name = "Select Charm",
-    Items = charmItems,
-    Default = charmItems[1] or "Bone Charm",
+    Items = {},  -- kosong dulu, diisi setelah load
+    Default = nil,
     Callback = function(val)
         SelectedCharm = val
     end
 })
 
- PurchaseQuantity = 1
+-- Fungsi untuk memperbarui dropdown dengan daftar charm terbaru
+local function refreshCharmDropdown()
+    local charmItems = loadCharms()
+    if #charmItems > 0 then
+        charmDropdown:Refresh(charmItems)  -- Refresh() sudah ada di library dropdown
+        if not SelectedCharm or not CharmIDs[SelectedCharm] then
+            SelectedCharm = charmItems[1]
+            charmDropdown:Set(SelectedCharm)
+        end
+    end
+end
+
+-- Tombol Refresh (selalu tampil, untuk memuat ulang charm)
+ShopTab:CreateButton({
+    Name = "Refresh Charm List",
+    Callback = function()
+        refreshCharmDropdown()
+        Window:Notify({
+            Title = "Refreshed",
+            Content = "Charm list updated from game.",
+            Duration = 2
+        })
+    end
+})
+
+-- Panggil pertama kali
+refreshCharmDropdown()
+
+-- Input quantity
 ShopTab:CreateInput({
     Name = "Quantity",
     PlaceholderText = "1",
@@ -399,29 +383,30 @@ ShopTab:CreateInput({
     end
 })
 
+-- Tombol Purchase
 ShopTab:CreateButton({
     Name = "Purchase Charm",
     Callback = function()
-        local id = CharmIDs[SelectedCharm]
-        if not id then 
-            Window:Notify({
-                Title = "Error",
-                Content = "Charm ID not found for " .. tostring(SelectedCharm),
-                Duration = 3
-            })
-            return 
+        if not SelectedCharm then
+            Window:Notify({ Title = "Error", Content = "No charm selected.", Duration = 3 })
+            return
         end
-        
+        local id = CharmIDs[SelectedCharm]
+        if not id then
+            Window:Notify({ Title = "Error", Content = "Charm ID not found.", Duration = 3 })
+            return
+        end
+
         Window:Notify({
             Title = "Purchase",
             Content = "Buying " .. PurchaseQuantity .. " " .. SelectedCharm .. "...",
             Duration = 2
         })
-        
+
         task.spawn(function()
             for i = 1, PurchaseQuantity do
                 pcall(function()
-                    CallRemoteServer(BuyCharm, id)
+                    CallRemoteServer(BuyCharm, id)  -- BuyCharm sudah local dari perbaikan sebelumnya
                 end)
                 task.wait(0.1)
             end
@@ -434,16 +419,14 @@ ShopTab:CreateButton({
     end
 })
 
+-- Tombol Equip
 ShopTab:CreateButton({
     Name = "Equip Charm",
     Callback = function()
         if not SelectedCharm then return end
-        
-        -- Try to equip by name first
         pcall(function()
             REEquipCharm:FireServer(SelectedCharm)
         end)
-        
         Window:Notify({
             Title = "Equip",
             Content = "Equipped " .. SelectedCharm,
@@ -452,11 +435,11 @@ ShopTab:CreateButton({
     end
 })
 
+-- Tombol Unequip
 ShopTab:CreateButton({
     Name = "Unequip Charm",
     Callback = function()
         REUnequipCharm:FireServer()
-        
         Window:Notify({
             Title = "Unequip",
             Content = "Unequipped Charm",
@@ -464,6 +447,7 @@ ShopTab:CreateButton({
         })
     end
 })
+
 
  TeleportTab = Window:CreateTab({
 	Name = "Teleport",
