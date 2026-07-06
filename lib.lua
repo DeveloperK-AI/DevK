@@ -122,14 +122,14 @@ end
 -- THEME & ICONS
 -- ============================================
 local Theme = {
-    Background      = Color3.fromRGB(10,  12,  25),
-    Sidebar         = Color3.fromRGB(15,  18,  32),
-    ElementBackground = Color3.fromRGB(25, 30,  50),
-    TextColor       = Color3.fromRGB(255, 255, 255),
-    TextSecondary   = Color3.fromRGB(180, 200, 230),
-    Accent          = Color3.fromRGB(0,   140, 210),
-    Hover           = Color3.fromRGB(35,  45,  70),
-    Outline         = Color3.fromRGB(40,  60,  90),
+    Background         = Color3.fromRGB(10, 25, 22),   -- latar gelap kehijauan
+    Sidebar            = Color3.fromRGB(15, 32, 28),   -- sidebar sedikit lebih terang
+    ElementBackground  = Color3.fromRGB(25, 45, 40),   -- elemen UI (tombol, toggle, dll.)
+    TextColor          = Color3.fromRGB(220, 255, 240), -- teks utama (putih kehijauan)
+    TextSecondary      = Color3.fromRGB(160, 220, 200), -- teks sekunder
+    Accent             = Color3.fromRGB(0, 245, 160),  -- #00F5A0 (hijau toska neon)
+    Hover              = Color3.fromRGB(35, 65, 55),   -- efek hover
+    Outline            = Color3.fromRGB(40, 80, 70),   -- garis tepi elemen
 }
 
 local Icons: { [string]: string } = {
@@ -466,7 +466,7 @@ function DevLib:CreateWindow(options: { Name: string?, Intro: boolean? }?)
         BackgroundTransparency = 1,
         Position              = UDim2.new(0, 10, 0, 5),
         Size                  = UDim2.new(0, 25, 0, 25),
-        Image                 = "rbxassetid://112067161065104",
+        Image                 = "rbxassetid://109252221433578",
         ImageColor3           = Theme.Accent,
         ZIndex                = 2,
     })
@@ -811,7 +811,7 @@ function DevLib:CreateWindow(options: { Name: string?, Intro: boolean? }?)
         local title    = sanitizeOptionalText(o.Title or o.Name or "Notification")
         local content  = sanitizeOptionalText(o.Content or "Message")
         local duration = o.Duration or 3
-        local img      = o.Image or o.Icon or "rbxassetid://112067161065104"
+        local img      = o.Image or o.Icon or "rbxassetid://109252221433578"
         if Icons[img] then img = Icons[img] end
 
         local NotifyFrame = Create("Frame", {
