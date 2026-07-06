@@ -9104,9 +9104,71 @@ end
 
 SettingsTab:CreateSection({ Name = "Anti AFK", Icon = "rbxassetid://7733658504" })
 
+-- ============================================
 -- [SECURITY] State lokal untuk Anti AFK
-local AntiAFKEnabled = true  -- default sesuai UI
+-- ============================================
+local AntiAFKEnabled = true  -- sesuai default UI
 
+-- Simpan daftar koneksi yang telah dimanipulasi agar bisa dikembalikan
+local AFKConnections = {}
+local AFKConnectionMonitor = nil  -- untuk mendeteksi koneksi baru setelah respawn
+
+-- ============================================
+-- Fungsi inti: Nonaktifkan atau aktifkan ulang semua koneksi Idled
+-- ============================================
+local function setAFKConnections(disable)
+    local GC = getconnections or get_signal_cons
+    if not GC then
+        warn("[Anti AFK] getconnections not available")
+        return false
+    end
+
+    local success = false
+    local idleSignal = LocalPlayer.Idled
+
+    -- Proses koneksi yang ada
+    for _, connection in next, GC(idleSignal) do
+        success = true
+        if disable then
+            connection:Disable()
+        else
+            connection:Enable()
+        end
+        -- Simpan untuk referensi nanti (hanya jika belum ada)
+        if not table.find(AFKConnections, connection) then
+            table.insert(AFKConnections, connection)
+        end
+    end
+
+    return success
+end
+
+-- ============================================
+-- Pemantau karakter: setiap respawn, terapkan ulang
+-- ============================================
+local function connectCharacterMonitor()
+    if AFKConnectionMonitor then
+        AFKConnectionMonitor:Disconnect()
+        AFKConnectionMonitor = nil
+    end
+
+    AFKConnectionMonitor = LocalPlayer.CharacterAdded:Connect(function()
+        if AntiAFKEnabled then
+            task.wait(0.5)  -- tunggu sinyal siap
+            setAFKConnections(true)
+        end
+    end)
+end
+
+-- Inisialisasi awal
+if AntiAFKEnabled then
+    setAFKConnections(true)
+    connectCharacterMonitor()
+end
+
+-- ============================================
+-- UI Toggle
+-- ============================================
 SettingsTab:CreateToggle({
     Name = "Anti AFK",
     Description = "Prevents you from being kicked for idling",
@@ -9114,106 +9176,148 @@ SettingsTab:CreateToggle({
     Default = true,
     Callback = function(value)
         AntiAFKEnabled = value
-        -- Gunakan fungsi executor yang tersedia
-        local GC = getconnections or get_signal_cons
-        if GC then
-            for _, v in next, GC(LocalPlayer.Idled) do
-                if value then
-                    v:Disable()
-                else
-                    v:Enable()
-                end
+        if value then
+            local success = setAFKConnections(true)
+            if success then
+                connectCharacterMonitor()
+                print("[Anti AFK] Activated")
+            else
+                -- Fallback: gunakan cara lain jika getconnections tidak ada
+                -- Beberapa executor bisa menggunakan setfflag atau Humanoid.Idle
+                pcall(function()
+                    local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                    if humanoid then
+                        -- Gunakan trik berbasis humanoid
+                        humanoid.Idle:Connect(function()
+                            -- Tidak melakukan apa-apa, mencegah idle
+                        end)
+                        print("[Anti AFK] Activated (Humanoid fallback)")
+                    end
+                end)
+                Window:Notify({
+                    Title = "Anti AFK",
+                    Content = "Activated (fallback mode)",
+                    Duration = 3
+                })
             end
+        else
+            setAFKConnections(false)  -- pulihkan koneksi
+            if AFKConnectionMonitor then
+                AFKConnectionMonitor:Disconnect()
+                AFKConnectionMonitor = nil
+            end
+            print("[Anti AFK] Deactivated")
         end
     end
 })
 
-SettingsTab:CreateSection({ Name = "Anti Staff", Icon = "rbxassetid://7734053535" })
+SettingsTab:CreateSection({ Name = "Anti Pengganggu", Icon = "rbxassetid://7734053535" })
 
 -- ============================================
--- ANTI STAFF SYSTEM (Group ID)
+-- [SECURITY] State lokal untuk Anti Pengganggu
 -- ============================================
-
+local antiPenggangguEnabled = false
+local antiPenggangguConnection = nil
 local FISH_GROUP_ID = 35102746
-_G.AntiStaffEnabled = false
-local AntiStaffConnection = nil
 
-function IsStaff(player)
+-- Fungsi aman untuk Server Hop (tanpa memerlukan _G atau global)
+local function ForceServerHop(reason)
+    if Window then
+        Window:Notify({
+            Title = "Server Hop",
+            Content = reason or "Hopping...",
+            Icon = "rbxassetid://7733920644",
+            Duration = 3
+        })
+    end
+    task.wait(0.5)
+    -- Gunakan TeleportService yang sudah lokal di file utama
+    local TeleportService = game:GetService("TeleportService")
+    local LocalPlayer = Players.LocalPlayer
+    pcall(function()
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+    end)
+end
+
+-- Cek apakah seorang player termasuk "pengganggu" (role selain Guest/Member)
+local function IsPengganggu(player)
     local ok, role = pcall(function()
         return player:GetRoleInGroup(FISH_GROUP_ID)
     end)
     if not ok then return false end
-    if role == "Guest" or role == "Member" then
-        return false
+    -- Hanya Guest dan Member yang tidak dianggap pengganggu, sisanya = pengganggu
+    return (role ~= "Guest" and role ~= "Member")
+end
+
+-- Fungsi utama untuk memeriksa semua pemain dan melakukan hop jika ada pengganggu
+local function CheckForPengganggu()
+    if not antiPenggangguEnabled then return end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and IsPengganggu(player) then
+            print("[Anti Pengganggu] Detected:", player.Name, "UserID:", player.UserId)
+            ForceServerHop("⚠️ Pengganggu terdeteksi: " .. player.Name)
+            break
+        end
     end
-    return true
 end
 
-function CheckForStaff()
-	if not _G.AntiStaffEnabled then return end
-	
-	for _, player in ipairs(Players:GetPlayers()) do
-		if player ~= Players.LocalPlayer and IsStaff(player) then
-			print("[Anti-Staff] Staff detected:", player.Name, "UserID:", player.UserId)
-			ServerHop("⚠️ Staff detected: " .. player.Name .. "\nServer hopping...", true) -- Force public
-			break
-		end
-	end
-end
-
-
+-- ============================================
+-- UI Toggle
+-- ============================================
 SettingsTab:CreateToggle({
-	Name = "Anti Staff",
-	Description = "Automatically server hop when staff members join",
-	Icon = "rbxassetid://7734053535",
-	Default = false,
-	Callback = function(value)
-		_G.AntiStaffEnabled = value
-		
-		if value then
-			Window:Notify({
-				Title = "Anti Staff Enabled",
-				Content = "Avoiding all staff except Members",
-				Icon = "rbxassetid://7734053535",
-				Duration = 3
-			})
-			
-			task.spawn(CheckForStaff)
-			
-			if AntiStaffConnection then
-				AntiStaffConnection:Disconnect()
-			end
-			
-			AntiStaffConnection = Players.PlayerAdded:Connect(function(player)
-				task.wait(0.5)
-				if player ~= Players.LocalPlayer and IsStaff(player) then
-					print("[Anti-Staff] Staff joined:", player.Name, "UserID:", player.UserId)
-					ServerHop("⚠️ Staff joined: " .. player.Name .. "\nServer hopping...", true)
-				end
-			end)
-			
-			task.spawn(function()
-				while _G.AntiStaffEnabled do
-					CheckForStaff()
-					task.wait(5)
-				end
-			end)
-		else
-			if AntiStaffConnection then
-				AntiStaffConnection:Disconnect()
-				AntiStaffConnection = nil
-			end
-			
-			Window:Notify({
-				Title = "Anti Staff Disabled",
-				Content = "No longer monitoring staff",
-				Icon = "rbxassetid://7734053535",
-				Duration = 2
-			})
-		end
-	end
-})
+    Name = "Anti Pengganggu",
+    Description = "Automatically server hop when non-Member joins",
+    Icon = "rbxassetid://7734053535",
+    Default = false,
+    Callback = function(value)
+        antiPenggangguEnabled = value
 
+        if value then
+            Window:Notify({
+                Title = "Anti Pengganggu Enabled",
+                Content = "Avoiding all except Guest/Member",
+                Icon = "rbxassetid://7734053535",
+                Duration = 3
+            })
+
+            -- Jalankan pengecekan awal
+            task.spawn(CheckForPengganggu)
+
+            -- Pasang koneksi PlayerAdded
+            if antiPenggangguConnection then
+                antiPenggangguConnection:Disconnect()
+            end
+            antiPenggangguConnection = Players.PlayerAdded:Connect(function(player)
+                task.wait(0.5)
+                if antiPenggangguEnabled and player ~= LocalPlayer and IsPengganggu(player) then
+                    print("[Anti Pengganggu] Joined:", player.Name, "UserID:", player.UserId)
+                    ForceServerHop("⚠️ Pengganggu joined: " .. player.Name)
+                end
+            end)
+
+            -- Loop pemantauan berkala
+            task.spawn(function()
+                while antiPenggangguEnabled do
+                    CheckForPengganggu()
+                    task.wait(5)
+                end
+            end)
+        else
+            -- Matikan
+            if antiPenggangguConnection then
+                antiPenggangguConnection:Disconnect()
+                antiPenggangguConnection = nil
+            end
+            Window:Notify({
+                Title = "Anti Pengganggu Disabled",
+                Content = "No longer monitoring",
+                Icon = "rbxassetid://7734053535",
+                Duration = 2
+            })
+        end
+    end
+})
 SettingsTab:CreateSection({ Name = "Server", Icon = "rbxassetid://7733955511" })
 
 -- [SECURITY] State lokal untuk Server
