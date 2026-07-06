@@ -9107,7 +9107,7 @@ SettingsTab:CreateSection({ Name = "Anti AFK", Icon = "rbxassetid://7733658504" 
 -- ============================================
 -- [SECURITY] State lokal untuk Anti AFK
 -- ============================================
-local AntiAFKEnabled = true  -- sesuai default UI
+local AntiAFKEnabled = false  -- sesuai default UI
 
 -- Simpan daftar koneksi yang telah dimanipulasi agar bisa dikembalikan
 local AFKConnections = {}
