@@ -9108,6 +9108,7 @@ SettingsTab:CreateSection({ Name = "Anti AFK", Icon = "rbxassetid://7733658504" 
 -- [SECURITY] State lokal untuk Anti AFK
 -- ============================================
 local AntiAFKEnabled = false  -- sesuai default UI
+local antiAFKInitialized = false
 
 -- Simpan daftar koneksi yang telah dimanipulasi agar bisa dikembalikan
 local AFKConnections = {}
@@ -9173,7 +9174,7 @@ SettingsTab:CreateToggle({
     Name = "Anti AFK",
     Description = "Prevents you from being kicked for idling",
     Icon = "rbxassetid://7733658504",
-    Default = true,
+    Default = false,
     Callback = function(value)
         AntiAFKEnabled = value
         if value then
