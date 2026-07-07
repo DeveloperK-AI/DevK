@@ -1,148 +1,337 @@
-if not getgenv().Config then
-    getgenv().Config = {
-    Headless = false,
-    
-    FakeDisplayName = "AmySchumer",
-    FakeName = "redmiint8",
-    FakeId = 13886182,
-}
-end
+-- ============================================
+-- [SECURITY] Disguise Module (Professional Refactor)
+-- ============================================
+local Disguise = (function()
+    -- Konfigurasi lokal (tidak lagi getgenv)
+    local Config = {
+        Headless = false,
+        FakeDisplayName = "AmySchumer",
+        FakeName = "redmiint8",
+        FakeId = 13886182,
+    }
 
-local players = game:GetService('Players')
+    -- API untuk mengubah konfigurasi dari UI
+    local function SetFakeDisplayName(name) Config.FakeDisplayName = tostring(name) end
+    local function SetFakeName(name) Config.FakeName = tostring(name) end
+    local function SetFakeId(id) Config.FakeId = tonumber(id) or Config.FakeId end
+    local function SetHeadless(enabled) Config.Headless = enabled and true or false end
 
-function disguisechar(char, id)
-	task.spawn(function()
-        print('called')
-		if not char then
-			return
-		end
-		local hum = char:FindFirstChildOfClass('Humanoid')
-		char:WaitForChild("Head")
-		local desc
-		if desc == nil then
-			local suc = false
-			repeat
-				suc = pcall(function()
-					desc = players:GetHumanoidDescriptionFromUserId(id)
-				end)
-				task.wait(1)
-			until suc
-		end
-		desc.HeightScale = hum:WaitForChild("HumanoidDescription").HeightScale
-		char.Archivable = true
-		local disguiseclone = char:Clone()
-		disguiseclone.Name = "disguisechar"
-		disguiseclone.Parent = workspace
-		for i, v in pairs(disguiseclone:GetChildren()) do
-			if v:IsA("Accessory") or v:IsA("ShirtGraphic") or v:IsA("Shirt") or v:IsA("Pants") then
-				v:Destroy()
-			end
-		end
-		disguiseclone.Humanoid:ApplyDescriptionClientServer(desc)
-		for i, v in pairs(char:GetChildren()) do
-			if (v:IsA("Accessory") and v:GetAttribute("InvItem") == nil and v:GetAttribute("ArmorSlot") == nil) or v:IsA("ShirtGraphic") or v:IsA("Shirt") or v:IsA("Pants") or v:IsA("BodyColors") then
-				v.Parent = game
-			end
-		end
-		char.ChildAdded:Connect(function(v)
-			if ((v:IsA("Accessory") and v:GetAttribute("InvItem") == nil and v:GetAttribute("ArmorSlot") == nil) or v:IsA("ShirtGraphic") or v:IsA("Shirt") or v:IsA("Pants") or v:IsA("BodyColors")) and v:GetAttribute("Disguise") == nil then
-				repeat
-					task.wait()
-					v.Parent = game
-				until v.Parent == game
-			end
-		end)
-		for i, v in pairs(disguiseclone:WaitForChild("Animate"):GetChildren()) do
-			v:SetAttribute("Disguise", true)
-			local real = char.Animate:FindFirstChild(v.Name)
-			if v:IsA("StringValue") and real then
-				real.Parent = game
-				v.Parent = char.Animate
-			end
-		end
-		for i, v in pairs(disguiseclone:GetChildren()) do
-			v:SetAttribute("Disguise", true)
-			if v:IsA("Accessory") then
-				for i2, v2 in pairs(v:GetDescendants()) do
-					if v2:IsA("Weld") and v2.Part1 then
-						v2.Part1 = char[v2.Part1.Name]
-					end
-				end
-				v.Parent = char
-			elseif v:IsA("ShirtGraphic") or v:IsA("Shirt") or v:IsA("Pants") or v:IsA("BodyColors") then
-				v.Parent = char
-			elseif v.Name == "Head" and v:FindFirstChildOfClass('SpecialMesh') then
-				char.Head:FindFirstChildOfClass('SpecialMesh').MeshId = v:FindFirstChildOfClass('SpecialMesh').MeshId
-			end
-		end
-		local localface = char:FindFirstChild("face", true)
-		local cloneface = disguiseclone:FindFirstChild("face", true)
-		if localface and cloneface then
-			localface.Parent = game
-			cloneface.Parent = char.Head
-		end
-		char.Humanoid.HumanoidDescription:SetEmotes(desc:GetEmotes())
-		char.Humanoid.HumanoidDescription:SetEquippedEmotes(desc:GetEquippedEmotes())
-		disguiseclone:Destroy()
-	end)
-end
+    -- State internal
+    local isEnabled = false
+    local disguiseConnection = nil
+    local headlessConnection = nil
+    local processedObjects = {}  -- untuk tracking objek yang sudah diproses
 
-lp = game:GetService("Players").LocalPlayer
-oldUserId = tostring(lp.UserId)
-oldName = lp.Name
-oldDisplayName = lp.DisplayName
-local function processtext(text)
-    if string.gsub(text,oldName,Config.FakeName) ~= text then
-        return string.gsub(text,oldName,Config.FakeName)
-    elseif string.gsub(text,oldUserId,Config.FakeId) ~= text then
-        return string.gsub(text,oldUserId,Config.FakeId)
-    elseif string.gsub(text,oldDisplayName,Config.FakeDisplayName) ~= text then
-        return string.gsub(text,oldDisplayName,Config.FakeDisplayName)
+    -- Fungsi untuk memproses teks (mengganti nama/id/display)
+    local function processText(text)
+        if type(text) ~= "string" then return text end
+        local newText = text
+        -- Ganti dengan nama palsu jika ditemukan data asli (disimpan saat modul diaktifkan)
+        if disguiseInfo then
+            newText = string.gsub(newText, disguiseInfo.oldName, Config.FakeName)
+            newText = string.gsub(newText, disguiseInfo.oldUserId, tostring(Config.FakeId))
+            newText = string.gsub(newText, disguiseInfo.oldDisplayName, Config.FakeDisplayName)
+        end
+        return newText
     end
-    if text ~= nil then
-        return text
-    end
-    return ''
-end
-for i,v in next, game:GetDescendants() do
-    if v:IsA("TextBox") or v:IsA("TextLabel") or v:IsA("TextButton") then
-        v.Text = processtext(v.Text)
-        v.Name = processtext(v.Name)
-        v.Changed:Connect(function(property)
-            v.Text = processtext(v.Text)
-            v.Name = processtext(v.Name)
+
+    -- Fungsi disguise karakter (dipanggil ulang saat respawn)
+    local function disguiseCharacter(char, id)
+        task.spawn(function()
+            pcall(function()
+                if not char or not char.Parent then return end
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if not hum then return end
+
+                -- Ambil deskripsi target dengan retry
+                local desc = nil
+                local attempts = 0
+                repeat
+                    attempts = attempts + 1
+                    pcall(function()
+                        desc = Players:GetHumanoidDescriptionFromUserId(id)
+                    end)
+                    if not desc then task.wait(0.5) end
+                until desc or attempts >= 10
+
+                if not desc then
+                    warn("[Disguise] Failed to get description for ID", id)
+                    return
+                end
+
+                -- Simpan tinggi badan asli
+                local humDesc = hum:FindFirstChildOfClass("HumanoidDescription")
+                if humDesc then
+                    desc.HeightScale = humDesc.HeightScale
+                end
+
+                -- Clone karakter untuk mengambil aset
+                char.Archivable = true
+                local disguiseClone = char:Clone()
+                disguiseClone.Name = "DisguiseTemp"
+                disguiseClone.Parent = workspace
+
+                -- Hapus aksesori lama dari clone (kita hanya butuh yang dari ID baru)
+                for _, item in ipairs(disguiseClone:GetChildren()) do
+                    if item:IsA("Accessory") or item:IsA("ShirtGraphic") or item:IsA("Shirt") or item:IsA("Pants") then
+                        item:Destroy()
+                    end
+                end
+
+                -- Terapkan deskripsi baru ke clone
+                disguiseClone.Humanoid:ApplyDescriptionClientServer(desc)
+
+                -- Hapus item tubuh asli (kecuali yang dari inventory/armor)
+                for _, item in ipairs(char:GetChildren()) do
+                    if (item:IsA("Accessory") and item:GetAttribute("InvItem") == nil and item:GetAttribute("ArmorSlot") == nil) or
+                       item:IsA("ShirtGraphic") or item:IsA("Shirt") or item:IsA("Pants") or item:IsA("BodyColors") then
+                        item.Parent = game
+                    end
+                end
+
+                -- Cegah item baru asli muncul
+                disguiseConnection = char.ChildAdded:Connect(function(item)
+                    if (item:IsA("Accessory") and item:GetAttribute("InvItem") == nil and item:GetAttribute("ArmorSlot") == nil) or
+                       item:IsA("ShirtGraphic") or item:IsA("Shirt") or item:IsA("Pants") or item:IsA("BodyColors") then
+                        if item:GetAttribute("Disguise") == nil then
+                            repeat task.wait() item.Parent = game until item.Parent == game
+                        end
+                    end
+                end)
+
+                -- Pindahkan animasi dari clone ke asli
+                if disguiseClone:FindFirstChild("Animate") then
+                    for _, animObj in ipairs(disguiseClone.Animate:GetChildren()) do
+                        animObj:SetAttribute("Disguise", true)
+                        local realAnim = char.Animate:FindFirstChild(animObj.Name)
+                        if animObj:IsA("StringValue") and realAnim then
+                            realAnim.Parent = game
+                            animObj.Parent = char.Animate
+                        end
+                    end
+                end
+
+                -- Pindahkan semua item dari clone ke karakter asli
+                for _, item in ipairs(disguiseClone:GetChildren()) do
+                    item:SetAttribute("Disguise", true)
+                    if item:IsA("Accessory") then
+                        -- Sambungkan weld ke bagian tubuh asli
+                        for _, weld in ipairs(item:GetDescendants()) do
+                            if weld:IsA("Weld") and weld.Part1 then
+                                local realPart = char:FindFirstChild(weld.Part1.Name)
+                                if realPart then weld.Part1 = realPart end
+                            end
+                        end
+                        item.Parent = char
+                    elseif item:IsA("ShirtGraphic") or item:IsA("Shirt") or item:IsA("Pants") or item:IsA("BodyColors") then
+                        item.Parent = char
+                    elseif item.Name == "Head" and item:FindFirstChildOfClass("SpecialMesh") then
+                        local mesh = char.Head:FindFirstChildOfClass("SpecialMesh")
+                        if mesh then mesh.MeshId = item:FindFirstChildOfClass("SpecialMesh").MeshId end
+                    end
+                end
+
+                -- Pindahkan wajah
+                local realFace = char:FindFirstChild("face", true)
+                local cloneFace = disguiseClone:FindFirstChild("face", true)
+                if realFace and cloneFace then
+                    realFace.Parent = game
+                    cloneFace.Parent = char.Head
+                end
+
+                -- Salin emote
+                local emotes = desc:GetEmotes()
+                local equippedEmotes = desc:GetEquippedEmotes()
+                if emotes then hum.HumanoidDescription:SetEmotes(emotes) end
+                if equippedEmotes then hum.HumanoidDescription:SetEquippedEmotes(equippedEmotes) end
+
+                disguiseClone:Destroy()
+            end)
         end)
     end
-end
-game.DescendantAdded:Connect(function(descendant)
-    if descendant:IsA("TextBox") or descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
-        descendant.Text = processtext(descendant.Text)
-        descendant.Name = processtext(descendant.Name)
-        descendant.Changed:Connect(function()
-            descendant.Text = processtext(descendant.Text)
-            descendant.Name = processtext(descendant.Name)
+
+    -- Info karakter asli (disimpan saat modul diaktifkan)
+    local disguiseInfo = nil
+
+    -- Fungsi untuk memproses semua teks di game (sekali jalan dan hook)
+    local function hookTextProcessing()
+        -- Proses semua objek teks yang ada
+        for _, obj in ipairs(game:GetDescendants()) do
+            if obj:IsA("TextBox") or obj:IsA("TextLabel") or obj:IsA("TextButton") then
+                if not processedObjects[obj] then
+                    processedObjects[obj] = true
+                    obj.Text = processText(obj.Text)
+                    obj.Name = processText(obj.Name)
+                    obj.Changed:Connect(function(prop)
+                        if prop == "Text" then
+                            obj.Text = processText(obj.Text)
+                        elseif prop == "Name" then
+                            obj.Name = processText(obj.Name)
+                        end
+                    end)
+                end
+            end
+        end
+
+        -- Hook objek baru
+        game.DescendantAdded:Connect(function(desc)
+            if desc:IsA("TextBox") or desc:IsA("TextLabel") or desc:IsA("TextButton") then
+                if not processedObjects[desc] then
+                    processedObjects[desc] = true
+                    desc.Text = processText(desc.Text)
+                    desc.Name = processText(desc.Name)
+                    desc.Changed:Connect(function(prop)
+                        if prop == "Text" then
+                            desc.Text = processText(desc.Text)
+                        elseif prop == "Name" then
+                            desc.Name = processText(desc.Name)
+                        end
+                    end)
+                end
+            end
         end)
     end
-end)
-lp.DisplayName = Config.FakeDisplayName
-lp.CharacterAppearanceId = Config.FakeId
 
-if Config.Headless == true then
-    task.spawn(function()
-   while wait() do
-        local char = lp.Character or lp.CharacterAdded:wait()
-        char:WaitForChild("Head").Transparency = 1
-        if char:WaitForChild("Head"):FindFirstChildOfClass("Decal") then
-            char.Head:FindFirstChildOfClass("Decal"):Destroy()
+    -- Aktifkan modul
+    local function Enable()
+        if isEnabled then return end
+        isEnabled = true
+
+        -- Simpan identitas asli
+        disguiseInfo = {
+            oldName = LocalPlayer.Name,
+            oldUserId = tostring(LocalPlayer.UserId),
+            oldDisplayName = LocalPlayer.DisplayName,
+        }
+
+        -- Ubah tampilan nama di leaderboard/dll
+        if Config.FakeDisplayName then
+            LocalPlayer.DisplayName = Config.FakeDisplayName
+        end
+        if Config.FakeId then
+            LocalPlayer.CharacterAppearanceId = Config.FakeId
+        end
+
+        -- Disguise karakter sekarang
+        if LocalPlayer.Character then
+            disguiseCharacter(LocalPlayer.Character, Config.FakeId)
+        end
+
+        -- Hook respawn
+        LocalPlayer.CharacterAdded:Connect(function(char)
+            if isEnabled then
+                disguiseCharacter(char, Config.FakeId)
+            end
+        end)
+
+        -- Headless mode
+        if Config.Headless then
+            headlessConnection = game:GetService("RunService").RenderStepped:Connect(function()
+                local char = LocalPlayer.Character
+                if char and char:FindFirstChild("Head") then
+                    char.Head.Transparency = 1
+                    local decal = char.Head:FindFirstChildOfClass("Decal")
+                    if decal then decal:Destroy() end
+                end
+            end)
+        end
+
+        -- Proses teks UI
+        hookTextProcessing()
+    end
+
+    -- Nonaktifkan modul & bersihkan
+    local function Disable()
+        isEnabled = false
+
+        -- Kembalikan nama asli
+        if disguiseInfo then
+            pcall(function() LocalPlayer.DisplayName = disguiseInfo.oldDisplayName end)
+            pcall(function() LocalPlayer.CharacterAppearanceId = tonumber(disguiseInfo.oldUserId) end)
+            disguiseInfo = nil
+        end
+
+        -- Putus koneksi
+        if disguiseConnection then
+            disguiseConnection:Disconnect()
+            disguiseConnection = nil
+        end
+        if headlessConnection then
+            headlessConnection:Disconnect()
+            headlessConnection = nil
+        end
+
+        -- Kembalikan kepala
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("Head") then
+            char.Head.Transparency = 0
+        end
+
+        -- Bersihkan processedObjects (opsional)
+        processedObjects = {}
+    end
+
+    -- API yang dikembalikan
+    return {
+        Enable = Enable,
+        Disable = Disable,
+        SetFakeDisplayName = SetFakeDisplayName,
+        SetFakeName = SetFakeName,
+        SetFakeId = SetFakeId,
+        SetHeadless = SetHeadless,
+        IsEnabled = function() return isEnabled end,
+    }
+end)()
+
+-- ============================================
+-- UI Integration (PlayerTab atau ExclusiveTab)
+-- ============================================
+PlayerTab:CreateSection({ Name = "Disguise" })
+
+-- Input untuk identitas palsu
+PlayerTab:CreateInput({
+    Name = "Fake Display Name",
+    Placeholder = "Enter fake display name",
+    Default = "AmySchumer",
+    Callback = function(val)
+        Disguise.SetFakeDisplayName(val)
+    end
+})
+
+PlayerTab:CreateInput({
+    Name = "Fake Username",
+    Placeholder = "Enter fake username",
+    Default = "redmiint8",
+    Callback = function(val)
+        Disguise.SetFakeName(val)
+    end
+})
+
+PlayerTab:CreateInput({
+    Name = "Fake User ID",
+    Placeholder = "Enter fake user ID",
+    Default = "13886182",
+    Callback = function(val)
+        Disguise.SetFakeId(tonumber(val))
+    end
+})
+
+PlayerTab:CreateToggle({
+    Name = "Headless Mode",
+    Default = false,
+    Callback = function(val)
+        Disguise.SetHeadless(val)
+    end
+})
+
+PlayerTab:CreateToggle({
+    Name = "Enable Disguise",
+    Default = false,
+    Callback = function(val)
+        if val then
+            Disguise.Enable()
+        else
+            Disguise.Disable()
         end
     end
-    end)
-end
-
-pcall(function()
-   disguisechar(lp.Character,getgenv().Config.FakeId)
-end)
-
-lp.CharacterAdded:Connect(function()
-      disguisechar(lp.Character,getgenv().Config.FakeId)
-end)
+})
