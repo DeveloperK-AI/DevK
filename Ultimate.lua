@@ -2857,21 +2857,21 @@ MonitoringTab:CreateToggle({
 -- =========================================================================
 MonitoringTab:CreateSection({ Name = "DevHub Web Monitoring" })
 
-local VoraMonitoringSettings = {
-    VoraKey = "", -- Replace in UI
+local DevMonitoringSettings = {
+    DevKey = "", -- Replace in UI
     AutoSync = true,
     Interval = 5,
     Enabled = false -- Master Toggle State
 }
 
-local VORA_API_URL = "https://monitor.DevHub.xyz/api/inventory/sync"
+local Dev_API_URL = "https://monitor.DevHub.xyz/api/inventory/sync"
 
 MonitoringTab:CreateInput({
     Name = "DevHub Key",
     Placeholder = "Enter DevHub Key...",
-    Default = VoraMonitoringSettings.VoraKey,
+    Default = DevMonitoringSettings.DevKey,
     Callback = function(val)
-        VoraMonitoringSettings.VoraKey = val
+        DevMonitoringSettings.DevKey = val
     end
 })
 
@@ -2879,7 +2879,7 @@ MonitoringTab:CreateToggle({
     Name = "Enable Web Monitoring",
     Default = false,
     Callback = function(val)
-        VoraMonitoringSettings.Enabled = val
+        DevMonitoringSettings.Enabled = val
     end
 })
 
@@ -2919,7 +2919,7 @@ MonitoringTab:CreateToggle({
     return success and result or nil
 end
 
- function GatherVoraInventory()
+ function GatherDevInventory()
     local inventory = {
         Rods = {},
         Charms = {},
@@ -3066,7 +3066,7 @@ end
     }
 
     return {
-        apiKey = VoraMonitoringSettings.VoraKey,
+        apiKey = DevMonitoringSettings.DevKey,
         playerName = safeString(Player.Name),
         userId = Player.UserId,
         playerStats = playerStats,
@@ -3076,11 +3076,11 @@ end
     }
 end
 
- function SendVoraInventory(isOffline)
-    if VoraMonitoringSettings.VoraKey == "yourkey" or VoraMonitoringSettings.VoraKey == "" then return end
+ function SendDevInventory(isOffline)
+    if DevMonitoringSettings.DevKey == "yourkey" or DevMonitoringSettings.DevKey == "" then return end
     
     local success, err = pcall(function()
-        local data = GatherVoraInventory()
+        local data = GatherDevInventory()
         if not data then return end
         
         if isOffline then data.isOnline = false end
@@ -3089,7 +3089,7 @@ end
         
         -- Use httpRequest function defined earlier
         httpRequest({
-            Url = VORA_API_URL,
+            Url = Dev_API_URL,
             Method = "POST",
             Headers = {
                 ["Content-Type"] = "application/json",
@@ -3103,9 +3103,9 @@ end
 -- Auto-sync loop for DevHub
 task.spawn(function()
     while true do
-        task.wait(VoraMonitoringSettings.Interval)
-        if VoraMonitoringSettings.Enabled and VoraMonitoringSettings.AutoSync then
-            SendVoraInventory(false)    
+        task.wait(DevMonitoringSettings.Interval)
+        if DevMonitoringSettings.Enabled and DevMonitoringSettings.AutoSync then
+            SendDevInventory(false)    
         end
     end
 end)
@@ -3113,7 +3113,7 @@ end)
 -- Handle leaving
 game:GetService("Players").PlayerRemoving:Connect(function(p)
     if p == game.Players.LocalPlayer then
-        SendVoraInventory(true)
+        SendDevInventory(true)
     end
 end)
 
@@ -4049,7 +4049,7 @@ end)
 
 -- =============================================================================
 -- =============================================================================
--- QUEST PROCESS FUNCTIONS (ported from Main.lua, adapted for Vora.lua)
+-- QUEST PROCESS FUNCTIONS (ported from Main.lua, adapted for Dev.lua)
 -- Handles: Deep Sea, Element, Diamond, Temple Lever auto-teleport + item actions
 -- =============================================================================
 _G.AutoDeepSeaQuest = _G.AutoDeepSeaQuest or _G.DeepSeaQuestMode or false
@@ -8778,12 +8778,12 @@ function createScriptNameLabel(nameLabel, billboard)
         originalNamePos.Y.Offset
     )
     
-    local voraFrame = Instance.new("Frame")
-    voraFrame.Name = "DevHubFrame"
-    voraFrame.Size = nameFrame.Size
-    voraFrame.Position = originalNamePos
-    voraFrame.BackgroundTransparency = 1
-    voraFrame.Parent = billboard
+    local DevFrame = Instance.new("Frame")
+    DevFrame.Name = "DevHubFrame"
+    DevFrame.Size = nameFrame.Size
+    DevFrame.Position = originalNamePos
+    DevFrame.BackgroundTransparency = 1
+    DevFrame.Parent = billboard
     
     local scriptLabel = nameLabel:Clone()
     scriptLabel.Name = "DevHubLabel"
@@ -8792,10 +8792,10 @@ function createScriptNameLabel(nameLabel, billboard)
     scriptLabel.Font = Enum.Font.GothamBold
     scriptLabel.TextStrokeTransparency = 0.5
     scriptLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-    scriptLabel.Parent = voraFrame
+    scriptLabel.Parent = DevFrame
     
     createMovingGradient(scriptLabel)
-    return voraFrame
+    return DevFrame
 end
 
 -- Helper: Remove Script Name Labels
@@ -8807,8 +8807,8 @@ function removeAllScriptNames()
     local overhead = hrp:FindFirstChild("Overhead")
     if not overhead then return end
     
-    local voraFrame = overhead:FindFirstChild("DevHubFrame")
-    if voraFrame then
+    local DevFrame = overhead:FindFirstChild("DevHubFrame")
+    if DevFrame then
         for threadId, _ in pairs(ActiveGradientThreads) do
             ActiveGradientThreads[threadId] = nil
         end
@@ -8826,7 +8826,7 @@ function removeAllScriptNames()
                 )
             end
         end
-        voraFrame:Destroy()
+        DevFrame:Destroy()
     end
 end
 
