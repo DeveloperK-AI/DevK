@@ -3344,6 +3344,1543 @@ MainTab:CreateToggle({
 })
 
 
+-- =============================================================================
+-- QUEST (Deep Sea / Element / Diamond) + AUTO TEMPLE LEVER
+-- =============================================================================
+
+QuestTab:CreateSection({ Name = "Quest" })
+
+
+ GhostfinnPart1 = CFrame.new(-3741.23804, -135.074417, -1008.8219, -0.983854651, -5.2231119e-08, -0.178969383, -4.4131955e-08, 1, -4.92357373e-08, 0.178969383, -4.05425382e-08, -0.983854651)
+ GhostfinnPart2 = CFrame.new(-3576.43896, -281.441864, -1652.00879, -0.986065865, 6.27356229e-08, -0.166355252, 4.83395013e-08, 1, 9.0587406e-08, 0.166355252, 8.12836234e-08, -0.986065865)
+
+ DiamondQuest2Location = CFrame.new(-3188.67749, 1.07282305, 2101.84595, 0.938817143, 2.14984044e-10, 0.344415963, 8.34196712e-09, 1, -2.33629294e-08, -0.344415963, 2.48066243e-08, 0.938817143)
+ DiamondQuest3and4Location = CFrame.new(-2158.90967, 53.4871254, 3667.20703, 0.886574924, -4.98531634e-08, -0.462585062, 5.43041133e-12, 1, -1.077604e-07, 0.462585062, 9.55351496e-08, 0.886574924)
+ DiamondQuest5and6Location = CFrame.new(-669.763306, 17.5000591, 414.084717, -0.998891115, -1.21555646e-08, 0.0470801853, -1.05114397e-08, 1, 3.51693892e-08, -0.0470801853, 3.46355087e-08, -0.998891115)
+
+ ElementRodLocation = CFrame.new(2113.85693, -91.1985855, -699.206787, 0.998474956, -5.945203e-09, -0.0552060455, 3.14363247e-09, 1, -5.0834366e-08, 0.0552060455, 5.05832958e-08, 0.998474956)
+
+ TEMPLE_LEVER_BASE = CFrame.new(1466.80176, -30.1063519, -575.435425, -0.439164162, 2.01621848e-08, 0.898406804, -1.93919014e-08, 1, -3.19214095e-08, -0.898406804, -3.14405568e-08, -0.439164162)
+ START_CFRAME = CFrame.new(-544.096191, 16.055603, 116.168938, 0.975038111, 1.26798724e-07, -0.222037584, -1.31077371e-07, 1, -4.5339581e-09, 0.222037584, 3.35248842e-08, 0.975038111)
+local TempleLeverLocations = {
+    ["Hourglass Diamond Artifact"] = TEMPLE_LEVER_BASE,
+    ["Arrow Artifact"] = TEMPLE_LEVER_BASE,
+    ["Diamond Artifact"] = TEMPLE_LEVER_BASE,
+    ["Crescent Artifact"] = TEMPLE_LEVER_BASE,
+}
+
+local TARGET_QUESTS = { ["Element Quest"] = true, ["Deep Sea Quest"] = true, ["Diamond Researcher"] = true }
+
+function isObjectiveCompleted(obj)
+    local check = obj:FindFirstChild("Content") and obj.Content:FindFirstChild("Check") and obj.Content.Check:FindFirstChild("Vector")
+    return check and check.Visible
+end
+
+function getObjectiveProgress(obj)
+    local barFrame = obj:FindFirstChild("BarFrame")
+    if not barFrame then return 0, "" end
+    local bar, bg = barFrame:FindFirstChild("Bar"), barFrame:FindFirstChild("BG")
+    local progress = barFrame:FindFirstChild("Progress")
+    if not bar or not bg then return 0, "" end
+    local pct = (bar.Size.X.Offset / bg.Size.X.Offset) * 100
+    return math.floor(pct), (progress and progress.Text) or ""
+end
+
+function getObjectiveDetails(obj)
+    local content = obj:FindFirstChild("Content")
+    if not content then return nil end
+    local display = content:FindFirstChild("Display")
+    if not display then return nil end
+    local t = ""
+    if display:FindFirstChild("Prefix") then t = t .. display.Prefix.Text .. " " end
+    if display:FindFirstChild("ItemName") then t = t .. display.ItemName.Text .. " " end
+    if display:FindFirstChild("Suffix") then t = t .. display.Suffix.Text end
+    return t:gsub("%s+", " "):gsub("^%s*(.-)%s*$", "%1")
+end
+
+function checkQuestStatus(questFrame)
+    local top = questFrame:FindFirstChild("Top")
+    if not top then return nil end
+    local topFrame = top:FindFirstChild("TopFrame")
+    local header = topFrame and topFrame:FindFirstChild("Header")
+    if not header then return nil end
+    if not TARGET_QUESTS[header.Text] then return nil end
+    local content = questFrame:FindFirstChild("Content")
+    if not content then return nil end
+
+    local objectives, allDone = {}, true
+    for i = 1, 10 do
+        local obj = content:FindFirstChild("Objective" .. i)
+        if obj then
+            local details = getObjectiveDetails(obj)
+            if details then
+                local completed = isObjectiveCompleted(obj)
+                local pct, progressText = getObjectiveProgress(obj)
+                table.insert(objectives, { text = details, completed = completed, percentage = pct, progressText = progressText })
+                if not completed then allDone = false end
+            end
+        end
+    end
+
+    return { name = header.Text, objectives = objectives, allCompleted = allDone and #objectives > 0 }
+end
+
+function getQuestData(questName)
+    local gui = player:WaitForChild("PlayerGui")
+    local questUI = gui:FindFirstChild("Quest")
+    if not questUI then return nil end
+    local list = questUI:FindFirstChild("List")
+    if not list then return nil end
+    local inside = list:FindFirstChild("Inside")
+    if not inside then return nil end
+
+    for _, child in pairs(inside:GetChildren()) do
+        if child:IsA("Frame") and child.Name == "Quest" then
+            local data = checkQuestStatus(child)
+            if data and data.name == questName then return data end
+        end
+    end
+
+    return nil
+end
+
+function getGhostfinnProgress()
+    local out = {}
+    local data = getQuestData("Deep Sea Quest")
+    for i = 1, 4 do
+        if data and data.objectives and data.objectives[i] then
+            local o = data.objectives[i]
+            local status = o.completed and "✓" or "✗"
+            local prog = o.progressText ~= "" and o.progressText or (o.percentage .. "%")
+            out[i] = status .. " " .. o.text .. " [" .. prog .. "]"
+        else
+            out[i] = "No progress data"
+        end
+    end
+    return out
+end
+
+function getElementProgress()
+    local out = {}
+    local data = getQuestData("Element Quest")
+    for i = 1, 4 do
+        if data and data.objectives and data.objectives[i] then
+            local o = data.objectives[i]
+            local status = o.completed and "✓" or "✗"
+            local prog = o.progressText ~= "" and o.progressText or (o.percentage .. "%")
+            out[i] = status .. " " .. o.text .. " [" .. prog .. "]"
+        else
+            out[i] = "No progress data"
+        end
+    end
+    return out
+end
+
+function getDiamondProgress()
+    local out = {}
+    local data = getQuestData("Diamond Researcher")
+    for i = 1, 6 do
+        if data and data.objectives and data.objectives[i] then
+            local o = data.objectives[i]
+            local status = o.completed and "✓" or "✗"
+            local prog = o.progressText ~= "" and o.progressText or (o.percentage .. "%")
+            out[i] = status .. " " .. o.text .. " [" .. prog .. "]"
+        else
+            out[i] = "No progress data"
+        end
+    end
+    return out
+end
+
+function getElementQuestProgress()
+    local p = { "No progress data", "No progress data", "No progress data", "No progress data" }
+    local data = getQuestData("Element Quest")
+    if data and data.objectives then
+        for i = 1, 4 do
+            if data.objectives[i] then
+                local o = data.objectives[i]
+                p[i] = o.progressText ~= "" and o.progressText or (o.percentage .. "%")
+            end
+        end
+    end
+    return p
+end
+
+function isElementQuestComplete()
+    local data = getQuestData("Element Quest")
+    return data and data.allCompleted or false
+end
+
+function teleportTo(cf)
+    local char = player.Character or player.CharacterAdded:Wait()
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if hrp and cf then
+        hrp.CFrame = cf
+    end
+end
+
+-- =============================================================================
+-- Kaitun helpers: best rod/bait/coins (ported from mainkaitun.lua)
+-- =============================================================================
+local FishingRods = {
+    ["Midnight Rod"] = { id = 80, price = 50000 },
+    ["Astral Rod"] = { id = 5, price = 1000500 },
+    ["Ghostfinn Rod"] = { id = 169, price = 9999999999999999999 },
+    ["Element Rod"] = { id = 257, price = 999999999999999999999999999999 },
+}
+
+function getRodUUID(rodId)
+    local inv = dataStore and dataStore:Get("Inventory")
+    if not inv or not inv["Fishing Rods"] then return nil end
+    for _, rod in ipairs(inv["Fishing Rods"]) do
+        if rod.Id == rodId then return rod.UUID end
+    end
+    return nil
+end
+
+function equipGhostfinnRod()
+    local uuid = getRodUUID(169)
+    if not uuid then return false end
+    if REEquipItem then
+        pcall(function()
+            REEquipItem:FireServer(uuid, "Fishing Rods")
+        end)
+    end
+    -- Hotbar fallback (some clients require hotbar equip to take effect)
+    if equipTool then
+        pcall(function()
+            equipTool:FireServer(1)
+        end)
+    end
+    return true
+end
+
+-- Equip rod by item id (inventory rod id), not by display name.
+function equipRodById(rodId)
+    local uuid = getRodUUID(rodId)
+    if not uuid then return false end
+    if REEquipItem then
+        pcall(function()
+            REEquipItem:FireServer(uuid, "Fishing Rods")
+        end)
+    end
+    -- Hotbar fallback
+    if equipTool then
+        pcall(function()
+            equipTool:FireServer(1)
+        end)
+    end
+    return true
+end
+
+-- Equip the current best rod from `getBestRod()` mapping.
+function equipBestRodNow()
+    local bestName = getBestRod and getBestRod() or nil
+    if bestName == "Midnight Rod" then
+        return equipRodById(80)
+    elseif bestName == "Astral Rod" then
+        return equipRodById(5)
+    elseif bestName == "Ghostfinn Rod" then
+        return equipRodById(169)
+    elseif bestName == "Element Rod" then
+        return equipRodById(257)
+    end
+
+    -- Fallback requested: if best rod is not detected, equip tool directly.
+    if equipTool then
+        pcall(function()
+            equipTool:FireServer(1)
+        end)
+        return true
+    end
+    return false
+end
+
+-- Retry equip for a short time. This helps when server auto-enable
+-- happens before `dataStore` inventory updates (UUID might be nil briefly).
+function equipBestRodNowWithRetry(maxWaitSeconds, intervalSeconds)
+    local maxWait = tonumber(maxWaitSeconds) or 8
+    local interval = tonumber(intervalSeconds) or 0.5
+    local deadline = tick() + maxWait
+    local lastOk = false
+
+    while tick() < deadline do
+        local ok = equipBestRodNow()
+        if ok then
+            return true
+        end
+        lastOk = ok
+        task.wait(interval)
+    end
+
+    return lastOk
+end
+
+function hasItemInInventory(itemName)
+    local inv = dataStore and dataStore:Get("Inventory")
+    if not inv then return false end
+
+    local util = _G.ItemUtility or ItemUtility
+    if not util or not util.GetItemData then return false end
+
+    for _, category in pairs(inv) do
+        if type(category) == "table" then
+            for _, item in ipairs(category) do
+                if item and item.Id then
+                    local info = util:GetItemData(item.Id)
+                    if info and info.Data and info.Data.Name == itemName then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+
+    return false
+end
+
+function hasAnyItemInInventory(itemNames)
+    for _, name in ipairs(itemNames) do
+        if hasItemInInventory(name) then return true end
+    end
+    return false
+end
+
+function getBestRod()
+    local inv = dataStore and dataStore:Get("Inventory")
+    local bestName, bestPrice = nil, 0
+    if inv and inv["Fishing Rods"] then
+        for _, rod in ipairs(inv["Fishing Rods"]) do
+            for name, info in pairs(FishingRods) do
+                if rod.Id == info.id and info.price > bestPrice then
+                    bestPrice = info.price
+                    bestName = name
+                end
+            end
+        end
+    end
+    return bestName
+end
+
+Baits = {
+    [3] = { name = "Midnight Bait", price = 3000 },
+    [15] = { name = "Corrupt Bait", price = 1150000 },
+    [16] = { name = "Aether Bait", price = 3700000 },
+}
+
+function hasBait(baitId)
+    local inv = dataStore and dataStore:Get("Inventory")
+    if not inv or not inv.Baits then return false end
+    for _, b in ipairs(inv.Baits) do
+        if b.Id == baitId then return true end
+    end
+    return false
+end
+
+function buyBait(baitId)
+    if BuyBait then
+        pcall(function()
+            BuyBait:InvokeServer(baitId)
+        end)
+    end
+end
+
+function equipBait(baitId)
+    if EquipBait then
+        pcall(function()
+            EquipBait:FireServer(baitId)
+        end)
+    end
+end
+
+function getBestBait()
+    local inv = dataStore and dataStore:Get("Inventory")
+    if not inv or not inv.Baits then return "None" end
+    local prices = { [3] = {"Midnight Bait", 3000}, [15] = {"Corrupt Bait", 1150000}, [16] = {"Aether Bait", 3700000} }
+    local best, bestPrice = nil, 0
+    for _, bait in ipairs(inv.Baits) do
+        local info = prices[bait.Id]
+        if info and info[2] > bestPrice then
+            bestPrice = info[2]
+            best = info[1]
+        end
+    end
+    return best or "None"
+end
+
+function getCoins()
+    local ok, c = pcall(function() return dataStore and dataStore:Get("Coins") end)
+    return (ok and c) or 0
+end
+
+local templeLeverOrder = {
+    "Hourglass Diamond Artifact",
+    "Diamond Artifact",
+    "Arrow Artifact",
+    "Crescent Artifact",
+}
+local templeLeverTypeMapping = {
+    ["Hourglass Diamond Artifact"] = "Hourglass Diamond",
+    ["Diamond Artifact"] = "Diamond Artifact",
+    ["Arrow Artifact"] = "Arrow Artifact",
+    ["Crescent Artifact"] = "Crescent Artifact",
+}
+local templeLeverStatus = {
+    ["Hourglass Diamond"] = false,
+    ["Diamond Artifact"] = false,
+    ["Arrow Artifact"] = false,
+    ["Crescent Artifact"] = false,
+}
+local templeLeverLocationsMain = {
+    ["Hourglass Diamond"] = CFrame.new(1487.30286, 3.20222163, -842.577271, -0.993248224, 8.33526457e-08, -0.116008602, 8.63568204e-08, 1, -2.0870063e-08, 0.116008602, -3.07472874e-08, -0.993248224),
+    ["Diamond Artifact"] = CFrame.new(1842.67517, 3.25659585, -290.654053, -0.0019925572, 2.72486247e-08, -0.999998033, -2.64774211e-08, 1, 2.73014376e-08, 0.999998033, 2.65317688e-08, -0.0019925572),
+    ["Arrow Artifact"] = CFrame.new(874.80127, 2.87421155, -359.296082, -0.138065234, -3.21473372e-08, 0.990423143, 1.92667446e-08, 1, 3.51439731e-08, -0.990423143, 2.39343905e-08, -0.138065234),
+    ["Crescent Artifact"] = CFrame.new(1400.47058, 3.27519846, 121.937996, -0.926432133, -1.22242355e-07, 0.376461804, -1.19220402e-07, 1, 3.13252038e-08, -0.376461804, -1.58612501e-08, -0.926432133),
+}
+local isProcessingTemple = false
+
+function updateTempleLeverStatusText()
+    local lines = {}
+    for _, leverType in ipairs(templeLeverOrder) do
+        local display = templeLeverTypeMapping[leverType]
+        local done = templeLeverStatus[display]
+        table.insert(lines, display .. ": " .. (done and "COMPLETED" or "NOT COMPLETED"))
+    end
+    if templeLeverParagraph and templeLeverParagraph.SetDesc then
+        templeLeverParagraph:SetDesc(table.concat(lines, "\n"))
+    end
+end
+
+function findTempleLeverByType(leverType)
+    local jungleInteractions = Workspace:FindFirstChild("JUNGLE INTERACTIONS")
+    if not jungleInteractions then return nil end
+    for _, child in ipairs(jungleInteractions:GetChildren()) do
+        if child.Name == "TempleLever" and child:GetAttribute("Type") == leverType then
+            return child
+        end
+    end
+    return nil
+end
+
+function hasLeverPrompt(templeLever)
+    local root = templeLever and templeLever:FindFirstChild("RootPart")
+    if not root then return false end
+    return root:FindFirstChildOfClass("ProximityPrompt") ~= nil
+end
+
+function fireLeverPrompt(templeLever)
+    local root = templeLever and templeLever:FindFirstChild("RootPart")
+    if not root then return false end
+    local prompt = root:FindFirstChildOfClass("ProximityPrompt")
+    if prompt then
+        fireproximityprompt(prompt)
+        return true
+    end
+    return false
+end
+
+function refreshTempleLeverStatuses()
+    for _, gameLeverType in ipairs(templeLeverOrder) do
+        local displayName = templeLeverTypeMapping[gameLeverType]
+        local templeLever = findTempleLeverByType(gameLeverType)
+        templeLeverStatus[displayName] = templeLever and (not hasLeverPrompt(templeLever)) or false
+    end
+    updateTempleLeverStatusText()
+end
+
+function getNextUncompletedLever()
+    for _, gameLeverType in ipairs(templeLeverOrder) do
+        local displayName = templeLeverTypeMapping[gameLeverType]
+        if not templeLeverStatus[displayName] then
+            return gameLeverType, displayName
+        end
+    end
+    return nil, nil
+end
+
+function processTempleLevers()
+    if isProcessingTemple then return false end
+    isProcessingTemple = true
+
+    local ok, result = pcall(function()
+        refreshTempleLeverStatuses()
+        local gameLeverType, displayName = getNextUncompletedLever()
+        if not gameLeverType then
+            return false
+        end
+
+        local templeLever = findTempleLeverByType(gameLeverType)
+        local char = player.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not templeLever or not hrp then
+            return false
+        end
+
+        local cf = templeLeverLocationsMain[displayName]
+        if cf then
+            hrp.CFrame = cf
+        end
+
+        while hasLeverPrompt(templeLever) do
+            if not fireLeverPrompt(templeLever) then break end
+            task.wait(10)
+        end
+
+        if not hasLeverPrompt(templeLever) then
+            templeLeverStatus[displayName] = true
+            updateTempleLeverStatusText()
+            return true
+        end
+        return false
+    end)
+
+    isProcessingTemple = false
+    return ok and result or false
+end
+
+function areAllTempleLeversComplete()
+    refreshTempleLeverStatuses()
+    for _, completed in pairs(templeLeverStatus) do
+        if not completed then return false end
+    end
+    return true
+end
+
+task.spawn(function()
+    while true do
+        task.wait(5)
+        pcall(refreshTempleLeverStatuses)
+    end
+end)
+
+-- =============================================================================
+-- STATUS OVERLAY UI (ported from CompleteDevHub/mainkaitun.lua)
+-- - ScreenGui shows quest progress + best rod/bait/coins
+-- - Visible when any quest mode is ON (or forced by toggle)
+-- =============================================================================
+
+PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+Lighting = game:GetService("Lighting")
+
+screenGui = Instance.new("ScreenGui")
+screenGui.Name = "DevHub Status"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = PlayerGui
+
+blur = Instance.new("BlurEffect")
+blur.Name = "TanzBlur"
+blur.Size = 24
+blur.Enabled = false
+blur.Parent = Lighting
+
+function makeLabel(name, size, pos, text, fontSize)
+    local l = Instance.new("TextLabel")
+    l.Name = name
+    l.Size = size
+    l.Position = pos
+    l.AnchorPoint = Vector2.new(0.5, 0.5)
+    l.BackgroundTransparency = 1
+    l.TextColor3 = Color3.fromRGB(255, 255, 255)
+    l.Font = Enum.Font.GothamBold
+    l.TextSize = fontSize or 18
+    l.Text = text or ""
+    l.TextXAlignment = Enum.TextXAlignment.Center
+    l.Visible = false
+    l.Parent = screenGui
+    return l
+end
+
+titleLabel = makeLabel("Title", UDim2.new(0, 300, 0, 40), UDim2.new(0.5, 0, 0.25, 0), "DevHub Status", 24)
+titleLabel.TextColor3 = Color3.fromRGB(64, 224, 208)
+titleLabel.TextScaled = true
+
+row1 = makeLabel("Row1", UDim2.new(0, 600, 0, 30), UDim2.new(0.5, 0, 0.35, 0))
+row2 = makeLabel("Row2", UDim2.new(0, 600, 0, 30), UDim2.new(0.5, 0, 0.4, 0))
+row3 = makeLabel("Row3", UDim2.new(0, 600, 0, 30), UDim2.new(0.5, 0, 0.45, 0))
+
+ghostfinnTitle = makeLabel("GhostfinnTitle", UDim2.new(0, 600, 0, 30), UDim2.new(0.4, 0, 0.5, 0), "Deep Sea Quest")
+ghostfinnTitle.TextColor3 = Color3.fromRGB(64, 224, 208)
+
+ghostfinnRow1 = makeLabel("Ghostfinn1", UDim2.new(0, 600, 0, 25), UDim2.new(0.4, 0, 0.55, 0), "Loading...", 12)
+ghostfinnRow1.Font = Enum.Font.Gotham
+ghostfinnRow2 = makeLabel("Ghostfinn2", UDim2.new(0, 600, 0, 25), UDim2.new(0.4, 0, 0.575, 0), "", 12)
+ghostfinnRow2.Font = Enum.Font.Gotham
+ghostfinnRow3 = makeLabel("Ghostfinn3", UDim2.new(0, 600, 0, 25), UDim2.new(0.4, 0, 0.6, 0), "", 12)
+ghostfinnRow3.Font = Enum.Font.Gotham
+ghostfinnRow4 = makeLabel("Ghostfinn4", UDim2.new(0, 600, 0, 25), UDim2.new(0.4, 0, 0.625, 0), "", 12)
+ghostfinnRow4.Font = Enum.Font.Gotham
+
+elementTitle = makeLabel("ElementTitle", UDim2.new(0, 600, 0, 30), UDim2.new(0.6, 0, 0.5, 0), "Element Quest")
+elementTitle.TextColor3 = Color3.fromRGB(64, 224, 208)
+elementRow1 = makeLabel("Element1", UDim2.new(0, 600, 0, 25), UDim2.new(0.6, 0, 0.55, 0), "Loading...", 12)
+elementRow1.Font = Enum.Font.Gotham
+elementRow2 = makeLabel("Element2", UDim2.new(0, 600, 0, 25), UDim2.new(0.6, 0, 0.575, 0), "", 12)
+elementRow2.Font = Enum.Font.Gotham
+elementRow3 = makeLabel("Element3", UDim2.new(0, 600, 0, 25), UDim2.new(0.6, 0, 0.6, 0), "", 12)
+elementRow3.Font = Enum.Font.Gotham
+elementRow4 = makeLabel("Element4", UDim2.new(0, 600, 0, 25), UDim2.new(0.6, 0, 0.625, 0), "", 12)
+elementRow4.Font = Enum.Font.Gotham
+
+diamondTitle = makeLabel("DiamondTitle", UDim2.new(0, 600, 0, 30), UDim2.new(0.5, 0, 0.68, 0), "Diamond Researcher")
+diamondTitle.TextColor3 = Color3.fromRGB(64, 224, 208)
+diamondRow1 = makeLabel("Diamond1", UDim2.new(0, 600, 0, 25), UDim2.new(0.5, 0, 0.73, 0), "Loading...", 12)
+diamondRow1.Font = Enum.Font.Gotham
+diamondRow2 = makeLabel("Diamond2", UDim2.new(0, 600, 0, 25), UDim2.new(0.5, 0, 0.755, 0), "", 12)
+diamondRow2.Font = Enum.Font.Gotham
+diamondRow3 = makeLabel("Diamond3", UDim2.new(0, 600, 0, 25), UDim2.new(0.5, 0, 0.78, 0), "", 12)
+diamondRow3.Font = Enum.Font.Gotham
+diamondRow4 = makeLabel("Diamond4", UDim2.new(0, 600, 0, 25), UDim2.new(0.5, 0, 0.805, 0), "", 12)
+diamondRow4.Font = Enum.Font.Gotham
+diamondRow5 = makeLabel("Diamond5", UDim2.new(0, 600, 0, 25), UDim2.new(0.5, 0, 0.83, 0), "", 12)
+diamondRow5.Font = Enum.Font.Gotham
+diamondRow6 = makeLabel("Diamond6", UDim2.new(0, 600, 0, 25), UDim2.new(0.5, 0, 0.855, 0), "", 12)
+diamondRow6.Font = Enum.Font.Gotham
+
+local statusLabels = {
+    row1, row2, row3, titleLabel,
+    ghostfinnTitle, ghostfinnRow1, ghostfinnRow2, ghostfinnRow3, ghostfinnRow4,
+    elementTitle, elementRow1, elementRow2, elementRow3, elementRow4,
+    diamondTitle, diamondRow1, diamondRow2, diamondRow3, diamondRow4, diamondRow5, diamondRow6,
+}
+
+_G.KaitunGUIForce = _G.KaitunGUIForce or false
+
+function updateOverlayVisibility()
+    local anyActive = _G.DeepSeaQuestMode or _G.ElementQuestMode or _G.DiamondQuestMode
+    local visible = _G.KaitunGUIForce or anyActive
+
+    -- Common rows (only when overlay is visible)
+    row1.Visible = visible
+    row2.Visible = visible
+    row3.Visible = visible
+    titleLabel.Visible = visible
+    blur.Enabled = visible
+
+    -- Quest-specific sections (only when each quest mode is active)
+    ghostfinnTitle.Visible = _G.DeepSeaQuestMode
+    ghostfinnRow1.Visible = _G.DeepSeaQuestMode
+    ghostfinnRow2.Visible = _G.DeepSeaQuestMode
+    ghostfinnRow3.Visible = _G.DeepSeaQuestMode
+    ghostfinnRow4.Visible = _G.DeepSeaQuestMode
+
+    elementTitle.Visible = _G.ElementQuestMode
+    elementRow1.Visible = _G.ElementQuestMode
+    elementRow2.Visible = _G.ElementQuestMode
+    elementRow3.Visible = _G.ElementQuestMode
+    elementRow4.Visible = _G.ElementQuestMode
+
+    diamondTitle.Visible = _G.DiamondQuestMode
+    diamondRow1.Visible = _G.DiamondQuestMode
+    diamondRow2.Visible = _G.DiamondQuestMode
+    diamondRow3.Visible = _G.DiamondQuestMode
+    diamondRow4.Visible = _G.DiamondQuestMode
+    diamondRow5.Visible = _G.DiamondQuestMode
+    diamondRow6.Visible = _G.DiamondQuestMode
+end
+
+updateOverlayVisibility()
+
+function isAnyQuestActive()
+    return _G.DeepSeaQuestMode or _G.ElementQuestMode or _G.DiamondQuestMode
+end
+
+function updateUIVisibility()
+    pcall(function()
+        updateOverlayVisibility()
+    end)
+end
+
+ExclusiveTab:CreateToggle({
+    Title = "Start Kaitun",
+    Default = _G.KaitunGUIForce,
+    Callback = function(state)
+        _G.KaitunGUIForce = state
+        pcall(function()
+            updateOverlayVisibility()
+        end)
+    end,
+})
+
+RunService.RenderStepped:Connect(function()
+    pcall(function()
+        -- Prevent early-render nil crashes (labels & helper functions
+        -- might be defined a few lines later in the script).
+        if not (blur and titleLabel and row1 and row2 and row3
+            and ghostfinnTitle and ghostfinnRow1 and ghostfinnRow2 and ghostfinnRow3 and ghostfinnRow4
+            and elementTitle and elementRow1 and elementRow2 and elementRow3 and elementRow4
+            and diamondTitle and diamondRow1 and diamondRow2 and diamondRow3 and diamondRow4 and diamondRow5 and diamondRow6
+        ) then
+            return
+        end
+        if type(getBestRod) ~= "function" or type(getBestBait) ~= "function" or type(getCoins) ~= "function" then
+            return
+        end
+        if type(getGhostfinnProgress) ~= "function" or type(getElementProgress) ~= "function" or type(getDiamondProgress) ~= "function" then
+            return
+        end
+
+        updateOverlayVisibility()
+
+        row1.Text = "Best Rod: " .. tostring(getBestRod())
+        row2.Text = "Best Bait: " .. tostring(getBestBait())
+        row3.Text = "Coins: " .. tostring(getCoins())
+
+        local gf = getGhostfinnProgress()
+        ghostfinnRow1.Text = gf[1] or "No progress data"
+        ghostfinnRow2.Text = gf[2] or "No progress data"
+        ghostfinnRow3.Text = gf[3] or "No progress data"
+        ghostfinnRow4.Text = gf[4] or "No progress data"
+
+        local el = getElementProgress()
+        elementRow1.Text = el[1] or "No progress data"
+        elementRow2.Text = el[2] or "No progress data"
+        elementRow3.Text = el[3] or "No progress data"
+        elementRow4.Text = el[4] or "No progress data"
+
+        local dm = getDiamondProgress()
+        diamondRow1.Text = dm[1] or "No progress data"
+        diamondRow2.Text = dm[2] or "No progress data"
+        diamondRow3.Text = dm[3] or "No progress data"
+        diamondRow4.Text = dm[4] or "No progress data"
+        diamondRow5.Text = dm[5] or "No progress data"
+        diamondRow6.Text = dm[6] or "No progress data"
+        end)
+end)
+
+-- =============================================================================
+-- =============================================================================
+-- QUEST PROCESS FUNCTIONS (ported from Main.lua, adapted for Dev.lua)
+-- Handles: Deep Sea, Element, Diamond, Temple Lever auto-teleport + item actions
+-- =============================================================================
+_G.AutoDeepSeaQuest = _G.AutoDeepSeaQuest or _G.DeepSeaQuestMode or false
+_G.AutoElementQuest = _G.AutoElementQuest or _G.ElementQuestMode or false
+_G.AutoDiamondQuest = _G.AutoDiamondQuest or _G.DiamondQuestMode or false
+_G.AutoCreateTranscendedStones = _G.AutoCreateTranscendedStones or false
+
+-- ── Deep Sea Quest ─────────────────────────────────────────────────────────
+local dsDeepSeaStep = nil
+local dsDeepSeaDone = false
+local dsDeepSeaGUIReady = false
+
+local DS_STEP1_LOC = CFrame.new(-3612.3645, -279.07373, -1693.4845,
+	-0.999661744, 3.77537575e-08, 0.0260070078, 3.80828276e-08, 1,
+	1.21579262e-08, -0.0260070078, 1.31442341e-08, -0.999661744)
+local DS_STEP2_LOC = CFrame.new(-3733.34985, -135.074417, -1011.00171,
+	-0.961937428, 3.60563774e-08, -0.273269713, 5.88834368e-08, 1,
+	-7.53314495e-08, 0.273269713, -8.85552041e-08, -0.961937428)
+
+function dsRefreshStep()
+	local data = pcall(function() return getQuestData("Deep Sea Quest") end) and getQuestData("Deep Sea Quest")
+	if not data then dsDeepSeaGUIReady = false; return end
+	dsDeepSeaGUIReady = true
+	dsDeepSeaDone = data.allCompleted or false
+	dsDeepSeaStep = nil
+	if dsDeepSeaDone then return end
+	for i = 1, 4 do
+		local obj = data.objectives and data.objectives[i]
+		if obj and not obj.completed then dsDeepSeaStep = i; return end
+	end
+	dsDeepSeaDone = true
+end
+
+function dsProcessQuest()
+	if getRodUUID(169) then return false end
+	pcall(dsRefreshStep)
+	if dsDeepSeaDone then return false end
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return false end
+	if not dsDeepSeaGUIReady then
+		hrp.CFrame = DS_STEP2_LOC  -- Teleport to Sisyphus to init GUI
+		return true
+	end
+	if dsDeepSeaStep == 1 then
+		hrp.CFrame = DS_STEP1_LOC  -- Treasure Room (Rare/Epic)
+		return true
+	elseif dsDeepSeaStep == 2 or dsDeepSeaStep == 3 then
+		hrp.CFrame = DS_STEP2_LOC  -- Sisyphus Statue (Mythic/Secret)
+		return true
+	end
+	return false
+end
+
+-- ── Element Quest ──────────────────────────────────────────────────────────
+local elemStep = nil
+local elemDone = false
+local elemGUIReady = false
+
+local ELEM_CELLAR  = CFrame.new(2113.85693, -91.1985855, -699.206787,
+	0.998474956, -5.945203e-09, -0.0552060455, 3.14363247e-09, 1,
+	-5.0834366e-08, 0.0552060455, 5.05832958e-08, 0.998474956)
+local ELEM_JUNGLE  = CFrame.new(1474.01025, 2.64634514, -324.647125,
+	-0.413843632, -6.18603408e-08, -0.910347998, -9.32754673e-08, 1,
+	-2.55494399e-08, 0.910347998, 7.43396598e-08, -0.413843632)
+local ELEM_TEMPLE  = CFrame.new(1464.96277, -22.3750019, -652.420166,
+	-0.0930489823, -1.17108794e-08, 0.995661557, 8.05597278e-09, 1,
+	1.25147741e-08, -0.995661557, 9.18550924e-09, -0.0930489823)
+
+function elemRefreshStep()
+	local data = pcall(function() return getQuestData("Element Quest") end) and getQuestData("Element Quest")
+	if not data then elemGUIReady = false; return end
+	elemGUIReady = true
+	elemDone = data.allCompleted or false
+	elemStep = nil
+	if elemDone then return end
+	for i = 1, 4 do
+		local obj = data.objectives and data.objectives[i]
+		if obj and not obj.completed then elemStep = i; return end
+	end
+	elemDone = true
+end
+
+function elemGetTier7UUID()
+	local inv = dataStore and dataStore:Get("Inventory")
+	if inv and inv.Items then
+		for _, item in ipairs(inv.Items) do
+			local ok, info = pcall(function()
+				return ItemUtility and ItemUtility.GetItemDataFromItemType(item.Id)
+			end)
+			if ok and info and info.Tier == 7 and item.UUID then return item.UUID end
+		end
+	end
+	return nil
+end
+
+function elemEquipAndCreateStone()
+	local uuid = elemGetTier7UUID()
+	if not uuid then return false end
+	pcall(function() REEquipItem:FireServer(uuid, "Fish") end)
+	task.wait(0.5)
+	local ok, bp = pcall(function() return player.PlayerGui.Backpack end)
+	if ok and bp then
+		local disp = bp:FindFirstChild("Display")
+		if disp then
+			local cnt = 0
+			for _, c in ipairs(disp:GetChildren()) do if c:IsA("ImageButton") then cnt = cnt + 1 end end
+			local slot = cnt - 2
+			if slot > 0 then pcall(function() REEquip:FireServer(slot) end); task.wait(0.5) end
+		end
+	end
+	if RFCreateTranscendedStone then
+		pcall(function() RFCreateTranscendedStone:InvokeServer() end)
+	end
+	return true
+end
+
+function elemProcessQuest()
+	if not getRodUUID(169) then return false end  -- Need Ghostfinn Rod first
+	if getRodUUID(257) then return false end       -- Already have Element Rod
+	pcall(elemRefreshStep)
+	if elemDone then return false end
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return false end
+	if not elemGUIReady or elemStep == 1 then
+		hrp.CFrame = ELEM_CELLAR   -- Underground Cellar (start quest / have Ghostfinn)
+		return true
+	elseif elemStep == 2 then
+		hrp.CFrame = ELEM_JUNGLE   -- Ancient Jungle (SECRET fish)
+		return true
+	elseif elemStep == 3 then
+		if areAllTempleLeversComplete() then
+			hrp.CFrame = ELEM_TEMPLE   -- Sacred Temple (SECRET fish)
+		else
+			processTempleLevers()
+		end
+		return true
+	elseif elemStep == 4 then
+		if _G.AutoCreateTranscendedStones then
+			elemEquipAndCreateStone()  -- Create Transcended Stones
+		end
+	end
+	return false
+end
+
+-- ── Diamond Researcher Quest ────────────────────────────────────────────────
+local diamStep = nil
+local diamDone = false
+local diamGUIReady = false
+
+local DIAM_CORAL  = CFrame.new(-3135.93872, 2.11425161, 2123.89819,
+	0.997291982, -9.13398495e-08, 0.0735437796, 9.35643314e-08, 1,
+	-2.68018781e-08, -0.0735437796, 3.36103732e-08, 0.997291982)
+local DIAM_TROPIK = CFrame.new(-2093.49512, 6.26801682, 3699.17993,
+	0.586044073, -4.36226735e-08, -0.810279191, -1.45249288e-08, 1,
+	-6.43419256e-08, 0.810279191, 4.94764478e-08, 0.586044073)
+local DIAM_LOCH   = CFrame.new(-617.281433, 3.30004835, 565.878357,
+	0.876953125, -9.79836869e-08, 0.480575919, 5.34272928e-08, 1,
+	1.06394126e-07, -0.480575919, -6.76267931e-08, 0.876953125)
+
+function diamRefreshStep()
+	local data = pcall(function() return getQuestData("Diamond Researcher") end) and getQuestData("Diamond Researcher")
+	if not data then diamGUIReady = false; return end
+	diamGUIReady = true
+	diamDone = data.allCompleted or false
+	diamStep = nil
+	if diamDone then return end
+	for i = 1, 6 do
+		local obj = data.objectives and data.objectives[i]
+		if obj and not obj.completed then diamStep = i; return end
+	end
+	diamDone = true
+end
+
+function diamActivateGUI()
+	if REDialogueEnded then pcall(function() REDialogueEnded:FireServer("Diamond Researcher", 1, 2) end) end
+	task.wait(2)
+end
+
+function diamHasItem(id, variantId)
+	local inv = dataStore and dataStore:Get("Inventory")
+	if inv and inv.Items then
+		for _, item in ipairs(inv.Items) do
+			if item.Id == id then
+				if not variantId then return true, item.UUID end
+				if item.Metadata and item.Metadata.VariantId == variantId then return true, item.UUID end
+			end
+		end
+	end
+	return false, nil
+end
+
+function diamEquipItemAndGive(uuid, dialogueArg)
+	pcall(function() REEquipItem:FireServer(uuid, "Fish") end)
+	task.wait(0.5)
+	local ok, bp = pcall(function() return player.PlayerGui.Backpack end)
+	if ok and bp then
+		local disp = bp:FindFirstChild("Display")
+		if disp then
+			local cnt = 0
+			for _, c in ipairs(disp:GetChildren()) do if c:IsA("ImageButton") then cnt = cnt + 1 end end
+			local slot = cnt - 2
+			if slot > 0 then pcall(function() REEquip:FireServer(slot) end); task.wait(0.5) end
+		end
+	end
+	pcall(function() AutoEnabled:InvokeServer(false) end)
+	if REDialogueEnded then pcall(function() REDialogueEnded:FireServer("Diamond Researcher", 2, dialogueArg) end) end
+	task.wait(2)
+end
+
+function diamProcessQuest()
+	if not getRodUUID(257) then return false end  -- Need Element Rod first
+	pcall(diamRefreshStep)
+	if diamDone then return false end
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return false end
+	if not diamGUIReady then diamActivateGUI(); return false end
+	if diamStep == 2 then
+		hrp.CFrame = DIAM_CORAL    -- Coral Reefs (SECRET fish)
+		return true
+	elseif diamStep == 3 then
+		hrp.CFrame = DIAM_TROPIK   -- Tropical Grove (SECRET fish)
+		return true
+	elseif diamStep == 4 then
+		local hasRuby, rubyUUID = diamHasItem(243, "Gemstone")
+		if not hasRuby then
+			hrp.CFrame = DIAM_TROPIK  -- Fish for Mutated Ruby
+		else
+			diamEquipItemAndGive(rubyUUID, 1)  -- Give Ruby to Lary
+		end
+		return true
+	elseif diamStep == 5 then
+		local hasLoch, lochUUID = diamHasItem(228)
+		if not hasLoch then
+			hrp.CFrame = DIAM_LOCH    -- Fish for Lochness Monster
+		else
+			diamEquipItemAndGive(lochUUID, 2)  -- Give Lochness to Lary
+		end
+		return true
+	end
+	return false
+end
+
+-- ── Continuous process loops ────────────────────────────────────────────────
+task.spawn(function()
+	while true do
+		task.wait(3)
+		if _G.DeepSeaQuestMode or _G.AutoDeepSeaQuest then
+			pcall(dsProcessQuest)
+		end
+	end
+end)
+
+task.spawn(function()
+	while true do
+		task.wait(3)
+		if _G.ElementQuestMode or _G.AutoElementQuest then
+			pcall(elemProcessQuest)
+		end
+	end
+end)
+
+task.spawn(function()
+	while true do
+		task.wait(3)
+		if _G.DiamondQuestMode or _G.AutoDiamondQuest then
+			pcall(diamProcessQuest)
+		end
+	end
+end)
+
+-- QUEST TAB: Section per quest + paragraph per quest
+-- =============================================================================
+
+task.spawn(function()
+    while true do
+        -- Guard nil (QuestTab paragraphs or progress helpers may not be ready yet)
+        if deepSeaParagraph and elementParagraph and diamondParagraph and templeLeverParagraph
+            and type(getGhostfinnProgress) == "function"
+            and type(getElementProgress) == "function"
+            and type(getDiamondProgress) == "function"
+            and type(areAllTempleLeversComplete) == "function"
+        then
+            pcall(function()
+                local gf = getGhostfinnProgress()
+                if gf then deepSeaParagraph:SetDesc(table.concat(gf, "\n")) end
+
+                local el = getElementProgress()
+                if el then elementParagraph:SetDesc(table.concat(el, "\n")) end
+
+                local dm = getDiamondProgress()
+                if dm then diamondParagraph:SetDesc(table.concat(dm, "\n")) end
+
+                refreshTempleLeverStatuses()
+            end)
+        end
+        task.wait(2)
+    end
+end)
+
+QuestTab:CreateSection({ Name = "Deep Sea Quest" })
+deepSeaParagraph = QuestTab:CreateParagraph({
+    Title = "Deep Sea Quest",
+    Desc = "Loading...",
+    RichText = true
+})
+
+
+QuestTab:CreateToggle({
+    Name = "Auto Deep Sea Quest",
+    Default = _G.AutoDeepSeaQuest or _G.DeepSeaQuestMode or false,
+    Callback = function(state)
+        _G.DeepSeaQuestMode = state
+        _G.AutoDeepSeaQuest = state
+
+        if state then
+            pcall(function()
+                if AutoEnabled then AutoEnabled:InvokeServer(true) end
+            end)
+            pcall(function()
+                equipBestRodNowWithRetry(3, 0.3)
+            end)
+        end
+
+        updateUIVisibility()
+
+        if not state and not isAnyQuestActive() then
+            pcall(function()
+                if AutoEnabled then AutoEnabled:InvokeServer(false) end
+                if Cancel then Cancel:InvokeServer() end
+            end)
+        end
+    end
+})
+
+QuestTab:CreateSection({ Name = "Element Quest" })
+elementParagraph = QuestTab:CreateParagraph({
+    Title = "Element Quest",
+    Desc = "Loading...",
+    RichText = true
+})
+
+QuestTab:CreateToggle({
+    Name = "Auto Element Quest",
+    Default = _G.AutoElementQuest or _G.ElementQuestMode or false,
+    Callback = function(state)
+        _G.ElementQuestMode = state
+        _G.AutoElementQuest = state
+
+        if state then
+            pcall(function()
+                if AutoEnabled then AutoEnabled:InvokeServer(true) end
+            end)
+            pcall(function()
+                if not equipGhostfinnRod() then
+                    equipBestRodNowWithRetry(3, 0.3)
+                end
+            end)
+        end
+
+        updateUIVisibility()
+
+        if not state and not isAnyQuestActive() then
+            pcall(function()
+                if AutoEnabled then AutoEnabled:InvokeServer(false) end
+                if Cancel then Cancel:InvokeServer() end
+            end)
+        end
+    end
+})
+
+QuestTab:CreateToggle({
+    Name = "Auto Create Transcended Stones",
+    Default = _G.AutoCreateTranscendedStones or false,
+    Callback = function(state)
+        _G.AutoCreateTranscendedStones = state
+    end
+})
+
+QuestTab:CreateSection({ Name = "Diamond Researcher" })
+diamondParagraph = QuestTab:CreateParagraph({
+    Title = "Diamond Researcher",
+    Desc = "Loading...",
+    RichText = true
+})
+
+
+QuestTab:CreateToggle({
+    Name = "Auto Diamond Quest",
+    Default = _G.AutoDiamondQuest or _G.DiamondQuestMode or false,
+    Callback = function(state)
+        _G.DiamondQuestMode = state
+        _G.AutoDiamondQuest = state
+
+        if state then
+            pcall(function()
+                if AutoEnabled then AutoEnabled:InvokeServer(true) end
+            end)
+            pcall(function()
+                equipBestRodNowWithRetry(3, 0.3)
+            end)
+        end
+
+        updateUIVisibility()
+
+        if not state and not isAnyQuestActive() then
+            pcall(function()
+                if AutoEnabled then AutoEnabled:InvokeServer(false) end
+                if Cancel then Cancel:InvokeServer() end
+            end)
+        end
+    end
+})
+
+QuestTab:CreateToggle({
+    Name = "Pass All Quests",
+    Default = false,
+    Callback = function(state)
+        if state then
+            _G.DeepSeaQuestMode = true
+            _G.ElementQuestMode = true
+            _G.DiamondQuestMode = true
+            _G.AutoDeepSeaQuest = true
+            _G.AutoElementQuest = true
+            _G.AutoDiamondQuest = true
+            pcall(function()
+                if AutoEnabled then AutoEnabled:InvokeServer(true) end
+            end)
+            pcall(function()
+                if not equipGhostfinnRod() then
+                    equipBestRodNowWithRetry(3, 0.3)
+                end
+            end)
+        else
+            _G.DeepSeaQuestMode = false
+            _G.ElementQuestMode = false
+            _G.DiamondQuestMode = false
+            _G.AutoDeepSeaQuest = false
+            _G.AutoElementQuest = false
+            _G.AutoDiamondQuest = false
+            pcall(function()
+                if AutoEnabled then AutoEnabled:InvokeServer(false) end
+                if Cancel then Cancel:InvokeServer() end
+            end)
+        end
+        updateUIVisibility()
+    end,
+})
+
+QuestTab:CreateSection({ Name = "Temple Lever" })
+templeLeverParagraph = QuestTab:CreateParagraph({
+    Title = "Temple Lever Status",
+    Desc = "In Progress",
+    RichText = true
+})
+
+QuestTab:CreateToggle({
+    Name = "Auto Temple Lever",
+    Default = false,
+    Callback = function(state)
+        _G.AutoTempleLever = state
+        if templeLeverThread then task.cancel(templeLeverThread) end
+        templeLeverThread = nil
+        if not state then return end
+
+        templeLeverThread = task.spawn(function()
+            while _G.AutoTempleLever do
+                pcall(function()
+                    if not areAllTempleLeversComplete() then
+                        processTempleLevers()
+                    end
+                end)
+                task.wait(4)
+            end
+        end)
+    end
+})
+
+-- =============================================================================
+-- LOOPS: PERIODIC TELEPORT, ONE-CLICK FISHING, SELL, BUY RODS/BAITS, RESPAWN
+-- (ported style from FishItONLY/old.lua)
+-- =============================================================================
+
+function teleportBasedOnCondition()
+    local bestRod = getBestRod()
+    local char = player.Character or player.CharacterAdded:Wait()
+    local hrp = char:WaitForChild("HumanoidRootPart")
+
+    -- Get Deep Sea Quest progress
+    local ghostfinnData = getQuestData("Deep Sea Quest")
+    local isDeepSeaComplete = ghostfinnData and ghostfinnData.allCompleted or false
+    local isLabel1Done = ghostfinnData and ghostfinnData.objectives[1] and ghostfinnData.objectives[1].completed or false
+    local isLabel2Done = ghostfinnData and ghostfinnData.objectives[2] and ghostfinnData.objectives[2].completed or false
+    local isLabel3Done = ghostfinnData and ghostfinnData.objectives[3] and ghostfinnData.objectives[3].completed or false
+
+    -- Get Element Quest progress
+    local elementData = getQuestData("Element Quest")
+    local isElementQuestDone = elementData and elementData.allCompleted or false
+
+    -- Get Diamond Quest progress
+    local diamondData = getQuestData("Diamond Researcher")
+    local isDiamondComplete = diamondData and diamondData.allCompleted or false
+    local isDiamondObj1Done = diamondData and diamondData.objectives[1] and diamondData.objectives[1].completed or false
+    local isDiamondObj2Done = diamondData and diamondData.objectives[2] and diamondData.objectives[2].completed or false
+    local isDiamondObj3Done = diamondData and diamondData.objectives[3] and diamondData.objectives[3].completed or false
+    local isDiamondObj4Done = diamondData and diamondData.objectives[4] and diamondData.objectives[4].completed or false
+    local isDiamondObj5Done = diamondData and diamondData.objectives[5] and diamondData.objectives[5].completed or false
+    local isDiamondObj6Done = diamondData and diamondData.objectives[6] and diamondData.objectives[6].completed or false
+
+    -- ⭐ CHECK IF RODS EXISTS
+    local hasElementRod = getRodUUID(257) ~= nil
+    local hasGhostfinnRod = getRodUUID(169) ~= nil
+
+    if _G.DiamondQuestMode then
+        if isDiamondComplete then
+            Window:Notify({
+                Title = "Quest Complete!",
+                Content = "Diamond Quest has been completed!\nAuto-farm disabled.",
+                Duration = 10
+            })
+            _G.DiamondQuestMode = false
+            updateUIVisibility()
+            hrp.CFrame = START_CFRAME
+            return
+        end
+
+        if not isDiamondObj2Done then
+            if hasAnyItemInInventory({ "Monster Shark", "Eerie Shark" }) then
+                hrp.CFrame = DiamondQuest3and4Location
+            else
+                hrp.CFrame = DiamondQuest2Location
+            end
+            return
+        end
+
+        if not isDiamondObj3Done or not isDiamondObj4Done then
+            if not isDiamondObj3Done then
+                if hasItemInInventory("Great Whale") then
+                    if hasItemInInventory("Ruby") then
+                        hrp.CFrame = DiamondQuest5and6Location
+                    else
+                        hrp.CFrame = DiamondQuest3and4Location
+                    end
+                else
+                    hrp.CFrame = DiamondQuest3and4Location
+                end
+                return
+            end
+
+            if not isDiamondObj4Done then
+                if hasItemInInventory("Ruby") then
+                    hrp.CFrame = DiamondQuest5and6Location
+                else
+                    hrp.CFrame = DiamondQuest3and4Location
+                end
+                return
+            end
+
+            return
+        end
+
+        if not isDiamondObj5Done or not isDiamondObj6Done then
+            if isDiamondObj6Done and not isDiamondObj5Done then
+                hrp.CFrame = DiamondQuest3and4Location
+            elseif hasItemInInventory("Lochnes Monster") then
+                hrp.CFrame = DiamondQuest3and4Location
+            else
+                hrp.CFrame = DiamondQuest5and6Location
+            end
+            return
+        end
+
+        hrp.CFrame = ElementRodLocation
+        return
+    end
+
+    if _G.ElementQuestMode then
+        if isElementQuestDone or hasElementRod then
+            Window:Notify({
+                Title = "Quest Complete!",
+                Content = "Element Quest has been completed!\nElement Rod obtained.\nAuto-farm disabled.",
+                Duration = 10
+            })
+            _G.ElementQuestMode = false
+            updateUIVisibility()
+            hrp.CFrame = START_CFRAME
+            return
+        end
+
+        if getRodUUID(169) then
+            equipGhostfinnRod()
+            wait(0.5)
+        end
+
+        local curElement = getQuestData("Element Quest")
+        local elemLabel2 = curElement and curElement.objectives[2] and curElement.objectives[2].completed or false
+
+        if not elemLabel2 then
+            if not areAllTempleLeversComplete() then
+                processTempleLevers()
+                spawn(function()
+                    while not areAllTempleLeversComplete() do
+                        wait(5)
+                    end
+                    local c = player.Character
+                    if c and c:FindFirstChild("HumanoidRootPart") then
+                        c.HumanoidRootPart.CFrame = ElementRodLocation
+                    end
+                end)
+            else
+                hrp.CFrame = ElementRodLocation
+            end
+        else
+            hrp.CFrame = TEMPLE_LEVER_BASE
+        end
+
+        return
+    end
+
+    if _G.DeepSeaQuestMode then
+        if isDeepSeaComplete or hasGhostfinnRod then
+            Window:Notify({
+                Title = "Quest Complete!",
+                Content = "Deep Sea Quest has been completed!\nGhostfinn Rod obtained.\nAuto-farm disabled.",
+                Duration = 10
+            })
+            _G.DeepSeaQuestMode = false
+            updateUIVisibility()
+            hrp.CFrame = START_CFRAME
+            return
+        end
+
+        -- Deep Sea Quest phase 2 (belum dapat Ghostfinn Rod)
+        if not isLabel1Done and isLabel2Done and isLabel3Done and not hasGhostfinnRod then
+            hrp.CFrame = GhostfinnPart2
+            return
+        end
+
+        -- Deep Sea Quest awal
+        if bestRod == "Astral Rod" or bestRod == "Midnight Rod" then
+            hrp.CFrame = GhostfinnPart1
+            return
+        end
+    end
+
+    hrp.CFrame = START_CFRAME
+end
+
+function initialTeleport()
+    if not _G.HasTeleported then
+        _G.HasTeleported = true
+        teleportBasedOnCondition(getBestRod())
+        wait(2)
+    end
+end
+
+-- Keep AutoEnabled alive while any quest mode is active.
+-- This prevents server-side toggles from dropping during long quest runs.
+spawn(function()
+    while true do
+        task.wait(2.5)
+        if _G.DeepSeaQuestMode or _G.ElementQuestMode or _G.DiamondQuestMode then
+            pcall(function()
+                if AutoEnabled then AutoEnabled:InvokeServer(true) end
+            end)
+        end
+    end
+end)
+
+spawn(function()
+    while true do
+        task.wait(0.1)
+        if _G.DeepSeaQuestMode or _G.ElementQuestMode or _G.DiamondQuestMode then
+            initialTeleport()
+            local char = workspace:FindFirstChild("Characters"):FindFirstChild(player.Name)
+            if char then
+                repeat
+                    task.wait(0.1)
+                    if char:FindFirstChild("!!!FISHING_VIEW_MODEL!!!") then
+                        pcall(function()
+                            REEquip:FireServer(1)
+                        end)
+                    end
+                    task.wait(0.1)
+                    local cosmeticFolder = workspace:FindFirstChild("CosmeticFolder")
+                    if cosmeticFolder and not cosmeticFolder:FindFirstChild(tostring(player.UserId)) then
+                        pcall(function()
+                            FishingController:RequestChargeFishingRod(Vector2.new(0, 0), true)
+                            task.wait(0.05)
+                            local guid = FishingController.GetCurrentGUID and FishingController:GetCurrentGUID()
+                            if not guid then
+                                return
+                            end
+                            while (_G.DeepSeaQuestMode or _G.ElementQuestMode or _G.DiamondQuestMode) and FishingController:GetCurrentGUID() == guid do
+                                FishingController:FishingMinigameClick()
+                                task.wait(math.random(1, 10) / 100)
+                            end
+                        end)
+                    end
+                    task.wait(0.25)
+                until not (_G.DeepSeaQuestMode or _G.ElementQuestMode or _G.DiamondQuestMode)
+            end
+        end
+    end
+end)
+
+spawn(function()
+    while true do
+        task.wait(5)
+        if _G.DeepSeaQuestMode or _G.ElementQuestMode or _G.DiamondQuestMode then
+            pcall(function()
+                SellItem:InvokeServer()
+            end)
+        end
+    end
+end)
+
+spawn(function()
+    while true do
+        task.wait(5)
+        if _G.DeepSeaQuestMode or _G.ElementQuestMode or _G.DiamondQuestMode then
+            local success, coins = pcall(function()
+                return dataStore:Get("Coins")
+            end)
+            coins = (success and coins) or 0
+
+            for name, rod in pairs(FishingRods) do
+                local uuid = getRodUUID(rod.id)
+                if not uuid and coins >= rod.price then
+                    print("[DevHub] Buying " .. name .. " (Price: " .. rod.price .. ")")
+                    local wasDeepSea = _G.DeepSeaQuestMode
+                    local wasElement = _G.ElementQuestMode
+                    local wasDiamond = _G.DiamondQuestMode
+
+                    _G.DeepSeaQuestMode = false
+                    _G.ElementQuestMode = false
+                    _G.DiamondQuestMode = false
+                    _G.HasTeleported = false
+
+                    local char = workspace:FindFirstChild("Characters"):FindFirstChild(player.Name)
+                    if char then
+                        local hum = char:FindFirstChildOfClass("Humanoid")
+                        if hum then hum.Health = 0 end
+                        task.wait(5)
+
+                        pcall(function()
+                            BuyRod:InvokeServer(rod.id)
+                        end)
+
+                        task.wait(0.5)
+                        local newUUID = nil
+                        local retryUntil = tick() + 5
+                        while tick() < retryUntil do
+                            newUUID = getRodUUID(rod.id)
+                            if newUUID then break end
+                            task.wait(0.5)
+                        end
+                        if newUUID then
+                            pcall(function()
+                                REEquipItem:FireServer(newUUID, "Fishing Rods")
+                            end)
+                            if equipTool then
+                                pcall(function()
+                                    equipTool:FireServer(1)
+                                end)
+                            end
+                            print("[DevHub] " .. name .. " equipped!")
+                        end
+
+                        teleportBasedOnCondition(getBestRod())
+                        task.wait(0.5)
+
+                        _G.DeepSeaQuestMode = wasDeepSea
+                        _G.ElementQuestMode = wasElement
+                        _G.DiamondQuestMode = wasDiamond
+                        break
+                    end
+                end
+            end
+        end
+    end
+end)
+
+spawn(function()
+    while true do
+        task.wait(5)
+        if _G.DeepSeaQuestMode or _G.ElementQuestMode or _G.DiamondQuestMode then
+            local coins = 0
+            pcall(function()
+                coins = dataStore:Get("Coins") or 0
+            end)
+
+            for baitId, bait in pairs(Baits) do
+                if not hasBait(baitId) and coins >= bait.price then
+                    print("[DevHub] Buying " .. bait.name .. "...")
+                    local wasDeepSea = _G.DeepSeaQuestMode
+                    local wasElement = _G.ElementQuestMode
+                    local wasDiamond = _G.DiamondQuestMode
+
+                    _G.DeepSeaQuestMode = false
+                    _G.ElementQuestMode = false
+                    _G.DiamondQuestMode = false
+                    _G.HasTeleported = false
+
+                    local char = workspace:FindFirstChild("Characters"):FindFirstChild(player.Name)
+                    if char then
+                        local hum = char:FindFirstChildOfClass("Humanoid")
+                        if hum then hum.Health = 0 end
+                        task.wait(5)
+
+                        buyBait(baitId)
+                        task.wait(0.5)
+                        equipBait(baitId)
+
+                        teleportBasedOnCondition(getBestRod())
+                        task.wait(0.5)
+
+                        _G.DeepSeaQuestMode = wasDeepSea
+                        _G.ElementQuestMode = wasElement
+                        _G.DiamondQuestMode = wasDiamond
+                        break
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- Respawn/recovery hook detection removed (no auto-respawn based on hook time).
 
 MainTab:CreateSection({ Name = "Blatant V1 (STABLE)" })
 
@@ -4917,89 +6454,51 @@ local function LoadStoneAndEnchantData()
         TargetEnchantEvolved = EVOLVED_ENCHANT_NAMES[1]
     end
 end
+------------------ Player Tab ------------------
+local Players = game:GetService("Players")
+local Player = Players.LocalPlayer
+local Character = Player.Character or Player.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
 
-
--- ============================================
--- [SECURITY] State lokal untuk Player Tab
--- ============================================
-local InfiniteJumpEnabled = false
-local NoclipEnabled = false
-local DivingGearEnabled = false
-local RadarEnabled = false
-
--- Koneksi
-local infiniteJumpConnection = nil
-local noclipThread = nil
-
--- Fungsi setter (opsional untuk dipakai di tempat lain)
-function SetInfiniteJump(v) InfiniteJumpEnabled = v end
-function GetInfiniteJump() return InfiniteJumpEnabled end
-function SetNoclip(v) NoclipEnabled = v end
-function GetNoclip() return NoclipEnabled end
-function SetDivingGear(v) DivingGearEnabled = v end
-function GetDivingGear() return DivingGearEnabled end
-
--- ============================================
--- Walk Speed
--- ============================================
 PlayerTab:CreateInput({
-    Name = "Walk Speed",
-    SideLabel = "Contoh: 18",
-    Placeholder = "Enter Speed...",
-    Default = "",
-    Callback = function(value)
-        local num = tonumber(value)
-        if not num then return end
-        local char = LocalPlayer.Character
-        if char then
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if hum then
-                hum.WalkSpeed = num
-            end
+	Name = "Walk Speed",
+	SideLabel = "Contoh: 18",
+	Placeholder = "Enter Speed...",
+	Default = "",
+	Callback = function(value)
+        local hum = game.Players.LocalPlayer.Character:FindFirstChild("Humanoid")
+        if hum then
+            hum.WalkSpeed = tonumber(value) or 18
         end
     end
 })
 
--- ============================================
--- Jump Power
--- ============================================
 PlayerTab:CreateInput({
-    Name = "Jump Power",
-    SideLabel = "Contoh: 50",
-    Placeholder = "Enter Power...",
-    Default = "",
-    Callback = function(value)
-        local num = tonumber(value)
-        if not num then return end
-        local char = LocalPlayer.Character
-        if char then
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if hum then
-                hum.JumpPower = num
-            end
+	Name = "Jump Power",
+	SideLabel = "Contoh: 50",
+	Placeholder = "Enter Power...",
+	Default = "",
+	Callback = function(Text)
+		local hum = game.Players.LocalPlayer.Character:FindFirstChild("Humanoid")
+        if hum then
+            hum.JumpPower = tonumber(value) or 50
         end
     end
 })
 
--- ============================================
--- Infinite Jump
--- ============================================
+local UserInputService = game:GetService("UserInputService")
+
 PlayerTab:CreateToggle({
-    Name = "Infinite Jump",
-    Default = false,
-    Callback = function(value)
-        InfiniteJumpEnabled = value
-        if value then
+	Name = "Infinite Jump",
+	Default = false,
+ Callback = function(Value)
+        _G.InfiniteJump = Value
+        if Value then
             print("✅ Infinite Jump Active")
-            -- Putuskan koneksi lama jika ada
-            if infiniteJumpConnection then
-                infiniteJumpConnection:Disconnect()
-            end
-            infiniteJumpConnection = UserInputService.JumpRequest:Connect(function()
-                if not InfiniteJumpEnabled then return end
-                local char = LocalPlayer.Character
-                if char then
-                    local humanoid = char:FindFirstChildOfClass("Humanoid")
+            InfiniteJumpConnection = UserInputService.JumpRequest:Connect(function()
+                if _G.InfiniteJump then
+                    local character = Player.Character or Player.CharacterAdded:Wait()
+                    local humanoid = character:FindFirstChildOfClass("Humanoid")
                     if humanoid then
                         humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
                     end
@@ -5007,79 +6506,46 @@ PlayerTab:CreateToggle({
             end)
         else
             print("❌ Infinite Jump Inactive")
-            if infiniteJumpConnection then
-                infiniteJumpConnection:Disconnect()
-                infiniteJumpConnection = nil
             end
         end
-    end
 })
 
--- ============================================
--- Noclip
--- ============================================
 PlayerTab:CreateToggle({
-    Name = "Noclip",
-    Default = false,
-    Callback = function(value)
-        NoclipEnabled = value
-        if value then
-            -- Hentikan thread lama jika masih berjalan
-            if noclipThread then
-                task.cancel(noclipThread)
-            end
-            noclipThread = task.spawn(function()
-                while NoclipEnabled do
-                    local char = LocalPlayer.Character
-                    if char then
-                        for _, part in ipairs(char:GetDescendants()) do
-                            if part:IsA("BasePart") and part.CanCollide == true then
-                                part.CanCollide = false
-                            end
+	Name = "Noclip",
+	Default = false,
+	 Callback = function(state)
+        _G.Noclip = state
+        task.spawn(function()
+            local Player = game:GetService("Players").LocalPlayer
+            while _G.Noclip do
+                task.wait(0.1)
+                if Player.Character then
+                    for _, part in pairs(Player.Character:GetDescendants()) do
+                        if part:IsA("BasePart") and part.CanCollide == true then
+                            part.CanCollide = false
                         end
                     end
-                    task.wait(0.1)
                 end
-                noclipThread = nil
-            end)
-        else
-            if noclipThread then
-                task.cancel(noclipThread)
-                noclipThread = nil
             end
-        end
+        end)
     end
 })
 
--- ============================================
--- Radar
--- ============================================
 PlayerTab:CreateToggle({
-    Name = "Radar",
-    Default = false,
-    Callback = function(state)
-        RadarEnabled = state
-        -- Menggunakan service yang sudah lokal: ReplicatedStorage, UpdateRadar, Lighting
-        local success, replionData = pcall(function()
-            return ReplicatedStorage.Packages.Replion.Client:GetReplion("Data")
-        end)
-        if not success or not replionData then return end
+	Name = "Radar",
+	Default = false,
+	   Callback = function(state)
+        local Lighting = game:GetService("Lighting")
+        local Replion = require(ReplicatedStorage.Packages.Replion).Client:GetReplion("Data")
+        local NetFunction = UpdateRadar
 
-        local ok = pcall(function()
-            return UpdateRadar:InvokeServer(state)
-        end)
-        if ok then
-            -- Mainkan suara radar
-            pcall(function()
-                local sound = require(ReplicatedStorage.Shared.Soundbook).Sounds.RadarToggle:Play()
-                sound.PlaybackSpeed = 1 + math.random() * 0.3
-            end)
+        if Replion and NetFunction:InvokeServer(state) then
+            local sound = require(ReplicatedStorage.Shared.Soundbook).Sounds.RadarToggle:Play()
+            sound.PlaybackSpeed = 1 + math.random() * 0.3
 
             local c = Lighting:FindFirstChildWhichIsA("ColorCorrectionEffect")
             if c then
-                -- Simpan library spr (jika diperlukan secara lokal)
-                local spr = require(ReplicatedStorage.Packages.spr)
-                spr.stop(c)
+                require(ReplicatedStorage.Packages.spr).stop(c)
 
                 local time = require(ReplicatedStorage.Controllers.ClientTimeController)
                 local profile = time._getLightingProfile and time:_getLightingProfile() or {}
@@ -5095,37 +6561,36 @@ PlayerTab:CreateToggle({
                     c.Brightness = 0.2
                 end
 
-                spr.target(c, 1, 1, correction)
+                require(ReplicatedStorage.Packages.spr).target(c, 1, 1, correction)
             end
 
-            -- Reset exposure compensation
-            pcall(function()
-                local spr = require(ReplicatedStorage.Packages.spr)
-                spr.stop(Lighting)
-                Lighting.ExposureCompensation = 1
-                spr.target(Lighting, 1, 2, {ExposureCompensation = 0})
-            end)
+            require(ReplicatedStorage.Packages.spr).stop(Lighting)
+            Lighting.ExposureCompensation = 1
+            require(ReplicatedStorage.Packages.spr).target(Lighting, 1, 2, {ExposureCompensation = 0})
         end
     end
 })
 
--- ============================================
--- Diving Gear
--- ============================================
 PlayerTab:CreateToggle({
-    Name = "Diving Gear",
-    Default = false,
-    Callback = function(state)
-        DivingGearEnabled = state
+	Name = "Diving Gear",
+	Default = false,
+	 Callback = function(state)
+        _G.DivingGear = state
+        local RemoteFolder = Net
         if state then
-            if EquipOxygen then
-                pcall(function() EquipOxygen:InvokeServer(105) end)
-            end
+            EquipOxygen:InvokeServer(105)
         else
-            if UnequipOxygen then
-                pcall(function() UnequipOxygen:InvokeServer() end)
-            end
+            UnequipOxygen:InvokeServer()
         end
+    end
+})
+
+PlayerTab:CreateButton({
+	Name = "FlyGui V3",
+	Icon = "rbxassetid://7733920644",
+	 Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/XNEOFF/FlyGuiV3/main/FlyGuiV3.txt"))()
+        Notify("Fly GUI Activated")
     end
 })
 
@@ -5907,20 +7372,6 @@ ShopTab:CreateButton({
     end
 })
 
--- ============================================
--- [SECURITY] Semua state lokal
--- ============================================
-local SelectedIsland = nil
-local SelectedPlayer = nil
-local SelectedNPC = nil
-local SelectedFishingArea = nil
-local savedCustomPos = nil
-local fishingAreaFreezeConn = nil
-local customPosFreezeConn = nil
-
--- ============================================
--- Island Teleport (Dinamis + Fly)
--- ============================================
 TeleportTab:CreateSection({ Name = "Island", Icon = "rbxassetid://7733955511" })
 
 local IslandLocations = {
@@ -5934,15 +7385,28 @@ local IslandLocations = {
     ["Fisherman Island"] = Vector3.new(-175, 3, 2772),
     ["Kohana Volcano"] = Vector3.new(-545.302429, 17.1266193, 118.870537),
     ["Kohana"] = Vector3.new(-603, 3, 719),
+    ["Kohana Spot 1"] = Vector3.new(-703.661194, 17.2500553, 438.727234, 0.999670267, -1.30875062e-08, 0.0256783087, 1.42019179e-08, 1, -4.32165699e-08, -0.0256783087, 4.35669989e-08, 0.999670267),
+    ["Kohana Spot 2"] = Vector3.new(-897.885498, 5.7500596, 694.055359, -0.0598792434, -1.81639592e-08, 0.998205602, -7.78091647e-10, 1, 1.81499349e-08, -0.998205602, 3.10108939e-10, -0.0598792434),
     ["Lost Isle"] = Vector3.new(-3643, 1, -1061),
     ["Sacred Temple"] = Vector3.new(1498, -23, -644),
+    ["Sysyphus Statue"] = Vector3.new(-3783.26807, -135.073914, -949.946289),
     ["Treasure Room"] = Vector3.new(-3600, -267, -1575),
     ["Tropical Grove"] = Vector3.new(-2091, 6, 3703),
     ["Weather Machine"] = Vector3.new(-1508, 6, 1895),
-    ["Planetary Observatory"] = Vector3.new(424.7, 3.7, 2186.1),
-    ["Aquatic Research Lab"] = Vector3.new(5006.5, 4934.3, 5008.3),
-    ["Underwater City"] = Vector3.new(-3141.3, -643.5, -10408.1),
+    ["Pirate Cave"] = Vector3.new(3398.86011, 4.19197035, 3480.54517, 0.617785096, -6.47339746e-08, -0.786346972, 3.20196716e-11, 1, -8.22972481e-08, 0.786346972, 5.0816837e-08, 0.617785096),
+    ["Pirate Treasure room"] = Vector3.new(3299.81274, -305.034851, 3041.50952, -0.483591467, 2.84460047e-08, -0.875293851, -4.8970314e-08, 1, 5.95544378e-08, 0.875293851, 7.1663429e-08, -0.483591467),
+    ["Crystal Depths"] = Vector3.new(5817.32715, -905.697144, 15416.3047, 0.0518231429, 1.04369903e-07, -0.998656273, -1.59683076e-08, 1, 1.03681693e-07, 0.998656273, 1.05737401e-08, 0.0518231429),
+    ["Leviathan Den"] = Vector3.new(3474.05298, -287.774719, 3472.63403, -0.915228605, 0.097325258, -0.391004264, 3.60608101e-06, 0.970392585, 0.241532952, 0.402934879, 0.221056461, -0.88813144),
+    ["Volcanic Cavern"] = Vector3.new(1097.38257, 85.8561707, -10243.374, 0.000799760048, -8.65786873e-08, 0.999999702, 3.16020241e-08, 1, 8.65534346e-08, -0.999999702, 3.15327924e-08, 0.000799760048),
+    ["Lava Basin"] = Vector3.new(934.931152, 67.6846008, -10218.3184, -0.712165296, 1.81655864e-08, 0.702011824, -1.73417316e-08, 1, -4.34690186e-08, -0.702011824, -4.31312266e-08, -0.712165296),
+    ["Secret Passage"] = Vector3.new(3431.59546, -299.344971, 3359.79614, -0.947619379, 3.96371149e-08, -0.319401741, 3.15227737e-08, 1, 3.0574423e-08, 0.319401741, 1.89044869e-08, -0.947619379),
+	["Planetary Observatory"] = Vector3.new(424.709442, 3.67347598, 2186.08545, -0.248919666, 4.43553425e-08, -0.968524158, -4.75323825e-09, 1, 4.70184638e-08, 0.968524158, 1.63074461e-08, -0.248919666),
+    ["Aquatic Research Lab"] = Vector3.new(5006.53125, 4934.31055, 5008.31885, 0.954527259, 3.15839692e-08, -0.298123598, -6.24583052e-09, 1, 8.5944734e-08, 0.298123598, -8.01745657e-08, 0.954527259),
+    ["Underwater City"] = Vector3.new(-3141.34546, -643.484253, -10408.1104, 0.120906673, 5.98232788e-08, -0.99266386, 4.37882157e-08, 1, 6.55988117e-08, 0.99266386, -5.13983132e-08, 0.120906673),
+    
 }
+
+local SelectedIsland = nil
 
 local function getIslandFolder()
     return workspace:FindFirstChild("Islands")
@@ -5950,132 +7414,165 @@ end
 
 local function getIslandDropdownItems()
     local folder = getIslandFolder()
-    if not folder then return {} end
+    if not folder then
+        return { "Islands folder not found" }
+    end
+
     local out = {}
     for _, child in ipairs(folder:GetChildren()) do
         if child:IsA("Model") or child:IsA("BasePart") or child:IsA("CFrameValue") or child:IsA("Vector3Value") or child:IsA("Folder") then
             table.insert(out, child.Name)
         end
     end
-    -- Tambahkan dari hardcode jika tidak ada di folder
-    for name in pairs(IslandLocations) do
-        if not table.find(out, name) then table.insert(out, name) end
-    end
     table.sort(out)
-    return #out > 0 and out or {"No islands found"}
+    if #out == 0 then
+        return { "No islands found" }
+    end
+    return out
+end
+
+local function resolveCFrameFromInstance(inst)
+    if not inst then return nil end
+
+    if inst:IsA("Model") then
+        return inst:GetPivot()
+    end
+    if inst:IsA("BasePart") then
+        return inst.CFrame
+    end
+    if inst:IsA("CFrameValue") then
+        return inst.Value
+    end
+    if inst:IsA("Vector3Value") then
+        return CFrame.new(inst.Value)
+    end
+    if inst:IsA("Folder") then
+        local model = inst:FindFirstChildWhichIsA("Model")
+        if model then
+            return model:GetPivot()
+        end
+        local part = inst:FindFirstChildWhichIsA("BasePart", true)
+        if part then
+            return part.CFrame
+        end
+    end
+
+    return nil
 end
 
 local function resolveIslandCFrame(selection)
     if not selection or selection == "" then return nil end
+
     local folder = getIslandFolder()
     if folder then
         local child = folder:FindFirstChild(selection)
-        if child then
-            if child:IsA("Model") then return child:GetPivot() end
-            if child:IsA("BasePart") then return child.CFrame end
-            if child:IsA("CFrameValue") then return child.Value end
-            if child:IsA("Vector3Value") then return CFrame.new(child.Value) end
-        end
+        local cf = resolveCFrameFromInstance(child)
+        if cf then return cf end
     end
-    -- Fallback ke hardcode
-    local vec = IslandLocations[selection]
-    return vec and CFrame.new(vec) or nil
+    return nil
 end
 
-local islandDropdown = TeleportTab:CreateDropdown({
-    Name = "Select Island",
-    Items = getIslandDropdownItems(),
-    Callback = function(Value) SelectedIsland = Value end
+local IslandDropdown = TeleportTab:CreateDropdown({
+	Name = "Select Island",
+	 Items = getIslandDropdownItems(),
+    Callback = function(Value)
+        SelectedIsland = Value
+    end
 })
 
--- Refresh otomatis
 task.spawn(function()
-    local folder = getIslandFolder() or workspace:WaitForChild("Islands", 10)
+    local function refresh()
+        if IslandDropdown and IslandDropdown.Refresh then
+            IslandDropdown:Refresh(getIslandDropdownItems())
+        end
+    end
+
+    local folder = getIslandFolder()
+    if not folder then
+        for _ = 1, 20 do
+            folder = getIslandFolder()
+            if folder then break end
+            task.wait(0.5)
+        end
+    end
+
+    refresh()
     if folder then
-        folder.ChildAdded:Connect(function() islandDropdown:Refresh(getIslandDropdownItems()) end)
-        folder.ChildRemoved:Connect(function() islandDropdown:Refresh(getIslandDropdownItems()) end)
+        folder.ChildAdded:Connect(refresh)
+        folder.ChildRemoved:Connect(refresh)
     end
 end)
 
--- Teleport Instant
 TeleportTab:CreateButton({
-    Name = "Teleport to Island (Instant)",
-    Icon = "rbxassetid://7733920644",
-    Callback = function()
+	Name = "Teleport to Island",
+	Icon = "rbxassetid://7733920644",
+	  Callback = function()
+        local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+
         local cf = resolveIslandCFrame(SelectedIsland)
-        if not cf then Window:Notify({Title="Error",Content="Island not found",Duration=3}) return end
-        local char = LocalPlayer.Character
-        if char and char:FindFirstChild("HumanoidRootPart") then
-            char.HumanoidRootPart.CFrame = cf + Vector3.new(0,3,0)
-        end
+        if not cf then return end
+
+        local _, y, _ = hrp.CFrame:ToOrientation()
+        local dest = cf.Position + Vector3.new(0, 3, 0)
+        hrp.CFrame = CFrame.new(dest) * CFrame.Angles(0, y, 0)
     end
 })
 
--- Teleport Fly
-TeleportTab:CreateButton({
-    Name = "Teleport to Island (Fly)",
-    Icon = "rbxassetid://128755575520135",
-    Callback = function()
-        local cf = resolveIslandCFrame(SelectedIsland)
-        if not cf then Window:Notify({Title="Error",Content="Island not found",Duration=3}) return end
-        flyToPosition(cf.Position + Vector3.new(0,3,0))
-    end
-})
-
--- ============================================
--- Teleport to Player
--- ============================================
 TeleportTab:CreateSection({ Name = "Tp To Player", Icon = "rbxassetid://7733955511" })
 
-local function getPlayerList()
-    local list = {}
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer then table.insert(list, plr.Name) end
-    end
-    table.sort(list)
-    return list
-end
+local SelectedPlayer = nil
 
-local playerDropdown = TeleportTab:CreateDropdown({
-    Name = "Select Player",
-    Items = getPlayerList(),
-    Callback = function(Value) SelectedPlayer = Value end
+local FishingDropdown = TeleportTab:CreateDropdown({
+	Name = "Select Player",
+	Items = (function()
+        local players = {}
+        for _, plr in pairs(game.Players:GetPlayers()) do
+            if plr.Name ~= Player.Name then
+                table.insert(players, plr.Name)
+            end
+        end
+        table.sort(players)
+        return players
+    end)(),
+    Callback = function(Value)
+        SelectedPlayer = Value
+    end
 })
 
-Players.PlayerAdded:Connect(function() playerDropdown:Refresh(getPlayerList()) end)
-Players.PlayerRemoving:Connect(function() playerDropdown:Refresh(getPlayerList()) end)
+function RefreshPlayerList()
+    local list = {}
+    for _, plr in pairs(game.Players:GetPlayers()) do
+        if plr.Name ~= Player.Name then
+            table.insert(list, plr.Name)
+        end
+    end
+    table.sort(list)
+    FishingDropdown:Refresh(list)
+end
+
+game.Players.PlayerAdded:Connect(RefreshPlayerList)
+game.Players.PlayerRemoving:Connect(RefreshPlayerList)
 
 TeleportTab:CreateButton({
-    Name = "Teleport to Player (Instant)",
-    Icon = "rbxassetid://7733920644",
-    Callback = function()
-        if not SelectedPlayer then return end
-        local target = Players:FindFirstChild(SelectedPlayer)
-        if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
-            local char = LocalPlayer.Character
-            if char and char:FindFirstChild("HumanoidRootPart") then
-                char.HumanoidRootPart.CFrame = target.Character.HumanoidRootPart.CFrame + Vector3.new(0,2,0)
+	Name = "Teleport to Player",
+	Icon = "rbxassetid://7733920644",
+	 Callback = function()
+        if SelectedPlayer then
+            local target = game.Players:FindFirstChild(SelectedPlayer)
+            if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+                if Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") then
+                    Player.Character.HumanoidRootPart.CFrame =
+                        target.Character.HumanoidRootPart.CFrame + Vector3.new(0, 2, 0)
+                end
             end
         end
     end
 })
 
-TeleportTab:CreateButton({
-    Name = "Teleport to Player (Fly)",
-    Icon = "rbxassetid://128755575520135",
-    Callback = function()
-        if not SelectedPlayer then return end
-        local target = Players:FindFirstChild(SelectedPlayer)
-        if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
-            flyToPosition(target.Character.HumanoidRootPart.Position + Vector3.new(0,2,0))
-        end
-    end
-})
-
--- ============================================
--- Teleport to NPC
--- ============================================
 TeleportTab:CreateSection({ Name = "Location NPC", Icon = "rbxassetid://7733955511" })
+
+local SelectedNPC = nil
 
 local function getNpcFolder()
     return workspace:FindFirstChild("NPC")
@@ -6083,7 +7580,9 @@ end
 
 local function getNpcDropdownItems()
     local folder = getNpcFolder()
-    if not folder then return {} end
+    if not folder then
+        return { "NPC folder not found" }
+    end
     local out = {}
     for _, child in ipairs(folder:GetChildren()) do
         if child:IsA("Model") or child:IsA("BasePart") then
@@ -6091,154 +7590,188 @@ local function getNpcDropdownItems()
         end
     end
     table.sort(out)
-    return #out > 0 and out or {"No NPCs found"}
+    if #out == 0 then
+        return { "No NPCs found" }
+    end
+    return out
 end
 
-local npcDropdown = TeleportTab:CreateDropdown({
-    Name = "Select NPC",
-    Items = getNpcDropdownItems(),
-    Callback = function(Value) SelectedNPC = Value end
+local NPCDropdown = TeleportTab:CreateDropdown({
+	Name = "Select NPC",
+	Items = getNpcDropdownItems(),
+    Callback = function(Value)
+        SelectedNPC = Value
+    end
 })
 
 task.spawn(function()
-    local folder = getNpcFolder() or workspace:WaitForChild("NPC", 10)
-    if folder then
-        folder.ChildAdded:Connect(function() npcDropdown:Refresh(getNpcDropdownItems()) end)
-        folder.ChildRemoved:Connect(function() npcDropdown:Refresh(getNpcDropdownItems()) end)
+    local npcFolder = getNpcFolder() or workspace:WaitForChild("NPC", 10)
+    if not npcFolder then return end
+
+    local function refresh()
+        if NPCDropdown and NPCDropdown.Refresh then
+            NPCDropdown:Refresh(getNpcDropdownItems())
+        end
     end
+
+    refresh()
+    npcFolder.ChildAdded:Connect(refresh)
+    npcFolder.ChildRemoved:Connect(refresh)
 end)
 
 TeleportTab:CreateButton({
-    Name = "Teleport to NPC (Instant)",
-    Icon = "rbxassetid://7733920644",
-    Callback = function()
-        local folder = getNpcFolder()
-        if not folder or not SelectedNPC then return end
-        local target = folder:FindFirstChild(SelectedNPC)
-        if target then
-            local cf = nil
-            if target:IsA("Model") then cf = target:GetPivot()
-            elseif target:IsA("BasePart") then cf = target.CFrame end
-            if cf then
-                local char = LocalPlayer.Character
-                if char and char:FindFirstChild("HumanoidRootPart") then
-                    char.HumanoidRootPart.CFrame = cf + Vector3.new(0,2,0)
-                end
-            end
+	Name = "Teleport to NPC",
+	Icon = "rbxassetid://7733920644",
+	 Callback = function()
+        local npcFolder = getNpcFolder()
+        local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+        if not npcFolder or not hrp or not SelectedNPC then return end
+
+        local target = npcFolder:FindFirstChild(SelectedNPC)
+        if not target then return end
+
+        if target:IsA("Model") then
+            hrp.CFrame = target:GetPivot()
+        elseif target:IsA("BasePart") then
+            hrp.CFrame = target.CFrame
         end
     end
 })
 
-TeleportTab:CreateButton({
-    Name = "Teleport to NPC (Fly)",
-    Icon = "rbxassetid://128755575520135",
-    Callback = function()
-        local folder = getNpcFolder()
-        if not folder or not SelectedNPC then return end
-        local target = folder:FindFirstChild(SelectedNPC)
-        if target then
-            local pos = nil
-            if target:IsA("Model") then pos = target:GetPivot().Position
-            elseif target:IsA("BasePart") then pos = target.Position end
-            if pos then flyToPosition(pos + Vector3.new(0,2,0)) end
-        end
-    end
-})
-
--- ============================================
--- Fishing Area (hardcode + freeze toggle)
--- ============================================
 TeleportTab:CreateSection({ Name = "Fishing Area", Icon = "rbxassetid://7733955511" })
 
 local FishingAreaLocations = {
-    ["Fisherman Island"] = Vector3.new(74.03, 9.53, 2705.23),
-    ["Crater Island"] = Vector3.new(998.03, 2.86, 5151.17),
-    -- ... (isi lengkap seperti kode kamu)
+    ["Fisherman Island"]           = Vector3.new(74.03, 9.53, 2705.23),
+    ["Crater Island"]              = Vector3.new(998.03, 2.86, 5151.17),
+    ["Tropical Island"]            = Vector3.new(-2152.61, 2.32, 3671.72),
+    ["Coral Refs"]                 = Vector3.new(-3181.39, 2.52, 2104.35),
+    ["Lost Isle"]                  = Vector3.new(-3734.67, 5.34, -1082.63),
+    ["Volcano"]                    = Vector3.new(-541.52, 17.32, 121.67),
+    ["Esoteric Island"]            = Vector3.new(2164.47, 3.22, 1242.39),
+    ["Enchant Room"]               = Vector3.new(3255.67, -1301.53, 1371.79),
+    ["Kohana"]                     = Vector3.new(-661.68, 3.05, 714.14),
+    ["Weather Machine"]            = Vector3.new(-1523.23, 8.47, 1771.99),
+    ["Treasure Room"]              = Vector3.new(-3581.60, -279.07, -1589.65),
+    ["Sisyphus Statue"]            = Vector3.new(-3729.25, -135.07, -885.64),
+    ["Ancient Jungle"]             = Vector3.new(1275.10, 3.91, -334.75),
+    ["Sacred Temple"]              = Vector3.new(1451.41, -22.13, -635.65),
+    ["Underground Cellar"]         = Vector3.new(2135.45, -91.20, -699.33),
+    ["Arrow Artifact"]             = Vector3.new(869.33, 3.13, -294.87),
+    ["Crescent Artifact"]          = Vector3.new(1399.05, 4.80, 162.05),
+    ["Diamond Artifact"]           = Vector3.new(1854.25, 4.43, -276.84),
+    ["Hourglass Diamond Artifact"] = Vector3.new(1460.75, 6.33, -815.16),
+    ["Ancient Ruin"]               = CFrame.new(6096.65, -585.92, 4665.26, 0.01, -0.00, 1.00, 0.00, 1.00, 0.00, -1.00, 0.00, 0.01),
+    ["Crystalline Passage"]        = CFrame.new(6050.02, -538.90, 4374.91, -1.00, 0.00, 0.01, 0.00, 1.00, 0.00, -0.01, 0.00, -1.00),
+    ["Classic Island"]             = CFrame.new(1232.43, 10.00, 2843.07, 0.03, 0.00, -1.00, 0.00, 1.00, 0.00, 1.00, -0.00, 0.03),
+    ["Iron Cavern"]                = CFrame.new(-8898.99, -581.75, 157.30, 0.02, -0.00, -1.00, 0.00, 1.00, -0.00, 1.00, -0.00, 0.02),
+    ["Iron Cafe"]                  = CFrame.new(-8642.19, -547.50, 161.10, -0.00, -0.00, -1.00, 0.00, 1.00, -0.00, 1.00, -0.00, -0.00),
 }
+
+local SelectedFishingArea = nil
 
 TeleportTab:CreateDropdown({
     Name = "Select Fishing Area",
-    Items = (function() local k={}; for n in pairs(FishingAreaLocations) do table.insert(k,n) end; table.sort(k); return k end)(),
-    Callback = function(v) SelectedFishingArea = v end
+    Items = (function()
+        local keys = {}
+        for name in pairs(FishingAreaLocations) do
+            table.insert(keys, name)
+        end
+        table.sort(keys)
+        return keys
+    end)(),
+    Callback = function(value)
+        SelectedFishingArea = value
+    end
 })
 
 TeleportTab:CreateButton({
-    Name = "Teleport to Fishing Area (Instant)",
+    Name = "Teleport to Fishing Area",
     Icon = "rbxassetid://7733920644",
     Callback = function()
         if not SelectedFishingArea then return end
         local dest = FishingAreaLocations[SelectedFishingArea]
         if not dest then return end
-        local char = LocalPlayer.Character
-        if char and char:FindFirstChild("HumanoidRootPart") then
-            if typeof(dest) == "CFrame" then char.HumanoidRootPart.CFrame = dest
-            else char.HumanoidRootPart.CFrame = CFrame.new(dest) end
+        local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        if typeof(dest) == "CFrame" then
+            hrp.CFrame = dest
+        else
+            hrp.CFrame = CFrame.new(dest)
         end
     end
 })
 
-TeleportTab:CreateButton({
-    Name = "Teleport to Fishing Area (Fly)",
-    Icon = "rbxassetid://128755575520135",
-    Callback = function()
-        if not SelectedFishingArea then return end
-        local dest = FishingAreaLocations[SelectedFishingArea]
-        if not dest then return end
-        local pos = typeof(dest) == "CFrame" and dest.Position or dest
-        flyToPosition(pos)
+local fishingAreaFreezeConn = nil
+
+function stopFishingAreaFreeze()
+    if fishingAreaFreezeConn then
+        fishingAreaFreezeConn:Disconnect()
+        fishingAreaFreezeConn = nil
     end
-})
+end
+
+function startFishingAreaFreeze()
+    stopFishingAreaFreeze()
+    if not SelectedFishingArea then return end
+    local dest = FishingAreaLocations[SelectedFishingArea]
+    if not dest then return end
+    local cf = typeof(dest) == "CFrame" and dest or CFrame.new(dest)
+    local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+    if hrp then hrp.CFrame = cf end
+    fishingAreaFreezeConn = RunService.Heartbeat:Connect(function()
+        pcall(function()
+            local h = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+            if h then h.CFrame = cf end
+        end)
+    end)
+end
 
 TeleportTab:CreateToggle({
     Name = "Freeze at Selected Area",
     Default = false,
     Callback = function(state)
         if state then
-            local dest = FishingAreaLocations[SelectedFishingArea]
-            if not dest then return end
-            local cf = typeof(dest) == "CFrame" and dest or CFrame.new(dest)
-            local char = LocalPlayer.Character
-            if char and char:FindFirstChild("HumanoidRootPart") then char.HumanoidRootPart.CFrame = cf end
-            fishingAreaFreezeConn = RunService.Heartbeat:Connect(function()
-                local h = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                if h then h.CFrame = cf end
-            end)
+            startFishingAreaFreeze()
         else
-            if fishingAreaFreezeConn then fishingAreaFreezeConn:Disconnect(); fishingAreaFreezeConn = nil end
+            stopFishingAreaFreeze()
         end
     end
 })
 
--- ============================================
--- Custom Position
--- ============================================
 TeleportTab:CreateSection({ Name = "Custom Position", Icon = "rbxassetid://7733955511" })
+
+local vSavedCustomPos = nil
+local customPosFreezeConn = nil
+
+function stopCustomPosFreeze()
+    if customPosFreezeConn then
+        customPosFreezeConn:Disconnect()
+        customPosFreezeConn = nil
+    end
+end
 
 TeleportTab:CreateButton({
     Name = "Save Current Position",
+    Icon = "rbxassetid://7733955511",
     Callback = function()
-        local char = LocalPlayer.Character
-        if char and char:FindFirstChild("HumanoidRootPart") then
-            savedCustomPos = char.HumanoidRootPart.CFrame
-            Window:Notify({Title="Saved",Content="Position saved!",Duration=2})
+        local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            vSavedCustomPos = hrp.CFrame
+            Window:Notify({ Title = "Custom Position", Content = "Position saved!", Duration = 3 })
         end
     end
 })
 
 TeleportTab:CreateButton({
-    Name = "Teleport to Saved Position (Instant)",
+    Name = "Teleport to Saved Position",
+    Icon = "rbxassetid://7733920644",
     Callback = function()
-        if not savedCustomPos then Window:Notify({Title="Error",Content="No position saved",Duration=3}) return end
-        local char = LocalPlayer.Character
-        if char and char:FindFirstChild("HumanoidRootPart") then char.HumanoidRootPart.CFrame = savedCustomPos end
-    end
-})
-
-TeleportTab:CreateButton({
-    Name = "Teleport to Saved Position (Fly)",
-    Callback = function()
-        if not savedCustomPos then Window:Notify({Title="Error",Content="No position saved",Duration=3}) return end
-        flyToPosition(savedCustomPos.Position)
+        if not vSavedCustomPos then
+            Window:Notify({ Title = "Custom Position", Content = "No position saved yet.", Duration = 3 })
+            return
+        end
+        local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then hrp.CFrame = vSavedCustomPos end
     end
 })
 
@@ -6246,140 +7779,218 @@ TeleportTab:CreateToggle({
     Name = "Freeze at Saved Position",
     Default = false,
     Callback = function(state)
-        if state then
-            if not savedCustomPos then Window:Notify({Title="Error",Content="No position saved",Duration=3}) return end
-            local cf = savedCustomPos
-            local char = LocalPlayer.Character
-            if char and char:FindFirstChild("HumanoidRootPart") then char.HumanoidRootPart.CFrame = cf end
-            customPosFreezeConn = RunService.Heartbeat:Connect(function()
-                local h = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        stopCustomPosFreeze()
+        if not state then return end
+        if not vSavedCustomPos then
+            Window:Notify({ Title = "Custom Position", Content = "No position saved yet.", Duration = 3 })
+            return
+        end
+        local cf = vSavedCustomPos
+        local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then hrp.CFrame = cf end
+        customPosFreezeConn = RunService.Heartbeat:Connect(function()
+            pcall(function()
+                local h = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
                 if h then h.CFrame = cf end
             end)
-        else
-            if customPosFreezeConn then customPosFreezeConn:Disconnect(); customPosFreezeConn = nil end
-        end
+        end)
     end
 })
--- ============================================
--- [SECURITY] State lokal untuk Auto Leviathan Hunt
--- ============================================
-local autoLeviathanHunt = false
-local leviathanThread = nil
+
+-- Auto Leviathan Hunt (tab: Auto)
+_G.AutoLeviathanHunt = _G.AutoLeviathanHunt or false
+local LeviathanThread = nil
 
 AutoTab:CreateSection({ Name = "Auto Leviathan Hunt", Icon = "rbxassetid://7733955511" })
 
 AutoTab:CreateToggle({
-    Name = "Auto Leviathan Hunt",
-    Default = false,
-    Callback = function(state)
-        autoLeviathanHunt = state
+	Name = "Auto Leviathan Hunt",
+	Default = _G.AutoLeviathanHunt,
+	ConfigKey = "AutoLeviathanHunt",
+	Callback = function(state)
+        _G.AutoLeviathanHunt = state
+        
         if state then
-            -- Hentikan thread lama jika ada
-            if leviathanThread then task.cancel(leviathanThread) end
-            leviathanThread = task.spawn(function()
-                while autoLeviathanHunt do
+            -- Start Leviathan Hunt loop
+            LeviathanThread = task.spawn(function()
+                while _G.AutoLeviathanHunt do
                     pcall(function()
                         local zones = workspace:FindFirstChild("Zones")
                         if zones then
-                            local den = zones:FindFirstChild("Leviathan's Den")
-                            if den then
-                                local char = LocalPlayer.Character
-                                if char and char:FindFirstChild("HumanoidRootPart") then
-                                    local target = CFrame.new(3474.05, -287.77, 3472.63,
-                                        -0.9152, 0.0973, -0.3910,
-                                        3.61e-06, 0.9704, 0.2415,
-                                        0.4029, 0.2211, -0.8881)
-                                    -- Gunakan fly teleport (lebih halus)
-                                    flyToPosition(target.Position + Vector3.new(0,3,0))
-                                    print("[Leviathan Hunt] Teleported to Den")
+                            local leviathanDen = zones:FindFirstChild("Leviathan's Den")
+                            if leviathanDen then
+                                -- Zone exists, teleport immediately
+                                local character = game.Players.LocalPlayer.Character
+                                if character and character:FindFirstChild("HumanoidRootPart") then
+                                    local targetCFrame = CFrame.new(3474.05298, -287.774719, 3472.63403, -0.915228605, 0.097325258, -0.391004264, 3.60608101e-06, 0.970392585, 0.241532952, 0.402934879, 0.221056461, -0.88813144)
+                                    character.HumanoidRootPart.CFrame = targetCFrame
+                                    print("[Leviathan Hunt] ✓ Teleported to Leviathan's Den")
                                 end
                             else
-                                print("[Leviathan Hunt] Zone not found")
+                                print("[Leviathan Hunt] Zone not found, waiting...")
                             end
                         end
                     end)
+                    
+                    -- Check every 30 seconds
                     task.wait(30)
                 end
             end)
-            Window:Notify({Title = "✓ Leviathan Hunt", Content = "Enabled", Duration = 3})
+            
+            Window:Notify({
+                Title = "✓ Leviathan Hunt",
+                Content = "Auto Leviathan Hunt enabled!",
+                Duration = 3
+            })
         else
-            if leviathanThread then task.cancel(leviathanThread); leviathanThread = nil end
-            Window:Notify({Title = "✗ Leviathan Hunt", Content = "Disabled", Duration = 3})
+            -- Stop Leviathan Hunt
+            if LeviathanThread then
+                task.cancel(LeviathanThread)
+                LeviathanThread = nil
+            end
+            
+            Window:Notify({
+                Title = "✗ Leviathan Hunt",
+                Content = "Auto Leviathan Hunt disabled!",
+                Duration = 3
+            })
         end
     end
 })
 
--- ============================================
--- [SECURITY] State lokal untuk Auto Lochnes Event
--- ============================================
-local autoLochnesEvent = false
-local lochnesFishingMode = "Legit"
-local lochnesThread = nil
-local lochnesTriggered = false
-local LOCHNES_TRIGGER_SECONDS = 10
-local lochnesLastCFrame = nil
+-- ======================================================
+-- Auto Lochnes Event (Countdown-based TP + Fishing)
+-- Reads countdown from:
+-- workspace["!!! DEPENDENCIES"]["Event Tracker"].Main.Gui.Content.Items.Countdown.Label
+-- ======================================================
+_G.AutoLochnesEvent = _G.AutoLochnesEvent or false
+_G.LochnesFishingMode = _G.LochnesFishingMode or "Legit" -- "Legit" | "Instant"
 
-local LOCHNES_TARGET_CFRAME = CFrame.new(
+ LochnesThread = nil
+ LochnesTriggered = false
+ LOCHNES_TRIGGER_SECONDS = 10
+ LochnesLastCFrame = nil
+
+ LOCHNES_TARGET_CFRAME = CFrame.new(
     6091.53711, -585.924316, 4643.58789,
     -0.863860309, 1.13146491e-07, 0.50373143,
     9.93031932e-08, 1, -5.43194325e-08,
     -0.50373143, 3.09773784e-09, -0.863860309
 )
 
-local function parseLochnesCountdownSeconds(text)
+ function parseLochnesCountdownSeconds(text)
     if type(text) ~= "string" then return nil end
     text = text:gsub("\n", " "):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
     if text == "" then return nil end
+
+    -- Expected example: "3H 47M 8S"
     local h = tonumber(text:match("(%d+)%s*[Hh]")) or 0
     local m = tonumber(text:match("(%d+)%s*[Mm]")) or 0
     local s = tonumber(text:match("(%d+)%s*[Ss]"))
-    if s then return h * 3600 + m * 60 + s end
+    if s then
+        return h * 3600 + m * 60 + s
+    end
+
+    -- Fallback: "HH:MM:SS"
     local hh, mm, ss = text:match("^(%d+):(%d+):(%d+)$")
-    if hh then return tonumber(hh) * 3600 + tonumber(mm) * 60 + tonumber(ss) end
+    if hh then
+        return tonumber(hh) * 3600 + tonumber(mm) * 60 + tonumber(ss)
+    end
+
+    -- Fallback: "MM:SS"
     local mm2, ss2 = text:match("^(%d+):(%d+)$")
-    if mm2 then return tonumber(mm2) * 60 + tonumber(ss2) end
+    if mm2 then
+        return tonumber(mm2) * 60 + tonumber(ss2)
+    end
+
     return nil
 end
 
-local function getLochnesCountdownText()
+ function getLochnesCountdownText()
     local ok, label = pcall(function()
         return workspace["!!! DEPENDENCIES"]["Event Tracker"].Main.Gui.Content.Items.Countdown.Label
     end)
     if not ok or not label then return nil end
+
     local text = label.Text or label.ContentText
     return type(text) == "string" and text or tostring(text or "")
 end
 
-local function lochnesCountdownLoop()
-    while autoLochnesEvent do
+ function teleportLochnes()
+    local character = game.Players.LocalPlayer.Character
+    if not character then return end
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    -- Save current position before teleporting
+    LochnesLastCFrame = hrp.CFrame
+    hrp.CFrame = LOCHNES_TARGET_CFRAME
+end
+
+ function returnToLochnesLastPosition()
+    if not LochnesLastCFrame then return end
+    local character = game.Players.LocalPlayer.Character
+    if not character then return end
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    hrp.CFrame = LochnesLastCFrame
+end
+
+ function holdRod()
+    -- Re-use existing rod equip remote (slot 1)
+    pcall(function()
+        if equipTool then
+            equipTool:FireServer(1)
+        end
+    end)
+end
+
+ function startLochnesFishingOnce()
+    holdRod()
+
+    if _G.LochnesFishingMode == "Legit" then
+        pcall(function()
+            FishingController:RequestChargeFishingRod(Vector2.new(0, 0), true)
+        end)
+        task.wait(delayfishing or 1)
+        pcall(function()
+            CallFishDone(REFishDone, 1)
+        end)
+    else
+        -- Instant mode: use existing helper
+        pcall(instant)
+    end
+end
+
+ function lochnesCountdownLoop()
+    while _G.AutoLochnesEvent do
         local seconds = parseLochnesCountdownSeconds(getLochnesCountdownText())
         if typeof(seconds) == "number" then
-            if (not lochnesTriggered) and seconds <= LOCHNES_TRIGGER_SECONDS then
-                lochnesTriggered = true
-                -- Simpan posisi & terbang ke lokasi
-                local char = LocalPlayer.Character
-                if char and char:FindFirstChild("HumanoidRootPart") then
-                    lochnesLastCFrame = char.HumanoidRootPart.CFrame
-                end
-                flyToPosition(LOCHNES_TARGET_CFRAME.Position + Vector3.new(0,3,0))
+            if (not LochnesTriggered) and seconds <= LOCHNES_TRIGGER_SECONDS then
+                LochnesTriggered = true
+                teleportLochnes()
                 task.wait(0.2)
-                -- Lakukan fishing
-                pcall(function() REEquip:FireServer(1) end)
-                if lochnesFishingMode == "Legit" then
-                    pcall(function() FishingController:RequestChargeFishingRod(Vector2.new(0,0), true) end)
-                    task.wait(delayfishing or 1)
-                    pcall(function() CallFishDone(REFishDone, 1) end)
-                else
-                    pcall(instant)
-                end
-                Window:Notify({Title="Lochnes Event", Content="Fished at Lochnes", Duration=3})
+                startLochnesFishingOnce()
+                Window:Notify({
+                    Title = "Lochnes Event",
+                    Content = "TP + fishing started (" .. tostring(_G.LochnesFishingMode) .. ")",
+                    Duration = 3,
+                    Icon = "fish"
+                })
+                -- Return to last saved position after fishing
                 task.wait(2)
-                if lochnesLastCFrame then flyToPosition(lochnesLastCFrame.Position) end
-                Window:Notify({Title="Lochnes Event", Content="Returned", Duration=3})
-            elseif lochnesTriggered and seconds > LOCHNES_TRIGGER_SECONDS then
-                lochnesTriggered = false
+                returnToLochnesLastPosition()
+                Window:Notify({
+                    Title = "Lochnes Event",
+                    Content = "Returned to last position.",
+                    Duration = 3,
+                    Icon = "rbxassetid://7733920644"
+                })
+            elseif LochnesTriggered and seconds > LOCHNES_TRIGGER_SECONDS then
+                -- Countdown reset for the next event cycle
+                LochnesTriggered = false
             end
         end
+
         task.wait(0.25)
     end
 end
@@ -6389,167 +8000,272 @@ AutoTab:CreateSection({ Name = "Auto Lochnes Event", Icon = "rbxassetid://773395
 AutoTab:CreateDropdown({
     Name = "Lochnes Fishing Mode",
     Items = { "Legit", "Instant" },
-    Default = "Legit",
-    Callback = function(v) lochnesFishingMode = v end
+    Default = _G.LochnesFishingMode,
+    Callback = function(v)
+        _G.LochnesFishingMode = v
+    end
 })
 
 AutoTab:CreateToggle({
     Name = "Auto Lochnes Event",
-    Default = false,
+    Default = _G.AutoLochnesEvent,
     Callback = function(state)
-        autoLochnesEvent = state
-        if lochnesThread then task.cancel(lochnesThread); lochnesThread = nil end
-        lochnesTriggered = false
+        _G.AutoLochnesEvent = state
+
+        if LochnesThread then
+            task.cancel(LochnesThread)
+            LochnesThread = nil
+        end
+
+        LochnesTriggered = false
+
         if state then
-            Window:Notify({Title="Auto Lochnes", Content="Waiting for countdown", Duration=3})
-            lochnesThread = task.spawn(lochnesCountdownLoop)
+            Window:Notify({
+                Title = "Auto Lochnes",
+                Content = "Waiting for countdown <= " .. tostring(LOCHNES_TRIGGER_SECONDS) .. "s",
+                Duration = 3,
+                Icon = "time"
+            })
+            LochnesThread = task.spawn(lochnesCountdownLoop)
         end
     end
 })
 
--- ============================================
--- [SECURITY] State lokal untuk Auto Event TP (multi)
--- ============================================
+-- ⚙️ Auto Event TP System (Multi-select Dropdown + Spam Teleport)
+
+local Workspace = game:GetService("Workspace")
+local StarterGui = game:GetService("StarterGui")
+local player = game.Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local hrp = character:WaitForChild("HumanoidRootPart")
+
+player.CharacterAdded:Connect(function(c)
+	character = c
+	hrp = c:WaitForChild("HumanoidRootPart")
+end)
+
+-- Settings
+local megCheckRadius = 150
+
+-- Control states
 local autoEventTPEnabled = false
-local selectedEvents = {}   -- sekarang tabel, bisa diisi dari UI (dropdown atau multi‑select)
+local selectedEvents = {}
 local createdEventPlatform = nil
 
+-- Event configurations (with priority)
 local eventData = {
-    ["Worm Hunt"] = {
-        PathFromWorkspace = { "Props", "Model", "BlackHole" },
-        Locations = { Vector3.new(2190.85, -1.4, 97.575), Vector3.new(-2450.679, -1.4, 139.731), Vector3.new(-267.479, -1.4, 5188.531), Vector3.new(-327, -1.4, 2422) },
-        PlatformY = 107, Priority = 1, Icon = "fish"
-    },
-    ["Megalodon Hunt"] = {
-        TargetName = "Megalodon Hunt",
-        Locations = { Vector3.new(-1076.3, -1.4, 1676.2), Vector3.new(-1191.8, -1.4, 3597.3), Vector3.new(412.7, -1.4, 4134.4) },
-        PlatformY = 107, Priority = 2, Icon = "anchor"
-    },
-    ["Ghost Shark Hunt"] = {
-        TargetName = "Ghost Shark Hunt",
-        Locations = { Vector3.new(489.559, -1.35, 25.406), Vector3.new(-1358.216, -1.35, 4100.556), Vector3.new(627.859, -1.35, 3798.081) },
-        PlatformY = 107, Priority = 3, Icon = "fish"
-    },
-    ["Shark Hunt"] = {
-        TargetName = "Shark Hunt",
-        Locations = { Vector3.new(1.65, -1.35, 2095.725), Vector3.new(1369.95, -1.35, 930.125), Vector3.new(-1585.5, -1.35, 1242.875), Vector3.new(-1896.8, -1.35, 2634.375) },
-        PlatformY = 107, Priority = 4, Icon = "fish"
-    },
+	["Worm Hunt"] = {
+		-- Langsung: Workspace → Props → Model → BlackHole (lebih spesifik dari scan "Model" di MENU RINGS)
+		PathFromWorkspace = { "Props", "Model", "BlackHole" },
+		Locations = {
+			Vector3.new(2190.85, -1.4, 97.575), 
+			Vector3.new(-2450.679, -1.4, 139.731), 
+			Vector3.new(-267.479, -1.4, 5188.531),
+			Vector3.new(-327, -1.4, 2422)
+		},
+		PlatformY = 107,
+		Priority = 1,
+		Icon = "fish"
+	},
+	["Megalodon Hunt"] = {
+		TargetName = "Megalodon Hunt",
+		Locations = {
+			Vector3.new(-1076.3, -1.4, 1676.2),
+			Vector3.new(-1191.8, -1.4, 3597.3),
+			Vector3.new(412.7, -1.4, 4134.4),
+		},
+		PlatformY = 107,
+		Priority = 2,
+		Icon = "anchor"
+	},
+	["Ghost Shark Hunt"] = {
+		TargetName = "Ghost Shark Hunt",
+		Locations = {
+			Vector3.new(489.559, -1.35, 25.406), 
+			Vector3.new(-1358.216, -1.35, 4100.556), 
+			Vector3.new(627.859, -1.35, 3798.081)
+		},
+		PlatformY = 107,
+		Priority = 3,
+		Icon = "fish"
+	},
+	["Shark Hunt"] = {
+		TargetName = "Shark Hunt",
+		Locations = {
+			Vector3.new(1.65, -1.35, 2095.725),
+			Vector3.new(1369.95, -1.35, 930.125),
+			Vector3.new(-1585.5, -1.35, 1242.875),
+			Vector3.new(-1896.8, -1.35, 2634.375)
+		},
+		PlatformY = 107,
+		Priority = 4,
+		Icon = "fish"
+	},
     ["Thrundzilla Hunt"] = {
-        TargetName = "Shocked",
-        Locations = { Vector3.new(2067.7981, 2.2, 16.706) },
-        PlatformY = 107, Priority = 5, Icon = "fish"
-    },
+		TargetName = "Shocked",
+		Locations = {
+			Vector3.new(2067.7981, 2.20000029, 16.7060127),
+		},
+		PlatformY = 107,
+		Priority = 5,
+		Icon = "fish"
+	},
 }
 
 local eventNames = {}
-for name in pairs(eventData) do table.insert(eventNames, name) end
-
-local function destroyEventPlatform()
-    if createdEventPlatform and createdEventPlatform.Parent then
-        createdEventPlatform:Destroy()
-        createdEventPlatform = nil
-    end
+for name in pairs(eventData) do
+	table.insert(eventNames, name)
 end
 
-local function getWorldPositionForEventTarget(inst)
-    if not inst then return nil end
-    if inst:IsA("BasePart") then return inst.Position end
-    if inst:IsA("Model") then
-        local pp = inst.PrimaryPart
-        if pp then return pp.Position end
-        local p = inst:FindFirstChildWhichIsA("BasePart", true)
-        return p and p.Position or nil
-    end
-    return nil
+-- Utility
+ function destroyEventPlatform()
+	if createdEventPlatform and createdEventPlatform.Parent then
+		createdEventPlatform:Destroy()
+		createdEventPlatform = nil
+	end
 end
 
-local function createAndTeleportToPlatform(targetPos, y)
-    local desiredPos = Vector3.new(targetPos.X, y, targetPos.Z)
-    if not createdEventPlatform or not createdEventPlatform.Parent then
-        destroyEventPlatform()
-        local platform = Instance.new("Part")
-        platform.Size = Vector3.new(5, 1, 5)
-        platform.Position = desiredPos
-        platform.Anchored = true
-        platform.Transparency = 1
-        platform.CanCollide = true
-        platform.Name = "EventPlatform"
-        platform.Parent = workspace
-        createdEventPlatform = platform
-    else
-        createdEventPlatform.Position = desiredPos
-    end
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("HumanoidRootPart") then
-        flyToPosition(createdEventPlatform.Position + Vector3.new(0,3,0))
-    end
+function getInstanceAtWorkspacePath(pathNames)
+	if type(pathNames) ~= "table" then return nil end
+	local current = Workspace
+	for _, name in ipairs(pathNames) do
+		current = current and current:FindFirstChild(name)
+		if not current then return nil end
+	end
+	return current
 end
 
-local function runMultiEventTP()
-    while autoEventTPEnabled do
-        local sorted = {}
-        for _, e in ipairs(selectedEvents) do
-            local cfg = eventData[e]
-            if cfg then table.insert(sorted, cfg) end
-        end
-        table.sort(sorted, function(a,b) return (a.Priority or 0) < (b.Priority or 0) end)
-        for _, config in ipairs(sorted) do
-            local foundPos = nil
-            if config.PathFromWorkspace then
-                local target = workspace
-                for _, name in ipairs(config.PathFromWorkspace) do
-                    target = target and target:FindFirstChild(name)
-                    if not target then break end
-                end
-                if target then
-                    local pos = getWorldPositionForEventTarget(target)
-                    if pos then
-                        for _, loc in ipairs(config.Locations) do
-                            if (pos - loc).Magnitude <= 150 then foundPos = pos; break end
-                        end
-                    end
-                end
-            elseif config.TargetName then
-                for _, obj in ipairs(workspace:GetDescendants()) do
-                    if obj.Name == config.TargetName then
-                        local pos = getWorldPositionForEventTarget(obj)
-                        if pos then
-                            for _, loc in ipairs(config.Locations) do
-                                if (pos - loc).Magnitude <= 150 then foundPos = pos; break end
-                            end
-                        end
-                    end
-                    if foundPos then break end
-                end
-            end
-            if foundPos then createAndTeleportToPlatform(foundPos, config.PlatformY) end
-        end
-        task.wait(0.1)
-    end
-    destroyEventPlatform()
+function getWorldPositionForEventTarget(inst)
+	if not inst then return nil end
+	if inst:IsA("BasePart") then
+		return inst.Position
+	end
+	if inst:IsA("Model") then
+		if inst.PrimaryPart then
+			return inst.PrimaryPart.Position
+		end
+		local p = inst:FindFirstChildWhichIsA("BasePart", true)
+		if p then return p.Position end
+	end
+	local p = inst:FindFirstChildWhichIsA("BasePart", true)
+	return p and p.Position or nil
+end
+
+ function createAndTeleportToPlatform(targetPos, y)
+	local desiredPos = Vector3.new(targetPos.X, y, targetPos.Z)
+
+	if createdEventPlatform and createdEventPlatform.Parent then
+		createdEventPlatform.Position = desiredPos
+	else
+		-- Don't destroy unless we have to, actually create new if missing
+		destroyEventPlatform()
+		
+		local platform = Instance.new("Part")
+		platform.Size = Vector3.new(5, 1, 5)
+		platform.Position = desiredPos
+		platform.Anchored = true
+		platform.Transparency = 1
+		platform.CanCollide = true
+		platform.Name = "EventPlatform"
+		platform.Parent = Workspace
+		createdEventPlatform = platform
+	end
+
+	hrp.CFrame = CFrame.new(createdEventPlatform.Position + Vector3.new(0, 3, 0))
+end
+
+ function runMultiEventTP()
+	selectedEvents = type(selectedEvents) == "table" and selectedEvents or {}
+
+	while autoEventTPEnabled do
+		local sorted = {}
+
+		for _, e in ipairs(selectedEvents) do
+			local cfg = eventData[e]
+			if type(cfg) == "table" then
+				table.insert(sorted, cfg)
+			end
+		end
+
+		table.sort(sorted, function(a, b)
+			return (a.Priority or 0) < (b.Priority or 0)
+		end)
+
+		for _, config in ipairs(sorted) do
+			if type(config.Locations) ~= "table" then
+				continue
+			end
+
+			local foundTarget, foundPos
+
+			if config.PathFromWorkspace then
+				local targetInst = getInstanceAtWorkspacePath(config.PathFromWorkspace)
+				local pos = getWorldPositionForEventTarget(targetInst)
+				if pos then
+					for _, loc in ipairs(config.Locations) do
+						if (pos - loc).Magnitude <= megCheckRadius then
+							foundTarget = targetInst
+							foundPos = pos
+							break
+						end
+					end
+				end
+			elseif config.TargetName then
+				-- Reverted to GetDescendants() like old code, but optimized to scan once per event type
+				local searchTargets = Workspace:GetDescendants()
+
+				for _, d in ipairs(searchTargets) do
+					if d.Name == config.TargetName then
+						local pos = d:IsA("BasePart") and d.Position
+							or (d.PrimaryPart and d.PrimaryPart.Position)
+						
+						if pos then
+							for _, loc in ipairs(config.Locations) do
+								if (pos - loc).Magnitude <= megCheckRadius then
+									foundTarget = d
+									foundPos = pos
+									break
+								end
+							end
+						end
+					end
+					if foundTarget then break end
+				end
+			end
+
+			if foundTarget and foundPos then
+				createAndTeleportToPlatform(foundPos, config.PlatformY)
+			end
+		end
+
+		task.wait(0.1) 
+	end
+
+	destroyEventPlatform()
 end
 
 TeleportTab:CreateSection({ Name = "Event Teleporter", Icon = "rbxassetid://7733955511" })
 
 TeleportTab:CreateDropdown({
-    Name = "Select Fish Event",
-    Items = eventNames,
-    Callback = function(value)
-        selectedEvents = { value }   -- single select, bisa diganti multi dropdown nanti
-        print("[EventTP] Selected:", value)
-    end
+	Name = "Select Fish Events",
+	Items = eventNames,
+	Callback = function(value)
+		selectedEvents = { value } -- paksa jadi table
+		print("[EventTP] Selected Event:", value)
+	end
 })
 
+
 TeleportTab:CreateToggle({
-    Name = "Auto Fish Event TP",
-    Default = false,
-    Callback = function(state)
-        autoEventTPEnabled = state
-        if state then
-            task.spawn(runMultiEventTP)
-        end
-    end
+	Name = "Auto Fish Event TP",
+	Default = false,
+	Callback = function(state)
+		autoEventTPEnabled = state
+		if state then
+			task.spawn(runMultiEventTP)
+		else
+		end
+	end
 })
 
 SettingsTab:CreateSection({ Name = "Camera Views" })
@@ -7982,331 +9698,6 @@ SettingsTab:CreateButton({
     end
 })
 
--- ============================================
--- Color Correction Tab
--- ============================================
-local ColorTab = Window:CreateTab({
-    Name = "Color Correction",
-    Icon = "rbxassetid://7733954611"  -- bisa diganti ikon sesuai tema
-})
-
--- [SECURITY] Semua state lokal
-local colorCorrectionEnabled = false
-local timeChangeEnabled = false
-local selectedPreset = "Normal"
-local selectedTimeProfile = "Day"
-
--- Data Preset Color Correction (Brightness, Contrast, Saturation, TintColor)
-local PRESETS = {
-    ["Normal"]      = { Brightness = 0, Contrast = 0, Saturation = 0, TintColor = Color3.fromRGB(255,255,255) },
-    ["4K"]          = { Brightness = 0.1, Contrast = 0.1, Saturation = 0.15, TintColor = Color3.fromRGB(255,255,255) },
-    ["Anime"]       = { Brightness = 0.05, Contrast = 0.05, Saturation = 0.2, TintColor = Color3.fromRGB(255,240,245) },
-    ["Arctic"]      = { Brightness = 0.2, Contrast = 0.05, Saturation = -0.1, TintColor = Color3.fromRGB(200,220,255) },
-    ["Cinematic"]   = { Brightness = 0.02, Contrast = 0.15, Saturation = -0.05, TintColor = Color3.fromRGB(255,245,230) },
-    ["Cool"]        = { Brightness = 0, Contrast = 0, Saturation = -0.1, TintColor = Color3.fromRGB(200,220,255) },
-    ["Crisp"]       = { Brightness = 0.05, Contrast = 0.2, Saturation = 0.1, TintColor = Color3.fromRGB(255,255,255) },
-    ["Dreamy"]      = { Brightness = 0.1, Contrast = -0.05, Saturation = 0.05, TintColor = Color3.fromRGB(255,240,255) },
-    ["Film"]        = { Brightness = -0.02, Contrast = 0.1, Saturation = -0.1, TintColor = Color3.fromRGB(255,240,220) },
-    ["Forest"]      = { Brightness = -0.05, Contrast = 0.05, Saturation = 0.1, TintColor = Color3.fromRGB(220,255,220) },
-    ["Golden"]      = { Brightness = 0.05, Contrast = 0.05, Saturation = 0.2, TintColor = Color3.fromRGB(255,230,180) },
-    ["Grayscale"]   = { Brightness = 0, Contrast = 0, Saturation = -1, TintColor = Color3.fromRGB(255,255,255) },
-    ["HD"]          = { Brightness = 0.02, Contrast = 0.1, Saturation = 0.05, TintColor = Color3.fromRGB(255,255,255) },
-    ["HDR"]         = { Brightness = 0.08, Contrast = 0.15, Saturation = 0.1, TintColor = Color3.fromRGB(255,255,255) },
-    ["Matte"]       = { Brightness = 0, Contrast = -0.1, Saturation = -0.1, TintColor = Color3.fromRGB(255,255,255) },
-    ["Moody"]       = { Brightness = -0.1, Contrast = 0.1, Saturation = -0.2, TintColor = Color3.fromRGB(200,200,255) },
-    ["Night"]       = { Brightness = -0.2, Contrast = 0.05, Saturation = -0.3, TintColor = Color3.fromRGB(180,200,255) },
-    ["Ocean"]       = { Brightness = -0.05, Contrast = 0.05, Saturation = 0.2, TintColor = Color3.fromRGB(100,200,255) },
-    ["Sunset"]      = { Brightness = 0.1, Contrast = 0.05, Saturation = 0.1, TintColor = Color3.fromRGB(255,160,100) },
-    ["Teal and Orange"] = { Brightness = 0.05, Contrast = 0.1, Saturation = 0.1, TintColor = Color3.fromRGB(255,180,100) },
-    ["Tropical"]    = { Brightness = 0.1, Contrast = 0.05, Saturation = 0.2, TintColor = Color3.fromRGB(255,255,200) },
-    ["Vibrant"]     = { Brightness = 0.05, Contrast = 0.1, Saturation = 0.3, TintColor = Color3.fromRGB(255,255,255) },
-    ["Vintage"]     = { Brightness = -0.02, Contrast = 0.05, Saturation = -0.2, TintColor = Color3.fromRGB(240,220,180) },
-    ["Warm"]        = { Brightness = 0.05, Contrast = 0, Saturation = 0.1, TintColor = Color3.fromRGB(255,220,180) },
-}
-
--- Data Time Profile (mapping ke Lighting.ClockTime / properti tertentu)
-local TIME_PROFILES = {
-    ["Day"]              = { ClockTime = 14, TimeOfDay = "14:00:00" },
-    ["Night"]            = { ClockTime = 2,  TimeOfDay = "02:00:00" },
-    ["Bloodmoon"]        = { ClockTime = 0,  TimeOfDay = "00:00:00", FogColor = Color3.fromRGB(255,50,50), FogEnd = 500 },
-    ["Purple Bloodmoon"] = { ClockTime = 0,  TimeOfDay = "00:00:00", FogColor = Color3.fromRGB(150,0,255), FogEnd = 500 },
-    ["Galaxy"]           = { ClockTime = 1,  TimeOfDay = "01:00:00", Ambient = Color3.fromRGB(20,0,40), OutdoorAmbient = Color3.fromRGB(50,0,100) },
-}
-
--- Simpan nilai asli untuk restore
-local originalLightingProperties = nil
-
--- ============================================
--- Fungsi untuk menerapkan Color Correction
--- ============================================
-local function applyColorPreset(presetName)
-    local preset = PRESETS[presetName]
-    if not preset then return end
-    local effect = Lighting:FindFirstChildOfClass("ColorCorrectionEffect")
-    if not effect then
-        effect = Instance.new("ColorCorrectionEffect")
-        effect.Parent = Lighting
-    end
-    for prop, value in pairs(preset) do
-        effect[prop] = value
-    end
-end
-
-local function clearColorPreset()
-    local effect = Lighting:FindFirstChildOfClass("ColorCorrectionEffect")
-    if effect then
-        effect:Destroy()
-    end
-end
-
--- ============================================
--- Fungsi untuk menerapkan Time Profile
--- ============================================
-local function applyTimeProfile(profileName)
-    local profile = TIME_PROFILES[profileName]
-    if not profile then return end
-
-    -- Simpan nilai asli Lighting sebelum diubah (hanya sekali)
-    if not originalLightingProperties then
-        originalLightingProperties = {
-            ClockTime = Lighting.ClockTime,
-            TimeOfDay = Lighting.TimeOfDay,
-            FogColor = Lighting.FogColor,
-            FogEnd = Lighting.FogEnd,
-            Ambient = Lighting.Ambient,
-            OutdoorAmbient = Lighting.OutdoorAmbient,
-            Brightness = Lighting.Brightness,
-        }
-    end
-
-    -- Terapkan properti yang ada di profil
-    if profile.ClockTime then Lighting.ClockTime = profile.ClockTime end
-    if profile.TimeOfDay then Lighting.TimeOfDay = profile.TimeOfDay end
-    if profile.FogColor then Lighting.FogColor = profile.FogColor end
-    if profile.FogEnd then Lighting.FogEnd = profile.FogEnd end
-    if profile.Ambient then Lighting.Ambient = profile.Ambient end
-    if profile.OutdoorAmbient then Lighting.OutdoorAmbient = profile.OutdoorAmbient end
-
-    -- Coba juga melalui ClientTimeController jika tersedia
-    pcall(function()
-        local TimeController = require(ReplicatedStorage.Controllers:WaitForChild("ClientTimeController"))
-        if TimeController and TimeController.SetTime then
-            TimeController:SetTime(profile.ClockTime or 14)
-        end
-    end)
-end
-
-local function restoreTimeProfile()
-    if originalLightingProperties then
-        for prop, value in pairs(originalLightingProperties) do
-            pcall(function() Lighting[prop] = value end)
-        end
-        originalLightingProperties = nil
-    end
-end
-
--- ============================================
--- UI: Color Preset Dropdown & Toggle
--- ============================================
-ColorTab:CreateSection({ Name = "Visual Presets" })
-
-ColorTab:CreateDropdown({
-    Name = "Color Preset",
-    Items = ({
-        "Normal","4K","Anime","Arctic","Cinematic","Cool","Crisp","Dreamy","Film",
-        "Forest","Golden","Grayscale","HD","HDR","Matte","Moody","Night","Ocean",
-        "Sunset","Teal and Orange","Tropical","Vibrant","Vintage","Warm"
-    }),
-    Default = "Normal",
-    Callback = function(val)
-        selectedPreset = val
-        if colorCorrectionEnabled then
-            applyColorPreset(val)
-        end
-    end
-})
-
-ColorTab:CreateToggle({
-    Name = "Enable Color Correction",
-    Default = false,
-    Callback = function(state)
-        colorCorrectionEnabled = state
-        if state then
-            applyColorPreset(selectedPreset)
-        else
-            clearColorPreset()
-        end
-    end
-})
-
--- ============================================
--- UI: Time Profile Dropdown & Toggle
--- ============================================
-ColorTab:CreateSection({ Name = "Time Control" })
-
-ColorTab:CreateDropdown({
-    Name = "Time Profile",
-    Items = {"Day", "Night", "Bloodmoon", "Purple Bloodmoon", "Galaxy"},
-    Default = "Day",
-    Callback = function(val)
-        selectedTimeProfile = val
-        if timeChangeEnabled then
-            applyTimeProfile(val)
-        end
-    end
-})
-
-ColorTab:CreateToggle({
-    Name = "Change Time Enable",
-    Default = false,
-    Callback = function(state)
-        timeChangeEnabled = state
-        if state then
-            applyTimeProfile(selectedTimeProfile)
-        else
-            restoreTimeProfile()
-        end
-    end
-})
-
-SettingsTab:CreateSection({ Name = "Auto Reconnect", Icon = "rbxassetid://7733920644" })
-
--- ============================================
--- [SECURITY] State lokal untuk Auto Reconnect
--- ============================================
-local autoReconnectEnabled = false
-local autoReconnectConnection = nil
-
--- Fungsi untuk mendeteksi ErrorPrompt (GUI disconnect)
-local function detectDisconnect()
-    -- ErrorPrompt biasanya muncul di PlayerGui dengan nama "ErrorPrompt" atau "ErrorDialog"
-    local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-    if not playerGui then return end
-
-    -- Cari ErrorPrompt yang ada
-    local errorPrompt = playerGui:FindFirstChild("ErrorPrompt") or playerGui:FindFirstChild("ErrorDialog")
-    if errorPrompt and errorPrompt.Visible then
-        return true
-    end
-    return false
-end
-
--- Fungsi untuk melakukan rejoin
-local function rejoinServer()
-    if not autoReconnectEnabled then return end
-    
-    Window:Notify({
-        Title = "Reconnecting...",
-        Content = "Detected disconnect. Attempting to rejoin...",
-        Duration = 3
-    })
-    
-    task.wait(1) -- beri waktu sebentar
-    
-    -- Coba rejoin ke server yang sama
-    local TeleportService = game:GetService("TeleportService")
-    local success, err = pcall(function()
-        if game.PrivateServerId ~= "" and game.PrivateServerOwnerId ~= 0 then
-            -- Private server
-            local teleportOptions = Instance.new("TeleportOptions")
-            teleportOptions.ServerInstanceId = game.JobId
-            teleportOptions.ReservedServerAccessCode = game.PrivateServerId
-            TeleportService:TeleportAsync(game.PlaceId, {LocalPlayer}, teleportOptions)
-        else
-            -- Public server
-            TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
-        end
-    end)
-    
-    if not success then
-        -- Fallback: teleport biasa
-        Window:Notify({
-            Title = "Rejoin Failed",
-            Content = "Could not rejoin same server. Trying another server...",
-            Duration = 3
-        })
-        task.wait(0.5)
-        pcall(function()
-            TeleportService:Teleport(game.PlaceId, LocalPlayer)
-        end)
-    end
-end
-
--- Fungsi untuk memulai monitoring disconnect
-local function startAutoReconnect()
-    if autoReconnectConnection then
-        autoReconnectConnection:Disconnect()
-    end
-    
-    -- Monitor PlayerGui untuk kemunculan ErrorPrompt
-    autoReconnectConnection = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-    if not autoReconnectConnection then
-        -- PlayerGui belum ada, tunggu
-        LocalPlayer.CharacterAdded:Wait() -- tunggu sampai spawn
-        task.wait(1)
-    end
-    
-    local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-    if not playerGui then return end
-    
-    -- Gunakan ChildAdded untuk mendeteksi ErrorPrompt baru
-    autoReconnectConnection = playerGui.ChildAdded:Connect(function(child)
-        if autoReconnectEnabled and (child.Name == "ErrorPrompt" or child.Name == "ErrorDialog") then
-            -- Delay sedikit untuk memastikan itu disconnect (bisa juga error lain)
-            task.wait(0.5)
-            if child.Visible and autoReconnectEnabled then
-                rejoinServer()
-            end
-        end
-    end)
-    
-    -- Juga periksa secara periodik untuk berjaga-jaga
-    task.spawn(function()
-        while autoReconnectEnabled do
-            if detectDisconnect() then
-                rejoinServer()
-                break -- keluar dari loop setelah reconnect dipicu
-            end
-            task.wait(2)
-        end
-    end)
-end
-
-local function stopAutoReconnect()
-    if autoReconnectConnection then
-        autoReconnectConnection:Disconnect()
-        autoReconnectConnection = nil
-    end
-end
-
--- ============================================
--- UI Toggle
--- ============================================
-SettingsTab:CreateToggle({
-    Name = "Auto Reconnect",
-    SubText = "Automatically rejoin server on disconnect (ErrorPrompt detection)",
-    Icon = "rbxassetid://7733920644",
-    Default = false,
-    Callback = function(value)
-        autoReconnectEnabled = value
-        if value then
-            Window:Notify({
-                Title = "Auto Reconnect Enabled",
-                Content = "Will automatically rejoin if disconnected.\nMake sure your executor has auto-execute enabled to run script after rejoin.",
-                Duration = 5
-            })
-            startAutoReconnect()
-        else
-            stopAutoReconnect()
-            Window:Notify({
-                Title = "Auto Reconnect Disabled",
-                Content = "No longer monitoring disconnects.",
-                Duration = 3
-            })
-        end
-    end
-})
-
 local TabConfig = Window:CreateTab({
     Name = "Config",
     Icon = "rbxassetid://7733954611"
@@ -8455,159 +9846,3 @@ task.spawn(function()
     task.wait(2)
     Window:LoadConfig(CONFIG_FOLDER, "default")
 end)
-
--- ============================================
--- [SECURITY] State lokal untuk Fly Teleport
--- ============================================
-local teleportFlySpeed = 50  -- default speed
-
--- Fungsi fly ke posisi target (diadaptasi dari kode yang diberikan)
-local function flyToPosition(targetPosition, cancelCheck)
-    local char = LocalPlayer.Character
-    if not char then return false end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return false end
-
-    -- Lepas dari seat jika sedang duduk
-    local humanoid = char:FindFirstChildOfClass("Humanoid")
-    if humanoid and humanoid.Sit then
-        humanoid.Sit = false
-        task.wait(0.15)
-    end
-
-    -- Simpan CanCollide asli
-    local originalCollisions = {}
-    local parts = {}
-    for _, part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then
-            originalCollisions[part] = part.CanCollide
-            part.CanCollide = false
-            table.insert(parts, part)
-        end
-    end
-
-    -- Buat BodyVelocity sementara
-    local bodyVelocity = hrp:FindFirstChild("FlyTeleportVelocity")
-    if not bodyVelocity then
-        bodyVelocity = Instance.new("BodyVelocity")
-        bodyVelocity.Name = "FlyTeleportVelocity"
-        bodyVelocity.MaxForce = Vector3.new(9e4, 9e4, 9e4)
-        bodyVelocity.Velocity = Vector3.zero
-        bodyVelocity.Parent = hrp
-    end
-
-    local aborted = false
-    local function checkAbort()
-        if cancelCheck and cancelCheck() then
-            aborted = true
-            return true
-        end
-        return false
-    end
-
-    -- Pindah horizontal dulu
-    local horizontalTarget = Vector3.new(targetPosition.X, hrp.Position.Y, targetPosition.Z)
-    local distanceHorizontal = (horizontalTarget - hrp.Position).Magnitude
-    local horizontalTick = 0
-    while distanceHorizontal > 3 do
-        if not hrp:IsDescendantOf(workspace) then break end
-        if checkAbort() then break end
-
-        horizontalTick = horizontalTick + 1
-        if horizontalTick % 5 == 0 then
-            for _, part in ipairs(parts) do
-                if part:IsDescendantOf(workspace) then part.CanCollide = false end
-            end
-        end
-
-        local dir = (horizontalTarget - hrp.Position).Unit
-        bodyVelocity.Velocity = dir * teleportFlySpeed
-        distanceHorizontal = (horizontalTarget - hrp.Position).Magnitude
-        task.wait()
-    end
-
-    -- Lalu vertikal ke target
-    local distanceVertical = (targetPosition - hrp.Position).Magnitude
-    local verticalTick = 0
-    while distanceVertical > 3 do
-        if not hrp:IsDescendantOf(workspace) then break end
-        if checkAbort() then break end
-
-        verticalTick = verticalTick + 1
-        if verticalTick % 5 == 0 then
-            for _, part in ipairs(parts) do
-                if part:IsDescendantOf(workspace) then part.CanCollide = false end
-            end
-        end
-
-        local dir = (targetPosition - hrp.Position).Unit
-        bodyVelocity.Velocity = dir * teleportFlySpeed
-        distanceVertical = (targetPosition - hrp.Position).Magnitude
-        task.wait()
-    end
-
-    -- Hentikan pergerakan
-    bodyVelocity.Velocity = Vector3.zero
-    if hrp:IsDescendantOf(workspace) then
-        hrp.AssemblyLinearVelocity = Vector3.zero
-        hrp.AssemblyAngularVelocity = Vector3.zero
-        -- Kecepatan turun kecil untuk mendarat alami
-        hrp.AssemblyLinearVelocity = Vector3.new(0, -5, 0)
-    end
-
-    -- Hancurkan BodyVelocity setelah selesai
-    if bodyVelocity and bodyVelocity.Name == "FlyTeleportVelocity" then
-        bodyVelocity:Destroy()
-    end
-
-    -- Kembalikan CanCollide asli
-    for part, originalValue in pairs(originalCollisions) do
-        if part:IsDescendantOf(workspace) then
-            part.CanCollide = originalValue
-        end
-    end
-
-    return not aborted
-end
-
--- ============================================
--- UI: Teleport Fly Speed (di TeleportTab)
--- ============================================
-TeleportTab:CreateSection({ Name = "Fly Settings" })
-
-TeleportTab:CreateInput({
-    Name = "Fly Speed",
-    SideLabel = "Default: 50",
-    Placeholder = "Enter speed (e.g., 50)",
-    Default = "50",
-    Callback = function(value)
-        local num = tonumber(value)
-        if num and num > 0 then
-            teleportFlySpeed = num
-        end
-    end
-})
-
--- ============================================
--- Ubah tombol teleport yang sudah ada agar menggunakan flyToPosition
--- ============================================
--- (Contoh: Teleport to Altar)
-TeleportTab:CreateButton({
-    Name = "Teleport to Altar (Fly)",
-    Icon = "rbxassetid://128755575520135",
-    Callback = function()
-        local target = CFrame.new(3234.83667, -1302.85486, 1398.39087)
-        flyToPosition(target.Position)
-    end
-})
-
-TeleportTab:CreateButton({
-    Name = "Teleport to Second Altar (Fly)",
-    Icon = "rbxassetid://7733920644",
-    Callback = function()
-        local target = CFrame.new(1481, 128, -592)
-        flyToPosition(target.Position)
-    end
-})
-
--- Jika ingin tetap ada tombol instant (CFrame langsung), bisa dipertahankan dengan nama lain
