@@ -9108,183 +9108,153 @@ SettingsTab:CreateSection({ Name = "Anti AFK", Icon = "rbxassetid://7733658504" 
 -- [SECURITY] State lokal
 -- ============================================
 local AntiAFKEnabled = false
+local AFKConnections = {}
+local AFKConnectionMonitor = nil
+local AFKVirtualInputThread = nil   -- untuk menghentikan loop simulasi input
 
--- Thread/Connection tracker
-local afkThreads = {}
-local afkConnections = {}
+-- ============================================
+-- METODE 1: getconnections (paling efektif)
+-- ============================================
+local function setAFKConnections(disable)
+    local GC = getconnections or get_signal_cons
+    if not GC then return false end
 
--- Helper untuk membersihkan semua thread/connection
-local function cleanupAFK()
-    for _, t in ipairs(afkThreads) do
-        if t then pcall(task.cancel, t) end
+    local success = false
+    local idleSignal = LocalPlayer.Idled
+
+    for _, connection in next, GC(idleSignal) do
+        success = true
+        if disable then
+            connection:Disable()
+        else
+            connection:Enable()
+        end
+        if not table.find(AFKConnections, connection) then
+            table.insert(AFKConnections, connection)
+        end
     end
-    for _, c in ipairs(afkConnections) do
-        if c then pcall(function() c:Disconnect() end) end
-    end
-    afkThreads = {}
-    afkConnections = {}
+    return success
 end
 
 -- ============================================
--- METODE 1: VirtualUser (API Resmi Roblox)
+-- METODE 2: Hook Humanoid.Idle (fallback)
 -- ============================================
-local function startVirtualUser()
-    local vu = game:GetService("UserInputService").VirtualUser
-    if not vu then return false end
+local function setHumanoidIdleHook(enable)
+    local char = LocalPlayer.Character
+    if not char then return false end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return false end
 
-    local thread = task.spawn(function()
+    -- Simpan fungsi asli jika belum
+    if not hum._oldIdle then
+        hum._oldIdle = hum.Idle
+    end
+
+    if enable then
+        -- Ganti fungsi Idle dengan yang kosong (tidak pernah idle)
+        hum.Idle = function() end
+    else
+        -- Kembalikan fungsi asli
+        if hum._oldIdle then
+            hum.Idle = hum._oldIdle
+            hum._oldIdle = nil
+        end
+    end
+    return true
+end
+
+-- ============================================
+-- METODE 3: Simulasi Input Virtual (bypass total)
+-- ============================================
+local function startVirtualInputLoop()
+    if AFKVirtualInputThread then return end
+
+    AFKVirtualInputThread = task.spawn(function()
         while AntiAFKEnabled do
-            -- Gerakan mouse mikro (1 px kanan, lalu 1 px kiri)
+            -- Kirim input mouse tidak terlihat (gerak 1 piksel bolak-balik)
             pcall(function()
-                vu:MoveMouse(Vector2.new(1, 0))
-                task.wait(0.1)
-                vu:MoveMouse(Vector2.new(-1, 0))
+                local mouse = LocalPlayer:GetMouse()
+                if mouse then
+                    local currentPos = UserInputService:GetMouseLocation()
+                    local newX = currentPos.X + (math.random(0,1)*2-1)  -- -1 atau +1
+                    local newY = currentPos.Y + (math.random(0,1)*2-1)
+                    -- Gerakkan mouse secara virtual
+                    UserInputService:MouseInput(newX, newY, false)
+                end
             end)
-            -- Tunggu 30 detik sebelum gerakan berikutnya
+            -- Jeda 30 detik (cukup untuk mencegah AFK 20 menit)
             for _ = 1, 30 do
                 if not AntiAFKEnabled then break end
                 task.wait(1)
             end
         end
+        AFKVirtualInputThread = nil
     end)
-    table.insert(afkThreads, thread)
-    print("[Anti AFK] VirtualUser active")
-    return true
+end
+
+local function stopVirtualInputLoop()
+    if AFKVirtualInputThread then
+        task.cancel(AFKVirtualInputThread)
+        AFKVirtualInputThread = nil
+    end
 end
 
 -- ============================================
--- METODE 2: Simulasi Input via GUI Sendiri
+-- PEMANTAU KARAKTER (re-apply saat respawn)
 -- ============================================
-local function startGUIInput()
-    local playerGui = LocalPlayer:WaitForChild("PlayerGui")
-    if not playerGui then return false end
+local function connectCharacterMonitor()
+    if AFKConnectionMonitor then
+        AFKConnectionMonitor:Disconnect()
+        AFKConnectionMonitor = nil
+    end
 
-    -- Buat tombol transparan 1x1 piksel di pojok kiri atas
-    local afkButton = Instance.new("ImageButton")
-    afkButton.Name = "AFKPreventer"
-    afkButton.Size = UDim2.new(0, 1, 0, 1)
-    afkButton.Position = UDim2.new(0, 0, 0, 0)
-    afkButton.BackgroundTransparency = 1
-    afkButton.AutoButtonColor = false
-    afkButton.Parent = playerGui
-
-    -- Simulasikan fokus & klik setiap 25–35 detik (acak)
-    local thread = task.spawn(function()
-        while AntiAFKEnabled do
-            local waitTime = 25 + math.random() * 10  -- 25–35 detik
-            for _ = 1, math.floor(waitTime) do
-                if not AntiAFKEnabled then break end
-                task.wait(1)
-            end
-            if not AntiAFKEnabled then break end
-            pcall(function()
-                afkButton:CaptureFocus()
-                task.wait(0.1)
-                afkButton:ReleaseFocus()
-            end)
-        end
-        -- Bersihkan GUI saat dimatikan
-        pcall(function() afkButton:Destroy() end)
-    end)
-    table.insert(afkThreads, thread)
-    print("[Anti AFK] GUI simulation active")
-    return true
-end
-
--- ============================================
--- METODE 3: Auto-Rejoin (Fallback Terakhir)
--- ============================================
-local function startAutoRejoin()
-    local idleConnection
-    idleConnection = LocalPlayer.Idled:Connect(function()
-        if not AntiAFKEnabled then return end
-        print("[Anti AFK] Idle detected, preparing rejoin...")
-        -- Beri jeda agar tidak langsung rejoin saat disconnect
-        task.wait(5)
-        pcall(function()
-            TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
-        end)
-        -- Jika TeleportToPlaceInstance gagal (public server), fallback ke Teleport biasa
-        pcall(function()
-            TeleportService:Teleport(game.PlaceId, LocalPlayer)
-        end)
-    end)
-    table.insert(afkConnections, idleConnection)
-    print("[Anti AFK] Auto-rejoin listener active")
-    return true
-end
-
--- ============================================
--- BYPASS TAMBAHAN: Randomisasi Interval & Kombinasi Gerakan
--- ============================================
-local function startRandomizedInput()
-    -- Jika VirtualUser atau GUI sudah aktif, tambahkan variasi gerakan
-    -- untuk menghindari deteksi pola berulang.
-    local thread = task.spawn(function()
-        while AntiAFKEnabled do
-            -- Waktu acak antara 20–40 detik
-            local waitTime = 20 + math.random() * 20
-            for _ = 1, math.floor(waitTime) do
-                if not AntiAFKEnabled then break end
-                task.wait(1)
-            end
-            if not AntiAFKEnabled then break end
-
-            -- Pilih jenis input secara acak: mouse atau keyboard
-            local inputType = math.random(1, 2)
-            if inputType == 1 then
-                -- Gerakan mouse lebih bervariasi (2–3 piksel ke arah acak)
-                pcall(function()
-                    local dx = (math.random(1, 3)) * (math.random(0,1)*2-1)
-                    local dy = (math.random(1, 3)) * (math.random(0,1)*2-1)
-                    if game:GetService("UserInputService").VirtualUser then
-                        game:GetService("UserInputService").VirtualUser:MoveMouse(Vector2.new(dx, dy))
-                    end
-                end)
-            else
-                -- Simulasi tombol keyboard tidak mengganggu (key None)
-                pcall(function()
-                    if game:GetService("UserInputService").VirtualUser then
-                        game:GetService("UserInputService").VirtualUser:SendKeyEvent(true, Enum.KeyCode.Unknown, false, nil)
-                        task.wait(0.05)
-                        game:GetService("UserInputService").VirtualUser:SendKeyEvent(false, Enum.KeyCode.Unknown, false, nil)
-                    end
-                end)
-            end
+    AFKConnectionMonitor = LocalPlayer.CharacterAdded:Connect(function()
+        if AntiAFKEnabled then
+            task.wait(0.5)
+            -- Terapkan semua metode
+            setAFKConnections(true)
+            setHumanoidIdleHook(true)
         end
     end)
-    table.insert(afkThreads, thread)
-    print("[Anti AFK] Randomized input pattern active")
-    return true
 end
 
 -- ============================================
 -- FUNGSI UTAMA: Aktifkan Semua Metode
 -- ============================================
 local function enableAllMethods()
-    -- Hentikan yang lama dulu (jaga-jaga)
-    cleanupAFK()
-
-    -- Coba metode paling aman dulu
-    local method1ok = startVirtualUser()
-
-    if not method1ok then
-        -- Fallback ke GUI sendiri
-        local method2ok = startGUIInput()
+    -- Metode 1
+    local method1ok = setAFKConnections(true)
+    if method1ok then
+        print("[Anti AFK] getconnections method active")
     end
 
-    -- Auto-rejoin selalu dipasang sebagai safety net
-    startAutoRejoin()
+    -- Metode 2 (selalu dicoba, meskipun metode 1 berhasil, sebagai safety)
+    local method2ok = setHumanoidIdleHook(true)
+    if method2ok then
+        print("[Anti AFK] Humanoid hook active")
+    end
 
-    -- Randomizer bypass untuk menghindari deteksi pola
-    startRandomizedInput()
+    -- Metode 3 (jika 1 atau 2 gagal, atau sebagai lapisan ekstra)
+    if not method1ok and not method2ok then
+        print("[Anti AFK] Falling back to virtual input simulation")
+        startVirtualInputLoop()
+        Window:Notify({ Title = "Anti AFK", Content = "Virtual input mode active", Duration = 3 })
+    else
+        -- Tetap jalankan virtual input sebagai pengaman ekstra (opsional)
+        -- startVirtualInputLoop()
+    end
 
-    Window:Notify({ Title = "Anti AFK", Content = "Multi-layer protection active", Duration = 3 })
+    connectCharacterMonitor()
 end
 
 local function disableAllMethods()
-    cleanupAFK()
-    Window:Notify({ Title = "Anti AFK", Content = "Deactivated", Duration = 3 })
+    setAFKConnections(false)
+    setHumanoidIdleHook(false)
+    stopVirtualInputLoop()
+    if AFKConnectionMonitor then
+        AFKConnectionMonitor:Disconnect()
+        AFKConnectionMonitor = nil
+    end
 end
 
 -- ============================================
@@ -9292,15 +9262,17 @@ end
 -- ============================================
 SettingsTab:CreateToggle({
     Name = "Anti AFK",
-    Description = "Professional multi-layer AFK prevention",
+    Description = "Prevents you from being kicked for idling (multi-layer bypass)",
     Icon = "rbxassetid://7733658504",
     Default = false,
     Callback = function(value)
         AntiAFKEnabled = value
         if value then
             enableAllMethods()
+            Window:Notify({ Title = "Anti AFK", Content = "Activated with multi-layer protection", Duration = 3 })
         else
             disableAllMethods()
+            Window:Notify({ Title = "Anti AFK", Content = "Deactivated", Duration = 3 })
         end
     end
 })
