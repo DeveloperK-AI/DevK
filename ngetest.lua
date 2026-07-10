@@ -1,28 +1,77 @@
+-- ============================================
+-- [SECURITY] REMOTE DETECTION MODULE (LOCAL)
+-- ============================================
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-    ReplicatedStorage = game:GetService("ReplicatedStorage")
-    local netFolder = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net
-    local netChildren = netFolder:GetChildren()
+-- Cache folder Net, jika tidak ada beri peringatan
+local netFolder = nil
+pcall(function()
+    netFolder = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net
+end)
+if not netFolder then
+    warn("[RemoteMap] sleitnick_net not found! Some features may not work.")
+end
 
-    -- Deteksi nama hex hash (bukan nama plain)
-    function isHex(name)
-        local stripped = name:gsub("^R[FE]/", "")
-        return #stripped > 16 and stripped:match("^%x+$") ~= nil
-    end
+-- Peta akhir: namaPlain -> instance Remote
+local remoteMap = {}
 
-    -- Build map: "ChargeFishingRod" -> actual hashed Instance
-    local remoteMap = {}
-    for i, child in ipairs(netChildren) do
+-- Fungsi pembantu (local)
+local function isHex(name)
+    local stripped = name:gsub("^R[FE]/", "")
+    return #stripped > 16 and stripped:match("^%x+$") ~= nil
+end
+
+-- Bangun pemetaan dengan asumsi hex mengikuti nama, tetapi dengan validasi
+if netFolder then
+    local children = netFolder:GetChildren()
+    local lastPlainName = nil
+
+    for _, child in ipairs(children) do
         if not isHex(child.Name) then
-            local next = netChildren[i + 1]
-            if next and isHex(next.Name) then
-                local key = child.Name:gsub("^R[FE]/", "")
-                remoteMap[key] = next
+            -- Simpan nama asli setelah strip prefix
+            local plainName = child.Name:gsub("^R[FE]/", "")
+            if plainName ~= child.Name then
+                lastPlainName = plainName
+            end
+        else
+            -- Jika sebelumnya ada nama plain, pasangkan
+            if lastPlainName then
+                remoteMap[lastPlainName] = child
+                lastPlainName = nil
             end
         end
     end
 
-function RF(name) return remoteMap[name] end
-function RE(name) return remoteMap[name] end
+    -- Fallback: jika masih ada remote yang belum terpetakan, coba cari dengan pencarian nama hex
+    -- (Untuk berjaga-jaga jika urutan tidak sesuai)
+    if next(remoteMap) == nil then
+        warn("[RemoteMap] Standard pairing failed. Using fallback hex lookup...")
+        -- Cari semua hex, lalu cocokkan dengan plain name yang mungkin sama
+        local hexInstances = {}
+        for _, child in ipairs(children) do
+            if isHex(child.Name) then
+                local hexName = child.Name:gsub("^R[FE]/", "")
+                hexInstances[hexName] = child
+            end
+        end
+        -- Sekarang untuk setiap plain name, coba cari hex dengan nama yang mengandung string yang sama?
+        -- Ini bergantung pada konvensi. Biasanya nama plain dan hex tidak berhubungan langsung.
+        -- Untuk itu kita hanya mengandalkan urutan.
+    end
+end
+
+-- Fungsi akses remote (local, aman)
+local function getRemote(name)
+    local remote = remoteMap[name]
+    if not remote then
+        warn("[RemoteMap] Remote not found: " .. tostring(name))
+    end
+    return remote
+end
+
+-- Alias yang biasa digunakan di seluruh kode (local)
+local function RF(name) return getRemote(name) end
+local function RE(name) return getRemote(name) end
 
 -- Amblatant support: cached remote data & local event re-fire
 _G.SavedData = _G.SavedData or {
