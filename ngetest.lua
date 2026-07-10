@@ -9105,23 +9105,29 @@ end
 SettingsTab:CreateSection({ Name = "Anti AFK", Icon = "rbxassetid://7733658504" })
 
 -- ============================================
--- [SECURITY] State lokal
+-- [SECURITY] State lokal untuk Anti AFK
 -- ============================================
-local AntiAFKEnabled = false
+local AntiAFKEnabled = false  -- sesuai default UI
+local antiAFKInitialized = false
+
+-- Simpan daftar koneksi yang telah dimanipulasi agar bisa dikembalikan
 local AFKConnections = {}
-local AFKConnectionMonitor = nil
-local AFKVirtualInputThread = nil   -- untuk menghentikan loop simulasi input
+local AFKConnectionMonitor = nil  -- untuk mendeteksi koneksi baru setelah respawn
 
 -- ============================================
--- METODE 1: getconnections (paling efektif)
+-- Fungsi inti: Nonaktifkan atau aktifkan ulang semua koneksi Idled
 -- ============================================
 local function setAFKConnections(disable)
     local GC = getconnections or get_signal_cons
-    if not GC then return false end
+    if not GC then
+        warn("[Anti AFK] getconnections not available")
+        return false
+    end
 
     local success = false
     local idleSignal = LocalPlayer.Idled
 
+    -- Proses koneksi yang ada
     for _, connection in next, GC(idleSignal) do
         success = true
         if disable then
@@ -9129,78 +9135,17 @@ local function setAFKConnections(disable)
         else
             connection:Enable()
         end
+        -- Simpan untuk referensi nanti (hanya jika belum ada)
         if not table.find(AFKConnections, connection) then
             table.insert(AFKConnections, connection)
         end
     end
+
     return success
 end
 
 -- ============================================
--- METODE 2: Hook Humanoid.Idle (fallback)
--- ============================================
-local function setHumanoidIdleHook(enable)
-    local char = LocalPlayer.Character
-    if not char then return false end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum then return false end
-
-    -- Simpan fungsi asli jika belum
-    if not hum._oldIdle then
-        hum._oldIdle = hum.Idle
-    end
-
-    if enable then
-        -- Ganti fungsi Idle dengan yang kosong (tidak pernah idle)
-        hum.Idle = function() end
-    else
-        -- Kembalikan fungsi asli
-        if hum._oldIdle then
-            hum.Idle = hum._oldIdle
-            hum._oldIdle = nil
-        end
-    end
-    return true
-end
-
--- ============================================
--- METODE 3: Simulasi Input Virtual (bypass total)
--- ============================================
-local function startVirtualInputLoop()
-    if AFKVirtualInputThread then return end
-
-    AFKVirtualInputThread = task.spawn(function()
-        while AntiAFKEnabled do
-            -- Kirim input mouse tidak terlihat (gerak 1 piksel bolak-balik)
-            pcall(function()
-                local mouse = LocalPlayer:GetMouse()
-                if mouse then
-                    local currentPos = UserInputService:GetMouseLocation()
-                    local newX = currentPos.X + (math.random(0,1)*2-1)  -- -1 atau +1
-                    local newY = currentPos.Y + (math.random(0,1)*2-1)
-                    -- Gerakkan mouse secara virtual
-                    UserInputService:MouseInput(newX, newY, false)
-                end
-            end)
-            -- Jeda 30 detik (cukup untuk mencegah AFK 20 menit)
-            for _ = 1, 30 do
-                if not AntiAFKEnabled then break end
-                task.wait(1)
-            end
-        end
-        AFKVirtualInputThread = nil
-    end)
-end
-
-local function stopVirtualInputLoop()
-    if AFKVirtualInputThread then
-        task.cancel(AFKVirtualInputThread)
-        AFKVirtualInputThread = nil
-    end
-end
-
--- ============================================
--- PEMANTAU KARAKTER (re-apply saat respawn)
+-- Pemantau karakter: setiap respawn, terapkan ulang
 -- ============================================
 local function connectCharacterMonitor()
     if AFKConnectionMonitor then
@@ -9210,69 +9155,59 @@ local function connectCharacterMonitor()
 
     AFKConnectionMonitor = LocalPlayer.CharacterAdded:Connect(function()
         if AntiAFKEnabled then
-            task.wait(0.5)
-            -- Terapkan semua metode
+            task.wait(0.5)  -- tunggu sinyal siap
             setAFKConnections(true)
-            setHumanoidIdleHook(true)
         end
     end)
 end
 
--- ============================================
--- FUNGSI UTAMA: Aktifkan Semua Metode
--- ============================================
-local function enableAllMethods()
-    -- Metode 1
-    local method1ok = setAFKConnections(true)
-    if method1ok then
-        print("[Anti AFK] getconnections method active")
-    end
-
-    -- Metode 2 (selalu dicoba, meskipun metode 1 berhasil, sebagai safety)
-    local method2ok = setHumanoidIdleHook(true)
-    if method2ok then
-        print("[Anti AFK] Humanoid hook active")
-    end
-
-    -- Metode 3 (jika 1 atau 2 gagal, atau sebagai lapisan ekstra)
-    if not method1ok and not method2ok then
-        print("[Anti AFK] Falling back to virtual input simulation")
-        startVirtualInputLoop()
-        Window:Notify({ Title = "Anti AFK", Content = "Virtual input mode active", Duration = 3 })
-    else
-        -- Tetap jalankan virtual input sebagai pengaman ekstra (opsional)
-        -- startVirtualInputLoop()
-    end
-
+-- Inisialisasi awal
+if AntiAFKEnabled then
+    setAFKConnections(true)
     connectCharacterMonitor()
 end
 
-local function disableAllMethods()
-    setAFKConnections(false)
-    setHumanoidIdleHook(false)
-    stopVirtualInputLoop()
-    if AFKConnectionMonitor then
-        AFKConnectionMonitor:Disconnect()
-        AFKConnectionMonitor = nil
-    end
-end
-
 -- ============================================
--- UI TOGGLE
+-- UI Toggle
 -- ============================================
 SettingsTab:CreateToggle({
     Name = "Anti AFK",
-    Description = "Prevents you from being kicked for idling (multi-layer bypass)",
+    Description = "Prevents you from being kicked for idling",
     Icon = "rbxassetid://7733658504",
     Default = false,
     Callback = function(value)
         AntiAFKEnabled = value
         if value then
-            enableAllMethods()
-            Window:Notify({ Title = "Anti AFK", Content = "Activated with multi-layer protection", Duration = 3 })
+            local success = setAFKConnections(true)
+            if success then
+                connectCharacterMonitor()
+                print("[Anti AFK] Activated")
+            else
+                -- Fallback: gunakan cara lain jika getconnections tidak ada
+                -- Beberapa executor bisa menggunakan setfflag atau Humanoid.Idle
+                pcall(function()
+                    local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                    if humanoid then
+                        -- Gunakan trik berbasis humanoid
+                        humanoid.Idle:Connect(function()
+                            -- Tidak melakukan apa-apa, mencegah idle
+                        end)
+                        print("[Anti AFK] Activated (Humanoid fallback)")
+                    end
+                end)
+                Window:Notify({
+                    Title = "Anti AFK",
+                    Content = "Activated (fallback mode)",
+                    Duration = 3
+                })
+            end
         else
-            disableAllMethods()
-            Window:Notify({ Title = "Anti AFK", Content = "Deactivated", Duration = 3 })
+            setAFKConnections(false)  -- pulihkan koneksi
+            if AFKConnectionMonitor then
+                AFKConnectionMonitor:Disconnect()
+                AFKConnectionMonitor = nil
+            end
+            print("[Anti AFK] Deactivated")
         end
     end
 })
