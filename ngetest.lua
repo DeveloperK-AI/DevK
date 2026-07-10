@@ -73,55 +73,6 @@ end
 local function RF(name) return getRemote(name) end
 local function RE(name) return getRemote(name) end
 
--- Amblatant support: cached remote data & local event re-fire
-_G.SavedData = _G.SavedData or {
-    FishCaught = {},
-    CaughtVisual = {},
-    FishNotif = {}
-}
-
-function FireLocalEvent(remote, ...)
-    if not remote or not remote.OnClientEvent then return end
-    local args = {...}
-    local signal = remote.OnClientEvent
-    for _, connection in pairs(getconnections(signal)) do
-        if connection.Function then
-            task.spawn(function()
-                pcall(function()
-                    connection.Function(unpack(args))
-                end)
-            end)
-        end
-    end
-end
-
-local saveCount = 0
-
-function GetServerRemote(humanName)
-    local key = humanName:gsub("^R[FE]/", "")
-    return remoteMap[key]
-end
-
-function HookRemote(humanName, storageKey)
-    local remote = GetServerRemote(humanName)
-    if remote then
-        remote.OnClientEvent:Connect(function(...)
-            if saveCount < 7 then
-                _G.SavedData[storageKey] = {...}
-                local args = {...}
-                if storageKey == "CaughtVisual" then
-                    local lp = game:GetService("Players").LocalPlayer
-                    local myName = lp and lp.Name
-                    if myName and tostring(args[1]) == tostring(myName) then
-                        saveCount = saveCount + 1
-                    end
-                end
-            end
-        end)
-        return true
-    end
-    return false
-end
 
 BuyRod              = RF("PurchaseFishingRod")
 BuyBait             = RF("PurchaseBait")
@@ -180,7 +131,6 @@ Config = {
     autoFishing = false,
     AutoCatch = false,
     antiOKOK = false,
-    amblatant = false,
     UB = {
         Active = false,
         Settings = { CompleteDelay = 3.7, CancelDelay = 0.2, CastMode = "Fast" },
@@ -274,7 +224,7 @@ end
 local DevLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/DeveloperK-AI/DevK/main/lib.lua"))()
 
  Window = DevLib:CreateWindow({
-	Name = "Dev Hub",
+	Name = "DeveloperK",
 	Intro = true
 })
 
@@ -313,10 +263,6 @@ InfoTab:CreateParagraph({
 	Icon = "rbxassetid://7733765398"
 })
 
- AmblatantTab = Window:CreateTab({
-    Name = "Amblatant",
-    Icon = "rbxassetid://7733779610"
-})
 
  MainTab = Window:CreateTab({
 	Name = "Main",
@@ -581,120 +527,6 @@ function applyUltraBlatant3NFishingControllerStub(enabled)
         FishingController.SendFishingRequestToServer = origUB3N_SendFishingRequestToServer
     end
 end
-
------------------- Variable ------------------------
-_G.AutoFarm = false
-_G.AutoRod = false
-_G.AutoSells = false
-_G.InfiniteJump = false
-_G.Radar = false
-_G.AntiAFK = false
-_G.AutoReconnect = false
-autoFavEnabled = false
-_G.Amblatant = _G.Amblatant or false
-
--- Fixed Natural Hook Active (port from blatant.lua)
--- Meng-overwrite increment "1st fish/rainbow/golden" supaya terlihat natural.
- _naturalHookInstalled = false
- _naturalRainbowCount = 0
- _naturalGoldenCount = 0
- _naturalFishCount = 0
- isCaught = false
-
-function _resetNaturalHookCounts()
-    _naturalRainbowCount = 0
-    _naturalGoldenCount = 0
-    _naturalFishCount = 0
-    isCaught = false
-end
-
-function _installFixedNaturalHook()
-    if _naturalHookInstalled then return end
-
-    local executorName = "Unknown"
-    pcall(function()
-        if type(getExecutorName) == "function" then
-            executorName = tostring(getExecutorName() or "Unknown")
-        end
-    end)
-
-    if tostring(executorName):lower():find("velocity") then
-        print("Fixed Natural Hook: skipped on Velocity executor")
-        return
-    end
-
-    if type(hookfunction) ~= "function" then
-        print("Fixed Natural Hook: hookfunction not available")
-        return
-    end
-
-    _naturalHookInstalled = true
-
-    local Event
-    pcall(function()
-        Event = game:GetService("ReplicatedStorage").Packages._Index["ytrev_replion@2.0.0-rc.3"].replion.Remotes.Set
-    end)
-    if not Event or not Event.OnClientEvent then return end
-
-    local conns = getconnections(Event.OnClientEvent) or {}
-    for _, Connection in pairs(conns) do
-        if Connection and Connection.Function then
-            local old
-            old = hookfunction(Connection.Function, function(...)
-                local Args = { ... }
-
-                if type(Args[2]) == "table" then
-                    local category = Args[2][1]
-                    local subCategory = Args[2][2]
-
-                    function RunNaturalUpdate(updateType)
-                        task.spawn(function()
-                            for _ = 1, 2 do
-                                if updateType == "Rainbow" then
-                                    local last = _naturalRainbowCount
-                                    _naturalRainbowCount = _naturalRainbowCount + 1
-                                    if _naturalRainbowCount > 40 then _naturalRainbowCount = 0 end
-                                    isCaught = (_naturalRainbowCount ~= last)
-                                    old(Args[1], Args[2], _naturalRainbowCount)
-                                elseif updateType == "Golden" then
-                                    local last = _naturalGoldenCount
-                                    _naturalGoldenCount = _naturalGoldenCount + 1
-                                    if _naturalGoldenCount > 10 then _naturalGoldenCount = 0 end
-                                    isCaught = (_naturalGoldenCount ~= last)
-                                    old(Args[1], Args[2], _naturalGoldenCount)
-                                elseif updateType == "Fish" then
-                                    _naturalFishCount = _naturalFishCount + 1
-                                    isCaught = true
-                                    old(Args[1], Args[2], _naturalFishCount)
-                                end
-                                task.wait(0.3)
-                            end
-                        end)
-                    end
-
-                    if _G.Amblatant then
-                        if category == "Modifiers" and subCategory == "Rainbow" then
-                            RunNaturalUpdate("Rainbow")
-                            return
-                        elseif category == "Modifiers" and subCategory == "Golden" then
-                            RunNaturalUpdate("Golden")
-                            return
-                        elseif category == "InventoryNotifications" and subCategory == "Fish" then
-                            RunNaturalUpdate("Fish")
-                            return
-                        end
-                    end
-                end
-
-                return old(...)
-            end)
-        end
-    end
-
-    print("Fixed Natural Hook Active!")
-end
-
-local delayfishing = 1
 
 ----------------------------------------------------------------
 -- INSTANT FISH MODULE
@@ -4870,143 +4702,6 @@ svc = {
     Players = game:GetService("Players"),
     RS = game:GetService("ReplicatedStorage"),
 }
-
-player = svc.Players.LocalPlayer
-if not player.Character then player.CharacterAdded:Wait() end
-
--- Net already initialized
-
-EquipTool  = REEquip
-ChargeRod  = ChargeRod
-StartMini  = StartMini
-CatchFish  = REFishDone
-CancelFish = Cancel
-
-Protected = false
-FishingSession = 0
-
-_G.AutoEquip = true
-_G.Speed = 0.07       
-_G.LoopDelay = 0.25   
-_G.AmSpeed = _G.AmSpeed or _G.Speed
-_G.AmLoopDelay = _G.AmLoopDelay or _G.LoopDelay
-
-function ToggleBlatant(value)
-    if value then
-        Protected = true
-        FishingSession = FishingSession + 1
-        local session = FishingSession
-        task.spawn(BlatantSkipCycle, session)
-    else
-        Protected = false
-        FishingSession = FishingSession + 1
-    end
-end
-
-function IsSessionAlive(session)
-    return FishingSession == session
-end
-
-function BlatantSkipCycle(session)
-    if _G.AutoEquip then
-        pcall(function()
-            EquipTool:FireServer(1)
-        end)
-        task.wait(0.25)
-    end
-
-    while Protected and IsSessionAlive(session) do
-        local speed = (_G.Amblatant and _G.AmSpeed) or _G.Speed
-        local loopDelay = (_G.Amblatant and _G.AmLoopDelay) or _G.LoopDelay
-
-        t = workspace:GetServerTimeNow()
-        pcall(function()
-            ChargeRod:InvokeServer(t)
-        end)
-        task.wait(speed)
-        pcall(function()
-            StartMini:InvokeServer(-1, 1, t)
-        end)
-
-        task.wait(speed)
-        CallFishDone(CatchFish, 1)
-
-        -- Amblatant: spam local fish events using cached data (disalin dari blatant.lua)
-        if _G.Amblatant and _G.SavedData and _G.SavedData.FishCaught and isCaught then
-            task.spawn(function ()
-                task.wait(0.3)
-                for _ = 1, 2 do
-                    local xremote = GetServerRemote("RE/FishCaught")
-                    if xremote then
-                        FireLocalEvent(xremote, unpack(_G.SavedData.FishCaught))
-                    end
-                    xremote = GetServerRemote("RE/CaughtFishVisual")
-                    if xremote and _G.SavedData.CaughtVisual then
-                        FireLocalEvent(xremote, unpack(_G.SavedData.CaughtVisual))
-                    end
-                    xremote = GetServerRemote("RE/ObtainedNewFishNotification")
-                    if xremote and _G.SavedData.FishNotif then
-                        FireLocalEvent(xremote, unpack(_G.SavedData.FishNotif))
-                        task.spawn(function()
-                            for _ = 1, 2 do
-                                task.wait(2)
-                                FireLocalEvent(xremote, unpack(_G.SavedData.FishNotif))
-                            end
-                        end)
-                    end
-                end
-            end)
-            isCaught = false
-        end
-        task.wait(loopDelay)
-    end
-end
-
-AmblatantTab:CreateSection({ Name = "AMBLATANT OR FAST FISHING" })
-
-AmblatantTab:CreateToggle({
-    Name = "Amblatant YTTA",
-    SubText = "KASIH TAU TALONNN",
-    Default = _G.Amblatant,
-    Callback = function(state)
-        _G.Amblatant = state
-        if state then
-            saveCount = 0
-            _resetNaturalHookCounts()
-            _installFixedNaturalHook()
-            HookRemote("RE/FishCaught", "FishCaught")
-            HookRemote("RE/CaughtFishVisual", "CaughtVisual")
-            HookRemote("RE/ObtainedNewFishNotification", "FishNotif")
-        end
-        -- Samakan perilaku dengan onToggleUB di blatant.lua: start/stop loop utama
-        ToggleBlatant(state)
-    end,
-})
-
-AmblatantTab:CreateInput({
-    Name = "Amblatant Speed",
-    SideLabel = "Delay (s)",
-    Default = tostring(_G.AmSpeed),
-    Callback = function(v)
-        local n = tonumber(v)
-        if n and n > 0 then
-            _G.AmSpeed = n
-        end
-    end,
-})
-
-AmblatantTab:CreateInput({
-    Name = "Amblatant Loop Delay",
-    SideLabel = "Loop Delay (s)",
-    Default = tostring(_G.AmLoopDelay),
-    Callback = function(v)
-        local n = tonumber(v)
-        if n and n > 0 then
-            _G.AmLoopDelay = n
-        end
-    end,
-})
-
 
 MainTab:CreateSection({ Name = "Recovery Fishing" })
 
