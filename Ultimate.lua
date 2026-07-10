@@ -679,19 +679,19 @@ end
 
 local delayfishing = 1
 
-----------------------------------------------------------------
--- INSTANT FISH MODULE (IMPROVED)
-----------------------------------------------------------------
+-- ============================================
+-- INSTANT FISH MODULE (FINAL PRODUCTION-READY)
+-- ============================================
 local Instant = {}
 local PI = math.pi
 local CAST_MODE_LIST = { "Perfect", "Fast", "Random" }
 
--- Remote lokal (pastikan sudah ada dari deklarasi awal)
+-- Remote harus sudah dideklarasikan LOKAL di file utama, di sini kita hanya mereferensinya.
+-- Tidak boleh ada _G atau shared.
 local RF_ChargeFishingRod = ChargeRod
 local RE_CatchFishCompleted = REFishDoneRE or REFishDone
 local RF_RequestFishingMinigameStarted = StartMini
 
--- State
 local state = {
     enabled = false,
     running = false,
@@ -702,16 +702,51 @@ local state = {
     notifDuration = 4.7,
 }
 
--- Task tracker
 local loopTask = nil
 local InstantTasks = {}
 local notifHooked = false
 local notifOriginalDeliver = nil
 local notifOriginalTween = nil
 
--- ============================================
--- [IMPROVED] Helper: Perform a single cast (reuseable)
--- ============================================
+local function safeInvoke(remote, ...)
+    if not remote then return end
+    local args = { ... }
+    task.spawn(function()
+        pcall(function()
+            remote:InvokeServer(unpack(args))
+        end)
+    end)
+end
+
+local function safeFire(remote, ...)
+    if not remote then return end
+    task.spawn(function()
+        pcall(function()
+            remote:FireServer()
+        end)
+    end)
+end
+
+local function getPowerAtTime(chargeTime, elapsed)
+    local speed = Random.new(chargeTime):NextInteger(4, 10)
+    local angle = PI / 2 + elapsed * speed
+    return (1 - math.sin(angle)) / 2
+end
+
+local function waitForPower(chargeTime, threshold)
+    local deadline = chargeTime + 2.0
+    while workspace:GetServerTimeNow() < deadline do
+        local elapsed = workspace:GetServerTimeNow() - chargeTime
+        local power = getPowerAtTime(chargeTime, elapsed)
+        if power >= threshold then
+            return elapsed, power
+        end
+        task.wait(0.01)
+    end
+    local elapsed = workspace:GetServerTimeNow() - chargeTime
+    return elapsed, getPowerAtTime(chargeTime, elapsed)
+end
+
 local function performCast(mode)
     local t0 = workspace:GetServerTimeNow()
     safeInvoke(RF_ChargeFishingRod, nil, nil, t0, nil)
@@ -726,6 +761,7 @@ local function performCast(mode)
         local elapsed = workspace:GetServerTimeNow() - t0
         power = getPowerAtTime(t0, elapsed)
     else -- Fast
+        task.wait(0.02)
         local elapsed = workspace:GetServerTimeNow() - t0
         power = getPowerAtTime(t0, elapsed)
     end
@@ -733,43 +769,13 @@ local function performCast(mode)
     safeInvoke(RF_RequestFishingMinigameStarted, 0, power, t0)
 end
 
--- ============================================
--- [IMPROVED] waitForPower dengan timeout & RenderStepped
--- ============================================
-function getPowerAtTime(chargeTime, elapsed)
-    local speed = Random.new(chargeTime):NextInteger(4, 10)
-    local angle = PI / 2 + elapsed * speed
-    return (1 - math.sin(angle)) / 2
-end
-
-function waitForPower(chargeTime, threshold)
-    local deadline = chargeTime + 2.0
-    -- Gunakan RenderStepped untuk polling lebih efisien (tidak tidur 0.001 detik)
-    while workspace:GetServerTimeNow() < deadline do
-        local elapsed = workspace:GetServerTimeNow() - chargeTime
-        local power = getPowerAtTime(chargeTime, elapsed)
-        if power >= threshold then
-            return elapsed, power
-        end
-        -- Jeda kecil agar tidak membekukan thread lain
-        task.wait(0.01)  -- cukup 10ms, bukan 1ms
-    end
-    local elapsed = workspace:GetServerTimeNow() - chargeTime
-    return elapsed, getPowerAtTime(chargeTime, elapsed)
-end
-
--- ============================================
--- [IMPROVED] Notification Hook dengan Restore
--- ============================================
-function hookNotificationDelay()
+local function hookNotificationDelay()
     if notifHooked then return end
-
     local ok, controller = pcall(function()
-        return require(ReplicatedStorage.Controllers.TextNotificationController)
+        return require(ReplicatedStorage.Controllers:WaitForChild("TextNotificationController"))
     end)
     if not ok or not controller then return end
 
-    -- Simpan original
     notifOriginalDeliver = controller.DeliverNotification
     notifOriginalTween = controller.Tween
 
@@ -778,14 +784,10 @@ function hookNotificationDelay()
             if state.enabled and state.notifDelay > 0 then
                 task.spawn(function()
                     task.wait(state.notifDelay)
-                    if notifOriginalDeliver then
-                        notifOriginalDeliver(self, p24)
-                    end
+                    if notifOriginalDeliver then notifOriginalDeliver(self, p24) end
                 end)
             else
-                if notifOriginalDeliver then
-                    notifOriginalDeliver(self, p24)
-                end
+                if notifOriginalDeliver then notifOriginalDeliver(self, p24) end
             end
         end
     end
@@ -796,22 +798,22 @@ function hookNotificationDelay()
             if state.enabled and state.notifDuration > 0 then
                 finalDuration = duration + state.notifDuration
             end
-            return notifOriginalTween(self, tile, finalDuration, options)
+            if notifOriginalTween then
+                return notifOriginalTween(self, tile, finalDuration, options)
+            end
         end
     end
 
     notifHooked = true
 end
 
-function unhookNotificationDelay()
+local function unhookNotificationDelay()
     if not notifHooked then return end
     pcall(function()
-        local controller = require(ReplicatedStorage.Controllers.TextNotificationController)
-        if notifOriginalDeliver then
-            controller.DeliverNotification = notifOriginalDeliver
-        end
-        if notifOriginalTween then
-            controller.Tween = notifOriginalTween
+        local controller = ReplicatedStorage.Controllers:FindFirstChild("TextNotificationController")
+        if controller then
+            if notifOriginalDeliver then controller.DeliverNotification = notifOriginalDeliver end
+            if notifOriginalTween then controller.Tween = notifOriginalTween end
         end
     end)
     notifOriginalDeliver = nil
@@ -819,62 +821,43 @@ function unhookNotificationDelay()
     notifHooked = false
 end
 
--- ============================================
--- Safe remote invocation (existing)
--- ============================================
-function safeInvoke(remote, ...)
-    if not remote then return end
-    local args = { ... }
-    task.spawn(function()
-        pcall(function()
-            remote:InvokeServer(unpack(args))
-        end)
-    end)
-end
-
-function safeFire(remote, ...)
-    if not remote then return end
-    task.spawn(function()
-        pcall(function()
-            remote:FireServer()
-        end)
-    end)
-end
-
--- ============================================
--- [IMPROVED] Loop utama dengan pemantauan timeout
--- ============================================
-function startLoop()
+local function startLoop()
     if state.running then return end
     state.running = true
-
-    -- Saat loop dimulai, reset timeout darurat
     local lastSuccessTick = tick()
 
-    while state.enabled do
-        -- Jika lebih dari 10 detik tanpa siklus sukses, paksa reset (hindari stuck)
-        if tick() - lastSuccessTick > 10 then
-            pcall(function() safeFire(RE_CatchFishCompleted) end)
+    local ok, err = pcall(function()
+        while state.enabled do
+            if tick() - lastSuccessTick > 10 then
+                safeFire(RE_CatchFishCompleted)
+                lastSuccessTick = tick()
+            end
+
+            performCast(state.castMode)
+
+            task.wait(state.completeDelay)
+            task.wait(0.01)
+
+            safeFire(RE_CatchFishCompleted)
             lastSuccessTick = tick()
+
+            task.wait(state.castDelay)
         end
+    end)
 
-        performCast(state.castMode)
-
-        task.wait(state.completeDelay)
-        task.wait(0.01)
-
-        safeFire(RE_CatchFishCompleted)
-        lastSuccessTick = tick()
-
-        task.wait(state.castDelay)
+    if not ok then
+        warn("[Instant Fishing V2] Loop error:", err)
     end
 
     state.running = false
+
+    if state.enabled then
+        warn("[Instant Fishing V2] Force stopping due to error.")
+        Instant.Stop()
+    end
 end
 
--- ============================================
--- [IMPROVED] Setter dengan validasi range
--- ============================================
+-- Public API
 function Instant.SetCastMode(mode)
     if table.find(CAST_MODE_LIST, mode) then
         state.castMode = mode
@@ -883,34 +866,30 @@ end
 
 function Instant.SetCompleteDelay(v)
     local num = tonumber(v)
-    if num and num >= 0.1 and num <= 30 then  -- batas aman 0.1 – 30 detik
+    if num and num >= 0.1 and num <= 30 then
         state.completeDelay = num
     end
 end
 
 function Instant.SetCastDelay(v)
     local num = tonumber(v)
-    if num and num >= 0 and num <= 10 then   -- batas aman 0 – 10 detik
+    if num and num >= 0 and num <= 10 then
         state.castDelay = num
     end
 end
 
--- ============================================
--- Start / Stop dengan cleanup total
--- ============================================
 function Instant.Start()
     if state.enabled then return end
     state.enabled = true
     hookNotificationDelay()
     loopTask = task.spawn(startLoop)
-    table.insert(InstantTasks, loopTask)
+    if loopTask then table.insert(InstantTasks, loopTask) end
 end
 
 function Instant.Stop()
     state.enabled = false
     if loopTask then
         pcall(task.cancel, loopTask)
-        -- Hapus dari daftar
         for i, t in ipairs(InstantTasks) do
             if t == loopTask then
                 table.remove(InstantTasks, i)
@@ -920,26 +899,21 @@ function Instant.Stop()
         loopTask = nil
     end
     state.running = false
-    unhookNotificationDelay()  -- pulihkan fungsi asli notifikasi
+    unhookNotificationDelay()
 end
 
 function Instant.IsActive()
     return state.enabled
 end
 
--- ============================================
--- [IMPROVED] Fungsi instant() untuk panggilan satu kali
--- ============================================
+-- Compatibility wrappers (untuk dipanggil dari luar)
 function instant()
-    if state.enabled then return end -- jangan ganggu loop yang sedang berjalan
-    performCast(state.castMode)      -- pakai cast mode global
-    task.wait(delayfishing)          -- delayfishing adalah variabel lokal dari Config
+    if state.enabled then return end
+    performCast(state.castMode)
+    task.wait(delayfishing)
     safeFire(RE_CatchFishCompleted)
 end
 
--- ============================================
--- Compatibility wrappers (tidak berubah)
--- ============================================
 function CallFishDone(remote, ...)
     if not remote then return end
     local ok = pcall(function() remote:InvokeServer() end)
@@ -963,12 +937,11 @@ function UB_stop()
 end
 
 function onToggleUB(value)
+    Config.HookNotif = value
     if value then
-        Config.HookNotif = true
         UB_start()
     else
         UB_stop()
-        Config.HookNotif = false
     end
 end
 
