@@ -2857,21 +2857,21 @@ MonitoringTab:CreateToggle({
 -- =========================================================================
 MonitoringTab:CreateSection({ Name = "DevHub Web Monitoring" })
 
-local DevMonitoringSettings = {
-    DevKey = "", -- Replace in UI
+local VoraMonitoringSettings = {
+    VoraKey = "", -- Replace in UI
     AutoSync = true,
     Interval = 5,
     Enabled = false -- Master Toggle State
 }
 
-local Dev_API_URL = "https://monitor.DevHub.xyz/api/inventory/sync"
+local VORA_API_URL = "https://monitor.DevHub.xyz/api/inventory/sync"
 
 MonitoringTab:CreateInput({
     Name = "DevHub Key",
     Placeholder = "Enter DevHub Key...",
-    Default = DevMonitoringSettings.DevKey,
+    Default = VoraMonitoringSettings.VoraKey,
     Callback = function(val)
-        DevMonitoringSettings.DevKey = val
+        VoraMonitoringSettings.VoraKey = val
     end
 })
 
@@ -2879,7 +2879,7 @@ MonitoringTab:CreateToggle({
     Name = "Enable Web Monitoring",
     Default = false,
     Callback = function(val)
-        DevMonitoringSettings.Enabled = val
+        VoraMonitoringSettings.Enabled = val
     end
 })
 
@@ -2919,7 +2919,7 @@ MonitoringTab:CreateToggle({
     return success and result or nil
 end
 
- function GatherDevInventory()
+ function GatherVoraInventory()
     local inventory = {
         Rods = {},
         Charms = {},
@@ -3066,7 +3066,7 @@ end
     }
 
     return {
-        apiKey = DevMonitoringSettings.DevKey,
+        apiKey = VoraMonitoringSettings.VoraKey,
         playerName = safeString(Player.Name),
         userId = Player.UserId,
         playerStats = playerStats,
@@ -3076,11 +3076,11 @@ end
     }
 end
 
- function SendDevInventory(isOffline)
-    if DevMonitoringSettings.DevKey == "yourkey" or DevMonitoringSettings.DevKey == "" then return end
+ function SendVoraInventory(isOffline)
+    if VoraMonitoringSettings.VoraKey == "yourkey" or VoraMonitoringSettings.VoraKey == "" then return end
     
     local success, err = pcall(function()
-        local data = GatherDevInventory()
+        local data = GatherVoraInventory()
         if not data then return end
         
         if isOffline then data.isOnline = false end
@@ -3089,7 +3089,7 @@ end
         
         -- Use httpRequest function defined earlier
         httpRequest({
-            Url = Dev_API_URL,
+            Url = VORA_API_URL,
             Method = "POST",
             Headers = {
                 ["Content-Type"] = "application/json",
@@ -3103,9 +3103,9 @@ end
 -- Auto-sync loop for DevHub
 task.spawn(function()
     while true do
-        task.wait(DevMonitoringSettings.Interval)
-        if DevMonitoringSettings.Enabled and DevMonitoringSettings.AutoSync then
-            SendDevInventory(false)    
+        task.wait(VoraMonitoringSettings.Interval)
+        if VoraMonitoringSettings.Enabled and VoraMonitoringSettings.AutoSync then
+            SendVoraInventory(false)    
         end
     end
 end)
@@ -3113,7 +3113,7 @@ end)
 -- Handle leaving
 game:GetService("Players").PlayerRemoving:Connect(function(p)
     if p == game.Players.LocalPlayer then
-        SendDevInventory(true)
+        SendVoraInventory(true)
     end
 end)
 
@@ -4049,7 +4049,7 @@ end)
 
 -- =============================================================================
 -- =============================================================================
--- QUEST PROCESS FUNCTIONS (ported from Main.lua, adapted for Dev.lua)
+-- QUEST PROCESS FUNCTIONS (ported from Main.lua, adapted for Vora.lua)
 -- Handles: Deep Sea, Element, Diamond, Temple Lever auto-teleport + item actions
 -- =============================================================================
 _G.AutoDeepSeaQuest = _G.AutoDeepSeaQuest or _G.DeepSeaQuestMode or false
@@ -6594,483 +6594,257 @@ PlayerTab:CreateButton({
     end
 })
 
--- ============================================
--- [SECURITY] Modul Data Shop (Dinamis + Refresh)
--- ============================================
-local ShopData = (function()
-    -- Data yang akan diisi
-    local rods = {}             -- { displayName = { key = "Luck Rod", id = 79, price = 350 } }
-    local baits = {}            -- { displayName = { key = "TopWater Bait", id = 10, price = 100 } }
-    local luckBoosters = {}     -- { displayName = { key = "x2 Luck" } }
-    local rodSkins = {}         -- { displayName = { key = "Frozen Krampus Scythe" } }
-
-    -- Daftar display names (untuk dropdown)
-    local rodNames = {}
-    local baitNames = {}
-    local luckBoosterNames = {}
-    local rodSkinNames = {}
-
-    -- Fungsi untuk mengambil data dari game
-    local function LoadFromGame()
-        -- Reset
-        rods = {}
-        baits = {}
-        luckBoosters = {}
-        rodSkins = {}
-        rodNames = {}
-        baitNames = {}
-        luckBoosterNames = {}
-        rodSkinNames = {}
-
-        -- Coba ambil semua item yang bisa dibeli dari VendorUtility atau ItemUtility
-        pcall(function()
-            -- Jika ada ItemUtility dan fungsi untuk mendapatkan semua item shop
-            if ItemUtility.GetAllShopItems then
-                local shopItems = ItemUtility:GetAllShopItems()
-                for _, item in ipairs(shopItems) do
-                    local itemType = item.ItemType or item.Type
-                    local name = item.DisplayName or item.Name
-                    local id = item.Id or item.MarketId
-                    local price = item.Price or item.Cost
-
-                    if itemType == "FishingRod" then
-                        local display = name .. " (" .. (price and (tostring(price) .. " Coins") or "?") .. ")"
-                        rods[display] = { key = name, id = id, price = price }
-                        table.insert(rodNames, display)
-                    elseif itemType == "Bait" then
-                        local display = name .. " (" .. (price and (tostring(price) .. " Coins") or "?") .. ")"
-                        baits[display] = { key = name, id = id, price = price }
-                        table.insert(baitNames, display)
-                    elseif itemType == "LuckBooster" then
-                        luckBoosters[name] = { key = name }
-                        table.insert(luckBoosterNames, name)
-                    elseif itemType == "RodSkin" then
-                        rodSkins[name] = { key = name }
-                        table.insert(rodSkinNames, name)
-                    end
-                end
-            end
-        end)
-
-        -- Fallback ke data hardcode jika kosong (untuk rod dan bait)
-        if #rodNames == 0 then
-            local hardcodedRods = {
-                ["Luck Rod (350 Coins)"] = { key = "Luck Rod", id = 79 },
-                ["Carbon Rod (900 Coins)"] = { key = "Carbon Rod", id = 76 },
-                ["Grass Rod (1.5k Coins)"] = { key = "Grass Rod", id = 85 },
-                ["Demascus Rod (3k Coins)"] = { key = "Demascus Rod", id = 77 },
-                ["Ice Rod (5k Coins)"] = { key = "Ice Rod", id = 78 },
-                ["Lucky Rod (15k Coins)"] = { key = "Lucky Rod", id = 4 },
-                ["Midnight Rod (50k Coins)"] = { key = "Midnight Rod", id = 80 },
-                ["Steampunk Rod (215k Coins)"] = { key = "Steampunk Rod", id = 6 },
-                ["Chrome Rod (437k Coins)"] = { key = "Chrome Rod", id = 7 },
-                ["Astral Rod (1M Coins)"] = { key = "Astral Rod", id = 5 },
-                ["Ares Rod (3M Coins)"] = { key = "Ares Rod", id = 126 },
-                ["Angler Rod (8M Coins)"] = { key = "Angler Rod", id = 168 },
-                ["Bamboo Rod (12M Coins)"] = { key = "Bamboo Rod", id = 258 }
-            }
-            for display, data in pairs(hardcodedRods) do
-                rods[display] = data
-                table.insert(rodNames, display)
-            end
-        end
-
-        if #baitNames == 0 then
-            local hardcodedBaits = {
-                ["TopWater Bait (100 Coins)"] = { key = "TopWater Bait", id = 10 },
-                ["Lucky Bait (1k Coins)"] = { key = "Lucky Bait", id = 2 },
-                ["Midnight Bait (3k Coins)"] = { key = "Midnight Bait", id = 3 },
-                ["Chroma Bait (290k Coins)"] = { key = "Chroma Bait", id = 6 },
-                ["Dark Mater Bait (630k Coins)"] = { key = "Dark Mater Bait", id = 8 },
-                ["Corrupt Bait (1.15M Coins)"] = { key = "Corrupt Bait", id = 15 },
-                ["Aether Bait (3.7M Coins)"] = { key = "Aether Bait", id = 16 }
-            }
-            for display, data in pairs(hardcodedBaits) do
-                baits[display] = data
-                table.insert(baitNames, display)
-            end
-        end
-
-        if #luckBoosterNames == 0 then
-            local hardcodedBoosters = { "x2 Luck", "x4 Luck", "x8 Luck" }
-            for _, name in ipairs(hardcodedBoosters) do
-                luckBoosters[name] = { key = name }
-                table.insert(luckBoosterNames, name)
-            end
-        end
-
-        if #rodSkinNames == 0 then
-            local hardcodedSkins = { "Frozen Krampus Scythe", "Gingerbread Katana", "Christmas Parasol" }
-            for _, name in ipairs(hardcodedSkins) do
-                rodSkins[name] = { key = name }
-                table.insert(rodSkinNames, name)
-            end
-        end
-
-        -- Urutkan
-        table.sort(rodNames)
-        table.sort(baitNames)
-        table.sort(luckBoosterNames)
-        table.sort(rodSkinNames)
-    end
-
-    -- API
-    local function Refresh()
-        LoadFromGame()
-    end
-
-    LoadFromGame() -- inisialisasi awal
-
-    return {
-        GetRods = function() return rods, rodNames end,
-        GetBaits = function() return baits, baitNames end,
-        GetLuckBoosters = function() return luckBoosters, luckBoosterNames end,
-        GetRodSkins = function() return rodSkins, rodSkinNames end,
-        Refresh = Refresh,
-    }
-end)()
-
--- ============================================
--- UI: Booster Luck
--- ============================================
 ShopTab:CreateSection({ Name = "Booster Luck" })
 
-local luckBoosterNames = {}
-local luckBoosters = {}
+ReplicatedStorage = game:GetService("ReplicatedStorage")
+GiftingController = require(ReplicatedStorage:WaitForChild("Controllers"):WaitForChild("GiftingController"))
 
-local function refreshLuckBoosterDropdown()
-    luckBoosters, luckBoosterNames = ShopData.GetLuckBoosters()
-    if luckDropdown then
-        luckDropdown:Refresh(luckBoosterNames)
-    else
-        luckDropdown = ShopTab:CreateDropdown({
-            Name = "Select Luck Booster",
-            Items = luckBoosterNames,
-            Value = luckBoosterNames[1] or "",
-            Callback = function(value)
-                selectedLuckBooster = value
-            end
-        })
-    end
-    selectedLuckBooster = luckBoosterNames[1] or ""
-end
+local luckBoosters = {
+    "x2 Luck",
+    "x4 Luck",
+    "x8 Luck"
+}
 
-ShopTab:CreateButton({
-    Name = "Refresh Luck Boosters",
-    Callback = function()
-        ShopData.Refresh()
-        refreshLuckBoosterDropdown()
-        Window:Notify({ Title = "Refreshed", Content = "Luck booster list updated.", Duration = 3 })
-    end
+selectedLuckBooster = luckBoosters[1]
+
+ShopTab:CreateDropdown({
+	Name = "Select Luck Booster",
+	Items = luckBoosters,
+	Value = selectedLuckBooster,
+	Callback = function(value)
+		selectedLuckBooster = value
+	end
 })
 
-local selectedLuckBooster = ""
-local luckDropdown
-refreshLuckBoosterDropdown()
-
 ShopTab:CreateButton({
-    Name = "Buy Luck Booster",
-    Icon = "rbxassetid://7733920644",
-    Callback = function()
-        if not selectedLuckBooster or not luckBoosters[selectedLuckBooster] then
-            Window:Notify({ Title = "Error", Content = "No booster selected.", Duration = 3 })
-            return
-        end
-        local key = luckBoosters[selectedLuckBooster].key
-        local success, err = pcall(function()
-            GiftingController:Open(key)  -- GiftingController sudah local
-        end)
-        if success then
-            Window:Notify({ Title = "Luck Booster", Content = "Purchased " .. selectedLuckBooster .. "!", Duration = 3 })
-        else
-            Window:Notify({ Title = "Purchase Error", Content = tostring(err), Duration = 5 })
-        end
-    end
+	Name = "Buy Luck Booster",
+	Icon = "rbxassetid://7733920644",
+	Callback = function()
+		local success, err = pcall(function()
+			GiftingController:Open(selectedLuckBooster)
+		end)
+		if success then
+			Window:Notify({Title = "Luck Booster", Content = "Purchased " .. selectedLuckBooster .. "!", Duration = 3})
+		else
+			Window:Notify({Title = "Purchase Error", Content = tostring(err), Duration = 5})
+		end
+	end
 })
 
--- ============================================
--- UI: Skin Rod
--- ============================================
 ShopTab:CreateSection({ Name = "Skin Rod" })
 
-local rodSkinNames = {}
-local rodSkins = {}
+rodSkins = {
+    "Frozen Krampus Scythe",
+    "Gingerbread Katana",
+    "Christmas Parasol"
+}
 
-local function refreshSkinDropdown()
-    rodSkins, rodSkinNames = ShopData.GetRodSkins()
-    if skinDropdown then
-        skinDropdown:Refresh(rodSkinNames)
-    else
-        skinDropdown = ShopTab:CreateDropdown({
-            Name = "Select Rod Skin",
-            Items = rodSkinNames,
-            Value = rodSkinNames[1] or "",
-            Callback = function(value)
-                selectedRodSkin = value
-            end
-        })
-    end
-    selectedRodSkin = rodSkinNames[1] or ""
-end
+selectedRodSkin = rodSkins[1]
 
-ShopTab:CreateButton({
-    Name = "Refresh Skin List",
-    Callback = function()
-        ShopData.Refresh()
-        refreshSkinDropdown()
-        Window:Notify({ Title = "Refreshed", Content = "Skin list updated.", Duration = 3 })
-    end
+ShopTab:CreateDropdown({
+	Name = "Select Rod Skin",
+	Items = rodSkins,
+	Value = selectedRodSkin,
+	Callback = function(value)
+		selectedRodSkin = value
+	end
 })
 
-local selectedRodSkin = ""
-local skinDropdown
-refreshSkinDropdown()
-
 ShopTab:CreateButton({
-    Name = "Buy Rod Skin",
-    Icon = "rbxassetid://7733920644",
-    Callback = function()
-        if not selectedRodSkin or not rodSkins[selectedRodSkin] then
-            Window:Notify({ Title = "Error", Content = "No skin selected.", Duration = 3 })
-            return
-        end
-        local key = rodSkins[selectedRodSkin].key
-        local success, err = pcall(function()
-            GiftingController:Open(key)
-        end)
-        if success then
-            Window:Notify({ Title = "Rod Skin", Content = "Purchased " .. selectedRodSkin .. "!", Duration = 3 })
-        else
-            Window:Notify({ Title = "Purchase Error", Content = tostring(err), Duration = 5 })
-        end
-    end
+	Name = "Buy Rod Skin",
+	Icon = "rbxassetid://7733920644",
+	Callback = function()
+		local success, err = pcall(function()
+			GiftingController:Open(selectedRodSkin)
+		end)
+		if success then
+			Window:Notify({Title = "Rod Skin", Content = "Purchased " .. selectedRodSkin .. "!", Duration = 3})
+		else
+			Window:Notify({Title = "Purchase Error", Content = tostring(err), Duration = 5})
+		end
+	end
 })
 
--- ============================================
--- UI: Buy Rod
--- ============================================
 ShopTab:CreateSection({ Name = "Buy Rod" })
 
-local rodNames = {}
-local rods = {}
+ReplicatedStorage = game:GetService("ReplicatedStorage")  
+RFPurchaseFishingRod = BuyRod  
 
-local function refreshRodDropdown()
-    rods, rodNames = ShopData.GetRods()
-    if rodDropdown then
-        rodDropdown:Refresh(rodNames)
-    else
-        rodDropdown = ShopTab:CreateDropdown({
-            Name = "Select Rod",
-            Items = rodNames,
-            Value = rodNames[1] or "",
-            Callback = function(value)
-                selectedRod = value
-            end
-        })
-    end
-    selectedRod = rodNames[1] or ""
-end
+local rods = {  
+    ["Luck Rod"] = 79,  
+    ["Carbon Rod"] = 76,  
+    ["Grass Rod"] = 85,
+    ["Demascus Rod"] = 77,  
+    ["Ice Rod"] = 78,  
+    ["Lucky Rod"] = 4,  
+    ["Midnight Rod"] = 80,  
+    ["Steampunk Rod"] = 6,  
+    ["Chrome Rod"] = 7,  
+    ["Astral Rod"] = 5,  
+    ["Ares Rod"] = 126,  
+    ["Angler Rod"] = 168,
+    ["Bamboo Rod"] = 258
+}  
+
+local rodNames = {  
+    "Luck Rod (350 Coins)", "Carbon Rod (900 Coins)", "Grass Rod (1.5k Coins)", "Demascus Rod (3k Coins)",  
+    "Ice Rod (5k Coins)", "Lucky Rod (15k Coins)", "Midnight Rod (50k Coins)", "Steampunk Rod (215k Coins)",  
+    "Chrome Rod (437k Coins)", "Astral Rod (1M Coins)", "Ares Rod (3M Coins)", "Angler Rod (8M Coins)",
+    "Bamboo Rod (12M Coins)"
+}  
+
+local rodKeyMap = {  
+    ["Luck Rod (350 Coins)"]="Luck Rod",  
+    ["Carbon Rod (900 Coins)"]="Carbon Rod",  
+    ["Grass Rod (1.5k Coins)"]="Grass Rod",  
+    ["Demascus Rod (3k Coins)"]="Demascus Rod",  
+    ["Ice Rod (5k Coins)"]="Ice Rod",  
+    ["Lucky Rod (15k Coins)"]="Lucky Rod",  
+    ["Midnight Rod (50k Coins)"]="Midnight Rod",  
+    ["Steampunk Rod (215k Coins)"]="Steampunk Rod",  
+    ["Chrome Rod (437k Coins)"]="Chrome Rod",  
+    ["Astral Rod (1M Coins)"]="Astral Rod",  
+    ["Ares Rod (3M Coins)"]="Ares Rod",  
+    ["Angler Rod (8M Coins)"]="Angler Rod",
+    ["Bamboo Rod (12M Coins)"]="Bamboo Rod"
+}  
+
+local selectedRod = rodNames[1]  
+
+ShopTab:CreateDropdown({
+	Name = "Select Rod",
+	  Items = rodNames,  
+    Value = selectedRod,  
+    Callback = function(value)  
+        selectedRod = value  
+    end  
+})  
+
 
 ShopTab:CreateButton({
-    Name = "Refresh Rod List",
-    Callback = function()
-        ShopData.Refresh()
-        refreshRodDropdown()
-        Window:Notify({ Title = "Refreshed", Content = "Rod list updated.", Duration = 3 })
-    end
+	Name = "Buy Rod",
+	Icon = "rbxassetid://7733920644",
+	 Callback=function()  
+        local key = rodKeyMap[selectedRod]  
+        if key and rods[key] then  
+            local success, err = pcall(function()  
+                RFPurchaseFishingRod:InvokeServer(rods[key])  
+            end)  
+            if success then  
+                Window:Notify({Title="Rod Purchase", Content="Purchased "..selectedRod, Duration=3})  
+            else  
+                Window:Notify({Title="Rod Purchase Error", Content=tostring(err), Duration=5})  
+            end  
+        end  
+    end  
 })
 
-local selectedRod = ""
-local rodDropdown
-refreshRodDropdown()
-
-ShopTab:CreateButton({
-    Name = "Buy Rod",
-    Icon = "rbxassetid://7733920644",
-    Callback = function()
-        if not selectedRod or not rods[selectedRod] then
-            Window:Notify({ Title = "Error", Content = "No rod selected.", Duration = 3 })
-            return
-        end
-        local id = rods[selectedRod].id
-        if not id then
-            Window:Notify({ Title = "Error", Content = "Rod ID not found.", Duration = 3 })
-            return
-        end
-        local success, err = pcall(function()
-            BuyRod:InvokeServer(id)   -- BuyRod sudah local
-        end)
-        if success then
-            Window:Notify({ Title = "Rod Purchase", Content = "Purchased " .. selectedRod, Duration = 3 })
-        else
-            Window:Notify({ Title = "Purchase Error", Content = tostring(err), Duration = 5 })
-        end
-    end
-})
-
--- ============================================
--- UI: Buy Baits
--- ============================================
 ShopTab:CreateSection({ Name = "Buy Baits" })
 
-local baitNames = {}
-local baits = {}
+local ReplicatedStorage = game:GetService("ReplicatedStorage")  
+local RFPurchaseBait = BuyBait  
 
-local function refreshBaitDropdown()
-    baits, baitNames = ShopData.GetBaits()
-    if baitDropdown then
-        baitDropdown:Refresh(baitNames)
-    else
-        baitDropdown = ShopTab:CreateDropdown({
-            Name = "Select Bait",
-            Items = baitNames,
-            Value = baitNames[1] or "",
-            Callback = function(value)
-                selectedBait = value
-            end
-        })
-    end
-    selectedBait = baitNames[1] or ""
-end
+local baits = {
+    ["TopWater Bait"] = 10,
+    ["Lucky Bait"] = 2,
+    ["Midnight Bait"] = 3,
+    ["Chroma Bait"] = 6,
+    ["Dark Mater Bait"] = 8,
+    ["Corrupt Bait"] = 15,
+    ["Aether Bait"] = 16
+}
+
+local baitNames = {
+    "TopWater Bait (100 Coins)",
+    "Lucky Bait (1k Coins)",
+    "Midnight Bait (3k Coins)",
+    "Chroma Bait (290k Coins)",
+    "Dark Mater Bait (630k Coins)",
+    "Corrupt Bait (1.15M Coins)",
+    "Aether Bait (3.7M Coins)"
+}
+
+local baitKeyMap = {
+    ["TopWater Bait (100 Coins)"] = "TopWater Bait",
+    ["Lucky Bait (1k Coins)"] = "Lucky Bait",
+    ["Midnight Bait (3k Coins)"] = "Midnight Bait",
+    ["Chroma Bait (290k Coins)"] = "Chroma Bait",
+    ["Dark Mater Bait (630k Coins)"] = "Dark Mater Bait",
+    ["Corrupt Bait (1.15M Coins)"] = "Corrupt Bait",
+    ["Aether Bait (3.7M Coins)"] = "Aether Bait"
+}
+
+local selectedBait = baitNames[1]  
+
+ShopTab:CreateDropdown({
+	Name = "Select Bait",
+	 Items = baitNames,  
+    Value = selectedBait,  
+    Callback = function(value)  
+        selectedBait = value  
+    end  
+})  
 
 ShopTab:CreateButton({
-    Name = "Refresh Bait List",
-    Callback = function()
-        ShopData.Refresh()
-        refreshBaitDropdown()
-        Window:Notify({ Title = "Refreshed", Content = "Bait list updated.", Duration = 3 })
-    end
+	Name = "Buy Bait",
+	Icon = "rbxassetid://7733920644",
+ Callback = function()  
+        local key = baitKeyMap[selectedBait]  
+        if key and baits[key] then  
+            local success, err = pcall(function()  
+                RFPurchaseBait:InvokeServer(baits[key])  
+            end)  
+            if success then  
+                Window:Notify({Title = "Bait Purchase", Content = "Purchased " .. selectedBait, Duration = 3})  
+            else  
+                Window:Notify({Title = "Bait Purchase Error", Content = tostring(err), Duration = 5})  
+            end  
+        end  
+    end  
 })
 
-local selectedBait = ""
-local baitDropdown
-refreshBaitDropdown()
-
-ShopTab:CreateButton({
-    Name = "Buy Bait",
-    Icon = "rbxassetid://7733920644",
-    Callback = function()
-        if not selectedBait or not baits[selectedBait] then
-            Window:Notify({ Title = "Error", Content = "No bait selected.", Duration = 3 })
-            return
-        end
-        local id = baits[selectedBait].id
-        if not id then
-            Window:Notify({ Title = "Error", Content = "Bait ID not found.", Duration = 3 })
-            return
-        end
-        local success, err = pcall(function()
-            BuyBait:InvokeServer(id)   -- BuyBait sudah local
-        end)
-        if success then
-            Window:Notify({ Title = "Bait Purchase", Content = "Purchased " .. selectedBait, Duration = 3 })
-        else
-            Window:Notify({ Title = "Purchase Error", Content = tostring(err), Duration = 5 })
-        end
-    end
-})
 
 ShopTab:CreateSection({ Name = "Buy Weather Event", Icon = "rbxassetid://7733955511" })
 
--- ============================================
--- [SECURITY] Data cuaca diambil dari game (dinamis)
--- ============================================
-local WEATHER_MAP = {}      -- key internal (untuk remote) → nama tampilan
-local WEATHER_NAMES = {}    -- daftar nama tampilan (untuk UI)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RFPurchaseWeatherEvent = BuyWeather
 
-local function LoadWeatherData()
-    WEATHER_MAP = {}
-    WEATHER_NAMES = {}
+-- Data cuaca
+local weathers = {
+    ["Wind"] = "Wind",
+    ["Cloudy"] = "Cloudy",
+    ["Snow"] = "Snow",
+    ["Storm"] = "Storm",
+    ["Radiant"] = "Radiant",
+    ["Shark Hunt"] = "Shark Hunt"
+}
 
-    -- 1. Coba ambil dari game (ItemUtility, Remote, atau folder)
-    local success = pcall(function()
-        -- Coba ambil daftar weather yang dijual di shop
-        -- Biasanya ada di ItemUtility:GetAllWeathers() atau di Data store
-        if ItemUtility and ItemUtility.GetAllWeathers then
-            local list = ItemUtility:GetAllWeathers()
-            for _, weather in ipairs(list) do
-                local name = weather.DisplayName or weather.Name
-                local key = weather.InternalName or weather.Name
-                if name and key then
-                    WEATHER_MAP[key] = name
-                    table.insert(WEATHER_NAMES, name)
-                end
-            end
-        end
-    end)
+-- Nama tampilan
+local weatherNames = {
+    "Windy (10k Coins)",
+    "Cloudy (20k Coins)",
+    "Snow (15k Coins)",
+    "Stormy (35k Coins)",
+    "Radiant (50k Coins)",
+    "Shark Hunt (300k Coins)"
+}
 
-    -- 2. Fallback ke hardcode jika gagal atau kosong
-    if not success or not next(WEATHER_MAP) then
-        local hardcoded = {
-            ["Wind"] = "Windy (10k Coins)",
-            ["Fog"] = "Fog (20k Coins)",
-            ["Snow"] = "Snow (15k Coins)",
-            ["Storm"] = "Stormy (35k Coins)",
-            ["Radiant"] = "Radiant (50k Coins)",
-            ["Shark Hunt"] = "Shark Hunt (300k Coins)"
-        }
-        WEATHER_MAP = hardcoded
-        WEATHER_NAMES = {}
-        for _, displayName in pairs(hardcoded) do
-            table.insert(WEATHER_NAMES, displayName)
-        end
-        table.sort(WEATHER_NAMES)
-        Window:Notify({
-            Title = "Weather Data",
-            Content = "Using fallback weather list. Press Refresh to retry.",
-            Duration = 5
-        })
-    else
-        table.sort(WEATHER_NAMES)
-    end
-end
+-- Mapping nama → key internal
+local weatherKeyMap = {
+    ["Windy (10k Coins)"] = "Wind",
+    ["Cloudy (20k Coins)"] = "Cloudy",
+    ["Snow (15k Coins)"] = "Snow",
+    ["Stormy (35k Coins)"] = "Storm",
+    ["Radiant (50k Coins)"] = "Radiant",
+    ["Shark Hunt (300k Coins)"] = "Shark Hunt"
+}
 
--- Panggil pertama kali
-LoadWeatherData()
-
--- Fungsi untuk mendapatkan key internal dari nama tampilan
-local function getWeatherKey(displayName)
-    for key, name in pairs(WEATHER_MAP) do
-        if name == displayName then
-            return key
-        end
-    end
-    return nil
-end
-
--- ============================================
--- Tombol Refresh
--- ============================================
-ShopTab:CreateButton({
-    Name = "Refresh Weather List",
-    Callback = function()
-        LoadWeatherData()
-        -- Update dropdown
-        if weatherDropdown then
-            weatherDropdown:Refresh(WEATHER_NAMES)
-        end
-        -- Hapus pilihan yang tidak valid
-        local newSelected = {}
-        for _, name in ipairs(selectedWeathers) do
-            if table.find(WEATHER_NAMES, name) then
-                table.insert(newSelected, name)
-            end
-        end
-        selectedWeathers = newSelected
-        Window:Notify({ Title = "Refreshed", Content = "Weather list updated from game.", Duration = 3 })
-    end
-})
-
--- ============================================
--- MultiDropdown (disimpan di variabel lokal untuk bisa direfresh)
--- ============================================
 local selectedWeathers = {}
 local autoBuyRunning = false
 
-local weatherDropdown
-weatherDropdown = ShopTab:CreateMultiDropdown({
-    Name = "Select Weather Events",
-    Items = WEATHER_NAMES,
+ShopTab:CreateMultiDropdown({
+	Name = "Select Weather Events",
+	Items = weatherNames,
     Default = selectedWeathers,
     Callback = function(values)
         selectedWeathers = values
@@ -7078,14 +6852,12 @@ weatherDropdown = ShopTab:CreateMultiDropdown({
     end
 })
 
--- ============================================
--- Toggle Auto Buy
--- ============================================
+
 ShopTab:CreateToggle({
-    Name = "Auto Buy Selected Weathers",
-    SubText = "Continuously purchase all selected weather events while ON",
-    Default = false,
-    Callback = function(state)
+	Name = "Auto Buy Selected Weathers",
+	SubText = "Continuously purchase all selected weather events while ON",
+	Default = false,
+ Callback = function(state)
         autoBuyRunning = state
 
         if state then
@@ -7105,25 +6877,26 @@ ShopTab:CreateToggle({
                 Duration = 3
             })
 
-            -- Loop pembelian
+            -- Jalankan loop di thread terpisah
             task.spawn(function()
                 while autoBuyRunning do
-                    for _, displayName in ipairs(selectedWeathers) do
-                        local key = getWeatherKey(displayName)
-                        if key then
-                            pcall(function()
-                                BuyWeather:InvokeServer(key)  -- BuyWeather sudah local
+                    for _, selected in ipairs(selectedWeathers) do
+                        local key = weatherKeyMap[selected]
+                        if key and weathers[key] then
+                            local success, err = pcall(function()
+                                RFPurchaseWeatherEvent:InvokeServer(weathers[key])
                             end)
                         else
                             Window:Notify({
                                 Title = "⚠️ Invalid Weather",
-                                Content = "Invalid selection: " .. tostring(displayName),
+                                Content = "Invalid selection: " .. tostring(selected),
                                 Duration = 3
                             })
                         end
                         task.wait(0.5)
                     end
-                    task.wait(5)   -- jeda 5 detik sebelum siklus berikutnya
+
+                    task.wait(5) -- Increased from 2s to 5s to reduce CPU usage
                 end
             end)
         else
@@ -7135,6 +6908,7 @@ ShopTab:CreateToggle({
         end
     end
 })
+
 
 -- ==================================================
 -- Merchant (copied/adapted from `source of wishub/Main.lua`)
@@ -9004,12 +8778,12 @@ function createScriptNameLabel(nameLabel, billboard)
         originalNamePos.Y.Offset
     )
     
-    local DevFrame = Instance.new("Frame")
-    DevFrame.Name = "DevHubFrame"
-    DevFrame.Size = nameFrame.Size
-    DevFrame.Position = originalNamePos
-    DevFrame.BackgroundTransparency = 1
-    DevFrame.Parent = billboard
+    local voraFrame = Instance.new("Frame")
+    voraFrame.Name = "DevHubFrame"
+    voraFrame.Size = nameFrame.Size
+    voraFrame.Position = originalNamePos
+    voraFrame.BackgroundTransparency = 1
+    voraFrame.Parent = billboard
     
     local scriptLabel = nameLabel:Clone()
     scriptLabel.Name = "DevHubLabel"
@@ -9018,10 +8792,10 @@ function createScriptNameLabel(nameLabel, billboard)
     scriptLabel.Font = Enum.Font.GothamBold
     scriptLabel.TextStrokeTransparency = 0.5
     scriptLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-    scriptLabel.Parent = DevFrame
+    scriptLabel.Parent = voraFrame
     
     createMovingGradient(scriptLabel)
-    return DevFrame
+    return voraFrame
 end
 
 -- Helper: Remove Script Name Labels
@@ -9033,8 +8807,8 @@ function removeAllScriptNames()
     local overhead = hrp:FindFirstChild("Overhead")
     if not overhead then return end
     
-    local DevFrame = overhead:FindFirstChild("DevHubFrame")
-    if DevFrame then
+    local voraFrame = overhead:FindFirstChild("DevHubFrame")
+    if voraFrame then
         for threadId, _ in pairs(ActiveGradientThreads) do
             ActiveGradientThreads[threadId] = nil
         end
@@ -9052,7 +8826,7 @@ function removeAllScriptNames()
                 )
             end
         end
-        DevFrame:Destroy()
+        voraFrame:Destroy()
     end
 end
 
