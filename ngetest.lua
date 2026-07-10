@@ -9105,109 +9105,202 @@ end
 SettingsTab:CreateSection({ Name = "Anti AFK", Icon = "rbxassetid://7733658504" })
 
 -- ============================================
--- [SECURITY] State lokal untuk Anti AFK
+-- [SECURITY] State lokal
 -- ============================================
-local AntiAFKEnabled = false  -- sesuai default UI
-local antiAFKInitialized = false
+local AntiAFKEnabled = false
 
--- Simpan daftar koneksi yang telah dimanipulasi agar bisa dikembalikan
-local AFKConnections = {}
-local AFKConnectionMonitor = nil  -- untuk mendeteksi koneksi baru setelah respawn
+-- Thread/Connection tracker
+local afkThreads = {}
+local afkConnections = {}
 
--- ============================================
--- Fungsi inti: Nonaktifkan atau aktifkan ulang semua koneksi Idled
--- ============================================
-local function setAFKConnections(disable)
-    local GC = getconnections or get_signal_cons
-    if not GC then
-        warn("[Anti AFK] getconnections not available")
-        return false
+-- Helper untuk membersihkan semua thread/connection
+local function cleanupAFK()
+    for _, t in ipairs(afkThreads) do
+        if t then pcall(task.cancel, t) end
     end
-
-    local success = false
-    local idleSignal = LocalPlayer.Idled
-
-    -- Proses koneksi yang ada
-    for _, connection in next, GC(idleSignal) do
-        success = true
-        if disable then
-            connection:Disable()
-        else
-            connection:Enable()
-        end
-        -- Simpan untuk referensi nanti (hanya jika belum ada)
-        if not table.find(AFKConnections, connection) then
-            table.insert(AFKConnections, connection)
-        end
+    for _, c in ipairs(afkConnections) do
+        if c then pcall(function() c:Disconnect() end) end
     end
-
-    return success
+    afkThreads = {}
+    afkConnections = {}
 end
 
 -- ============================================
--- Pemantau karakter: setiap respawn, terapkan ulang
+-- METODE 1: VirtualUser (API Resmi Roblox)
 -- ============================================
-local function connectCharacterMonitor()
-    if AFKConnectionMonitor then
-        AFKConnectionMonitor:Disconnect()
-        AFKConnectionMonitor = nil
-    end
+local function startVirtualUser()
+    local vu = game:GetService("UserInputService").VirtualUser
+    if not vu then return false end
 
-    AFKConnectionMonitor = LocalPlayer.CharacterAdded:Connect(function()
-        if AntiAFKEnabled then
-            task.wait(0.5)  -- tunggu sinyal siap
-            setAFKConnections(true)
+    local thread = task.spawn(function()
+        while AntiAFKEnabled do
+            -- Gerakan mouse mikro (1 px kanan, lalu 1 px kiri)
+            pcall(function()
+                vu:MoveMouse(Vector2.new(1, 0))
+                task.wait(0.1)
+                vu:MoveMouse(Vector2.new(-1, 0))
+            end)
+            -- Tunggu 30 detik sebelum gerakan berikutnya
+            for _ = 1, 30 do
+                if not AntiAFKEnabled then break end
+                task.wait(1)
+            end
         end
     end)
-end
-
--- Inisialisasi awal
-if AntiAFKEnabled then
-    setAFKConnections(true)
-    connectCharacterMonitor()
+    table.insert(afkThreads, thread)
+    print("[Anti AFK] VirtualUser active")
+    return true
 end
 
 -- ============================================
--- UI Toggle
+-- METODE 2: Simulasi Input via GUI Sendiri
+-- ============================================
+local function startGUIInput()
+    local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+    if not playerGui then return false end
+
+    -- Buat tombol transparan 1x1 piksel di pojok kiri atas
+    local afkButton = Instance.new("ImageButton")
+    afkButton.Name = "AFKPreventer"
+    afkButton.Size = UDim2.new(0, 1, 0, 1)
+    afkButton.Position = UDim2.new(0, 0, 0, 0)
+    afkButton.BackgroundTransparency = 1
+    afkButton.AutoButtonColor = false
+    afkButton.Parent = playerGui
+
+    -- Simulasikan fokus & klik setiap 25–35 detik (acak)
+    local thread = task.spawn(function()
+        while AntiAFKEnabled do
+            local waitTime = 25 + math.random() * 10  -- 25–35 detik
+            for _ = 1, math.floor(waitTime) do
+                if not AntiAFKEnabled then break end
+                task.wait(1)
+            end
+            if not AntiAFKEnabled then break end
+            pcall(function()
+                afkButton:CaptureFocus()
+                task.wait(0.1)
+                afkButton:ReleaseFocus()
+            end)
+        end
+        -- Bersihkan GUI saat dimatikan
+        pcall(function() afkButton:Destroy() end)
+    end)
+    table.insert(afkThreads, thread)
+    print("[Anti AFK] GUI simulation active")
+    return true
+end
+
+-- ============================================
+-- METODE 3: Auto-Rejoin (Fallback Terakhir)
+-- ============================================
+local function startAutoRejoin()
+    local idleConnection
+    idleConnection = LocalPlayer.Idled:Connect(function()
+        if not AntiAFKEnabled then return end
+        print("[Anti AFK] Idle detected, preparing rejoin...")
+        -- Beri jeda agar tidak langsung rejoin saat disconnect
+        task.wait(5)
+        pcall(function()
+            TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+        end)
+        -- Jika TeleportToPlaceInstance gagal (public server), fallback ke Teleport biasa
+        pcall(function()
+            TeleportService:Teleport(game.PlaceId, LocalPlayer)
+        end)
+    end)
+    table.insert(afkConnections, idleConnection)
+    print("[Anti AFK] Auto-rejoin listener active")
+    return true
+end
+
+-- ============================================
+-- BYPASS TAMBAHAN: Randomisasi Interval & Kombinasi Gerakan
+-- ============================================
+local function startRandomizedInput()
+    -- Jika VirtualUser atau GUI sudah aktif, tambahkan variasi gerakan
+    -- untuk menghindari deteksi pola berulang.
+    local thread = task.spawn(function()
+        while AntiAFKEnabled do
+            -- Waktu acak antara 20–40 detik
+            local waitTime = 20 + math.random() * 20
+            for _ = 1, math.floor(waitTime) do
+                if not AntiAFKEnabled then break end
+                task.wait(1)
+            end
+            if not AntiAFKEnabled then break end
+
+            -- Pilih jenis input secara acak: mouse atau keyboard
+            local inputType = math.random(1, 2)
+            if inputType == 1 then
+                -- Gerakan mouse lebih bervariasi (2–3 piksel ke arah acak)
+                pcall(function()
+                    local dx = (math.random(1, 3)) * (math.random(0,1)*2-1)
+                    local dy = (math.random(1, 3)) * (math.random(0,1)*2-1)
+                    if game:GetService("UserInputService").VirtualUser then
+                        game:GetService("UserInputService").VirtualUser:MoveMouse(Vector2.new(dx, dy))
+                    end
+                end)
+            else
+                -- Simulasi tombol keyboard tidak mengganggu (key None)
+                pcall(function()
+                    if game:GetService("UserInputService").VirtualUser then
+                        game:GetService("UserInputService").VirtualUser:SendKeyEvent(true, Enum.KeyCode.Unknown, false, nil)
+                        task.wait(0.05)
+                        game:GetService("UserInputService").VirtualUser:SendKeyEvent(false, Enum.KeyCode.Unknown, false, nil)
+                    end
+                end)
+            end
+        end
+    end)
+    table.insert(afkThreads, thread)
+    print("[Anti AFK] Randomized input pattern active")
+    return true
+end
+
+-- ============================================
+-- FUNGSI UTAMA: Aktifkan Semua Metode
+-- ============================================
+local function enableAllMethods()
+    -- Hentikan yang lama dulu (jaga-jaga)
+    cleanupAFK()
+
+    -- Coba metode paling aman dulu
+    local method1ok = startVirtualUser()
+
+    if not method1ok then
+        -- Fallback ke GUI sendiri
+        local method2ok = startGUIInput()
+    end
+
+    -- Auto-rejoin selalu dipasang sebagai safety net
+    startAutoRejoin()
+
+    -- Randomizer bypass untuk menghindari deteksi pola
+    startRandomizedInput()
+
+    Window:Notify({ Title = "Anti AFK", Content = "Multi-layer protection active", Duration = 3 })
+end
+
+local function disableAllMethods()
+    cleanupAFK()
+    Window:Notify({ Title = "Anti AFK", Content = "Deactivated", Duration = 3 })
+end
+
+-- ============================================
+-- UI TOGGLE
 -- ============================================
 SettingsTab:CreateToggle({
     Name = "Anti AFK",
-    Description = "Prevents you from being kicked for idling",
+    Description = "Professional multi-layer AFK prevention",
     Icon = "rbxassetid://7733658504",
     Default = false,
     Callback = function(value)
         AntiAFKEnabled = value
         if value then
-            local success = setAFKConnections(true)
-            if success then
-                connectCharacterMonitor()
-                print("[Anti AFK] Activated")
-            else
-                -- Fallback: gunakan cara lain jika getconnections tidak ada
-                -- Beberapa executor bisa menggunakan setfflag atau Humanoid.Idle
-                pcall(function()
-                    local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-                    if humanoid then
-                        -- Gunakan trik berbasis humanoid
-                        humanoid.Idle:Connect(function()
-                            -- Tidak melakukan apa-apa, mencegah idle
-                        end)
-                        print("[Anti AFK] Activated (Humanoid fallback)")
-                    end
-                end)
-                Window:Notify({
-                    Title = "Anti AFK",
-                    Content = "Activated (fallback mode)",
-                    Duration = 3
-                })
-            end
+            enableAllMethods()
         else
-            setAFKConnections(false)  -- pulihkan koneksi
-            if AFKConnectionMonitor then
-                AFKConnectionMonitor:Disconnect()
-                AFKConnectionMonitor = nil
-            end
-            print("[Anti AFK] Deactivated")
+            disableAllMethods()
         end
     end
 })
