@@ -271,10 +271,10 @@ function DataCache:Invalidate()
     self.enchantStones = nil
 end
 
-local VoraLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/juansyahrz17-prog/vorahub/refs/heads/main/lib.lua"))()
+local DevLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/DeveloperK-AI/DevK/main/lib.lua"))()
 
- Window = VoraLib:CreateWindow({
-	Name = "Vora Hub",
+ Window = DevLib:CreateWindow({
+	Name = "Dev Hub",
 	Intro = true
 })
 
@@ -294,7 +294,7 @@ InfoTab:CreateButton({
 	SubText = "click to copy link",
 	Icon = "rbxassetid://7733919427",
 	Callback = function()
-		setclipboard("https://discord.gg/vorahub")
+		setclipboard("https://discord.gg/DevHub")
 		Window:Notify({
 			Title = "Discord",
 			Content = "Link copied to clipboard!",
@@ -2251,7 +2251,7 @@ function sendTestWebhook()
     end
 
     local payload = {
-        username = "VoraHub Webhook",
+        username = "DevHub Webhook",
         avatar_url = "https://cdn.discordapp.com/attachments/1434789394929287178/1448926732705988659/Swuppie.jpg?ex=693d09ac&is=693bb82c&hm=88d4c68207470eb4abc79d9b68227d85171aded5d3d99e9a76edcd823862f5fe",
         embeds = {{
             title = "Test Webhook Connected",
@@ -2299,9 +2299,9 @@ function sendNewFishWebhook(newlyCaughtFish)
     local payload = {
         content = nil,
         embeds = {{
-            title = "VoraHub Fish caught!",
+            title = "DevHub Fish caught!",
             description = string.format("Congrats! **%s** You obtained new **%s** here for full detail fish :", playerName, newFishRarity),
-            url = "https://discord.gg/vorahub",
+            url = "https://discord.gg/DevHub",
             color = 8900346,
             fields = {
                 { name = "Name Fish :",        value = "```\n"..newFishDetails.Name.."```" },
@@ -2313,7 +2313,7 @@ function sendNewFishWebhook(newlyCaughtFish)
                 { name = "Current Coin :",     value = "```"..currentCoins.."```" },
             },
             footer = {
-                text = "VoraHub Webhook",
+                text = "DevHub Webhook",
                 icon_url = "https://cdn.discordapp.com/attachments/1434789394929287178/1448926732705988659/Swuppie.jpg?ex=693d09ac&is=693bb82c&hm=88d4c68207470eb4abc79d9b68227d85171aded5d3d99e9a76edcd823862f5fe"
             },
             timestamp = os.date("!%Y-%m-%dT%H:%M:%S.000Z"),
@@ -2321,7 +2321,7 @@ function sendNewFishWebhook(newlyCaughtFish)
                 url = getThumbnailURL(newFishDetails.Icon)
             }
         }},
-        username = "VoraHub Webhook",
+        username = "DevHub Webhook",
         avatar_url = "https://cdn.discordapp.com/attachments/1434789394929287178/1448926732705988659/Swuppie.jpg?ex=693d09ac&is=693bb82c&hm=88d4c68207470eb4abc79d9b68227d85171aded5d3d99e9a76edcd823862f5fe",
         attachments = {}
     }
@@ -2369,7 +2369,7 @@ function sendGlobalTrackerWebhook(newlyCaughtFish)
     local payload = {
         content = nil,
         embeds = {{
-            title = string.format(":fish: VoraHub | Global Tracker\n\nGLOBAL CATCH! %s", fishDetails.Name),
+            title = string.format(":fish: DevHub | Global Tracker\n\nGLOBAL CATCH! %s", fishDetails.Name),
             description = string.format("Pemain **%s** baru saja menangkap ikan **SECRET**!", censoredName),
             color = 16766720,
             fields = {
@@ -2378,9 +2378,9 @@ function sendGlobalTrackerWebhook(newlyCaughtFish)
                 { name = "Mutation", value = string.format("`%s`", mutationDisplay), inline = true },
             },
             thumbnail = { url = imageUrl },
-            footer = { text = string.format("VoraHub Community | Player: %s | %s", censoredName, timestamp) },
+            footer = { text = string.format("DevHub Community | Player: %s | %s", censoredName, timestamp) },
         }},
-        username = "VoraHub | Community",
+        username = "DevHub | Community",
         attachments = {}
     }
 
@@ -2405,7 +2405,7 @@ function sendTestGlobalWebhook()
     local testPayload = {
         content = nil,
         embeds = {{
-            title = ":fish: VoraHub | Global Tracker\n\nGLOBAL CATCH! Blob Shark",
+            title = ":fish: DevHub | Global Tracker\n\nGLOBAL CATCH! Blob Shark",
             description = string.format("Pemain **%s** baru saja menangkap ikan **SECRET**! (TEST)", censoredName),
             color = 16766720,
             fields = {
@@ -2414,9 +2414,9 @@ function sendTestGlobalWebhook()
                 { name = "Mutation", value = "`N/A`", inline = true },
             },
             thumbnail = { url = "https://tr.rbxcdn.com/53eb9b170bea9855c45c9356fb33c070/420/420/Image/Png" },
-            footer = { text = string.format("VoraHub Community | Player: %s | %s", censoredName, timestamp) },
+            footer = { text = string.format("DevHub Community | Player: %s | %s", censoredName, timestamp) },
         }},
-        username = "VoraHub | Community",
+        username = "DevHub | Community",
         attachments = {}
     }
     pcall(function()
@@ -2509,7 +2509,7 @@ function sendFishToWhatsApp_API(fish)
     if not _G.WA_NumberID or _G.WA_NumberID == "" or
        not _G.WA_AccessToken or _G.WA_AccessToken == "" or
        not _G.WA_TargetPhone or _G.WA_TargetPhone == "" then
-        warn("[VoraHub WA] Missing WhatsApp API credentials")
+        warn("[DevHub WA] Missing WhatsApp API credentials")
         return
     end
 
@@ -2539,7 +2539,7 @@ function sendFishToWhatsApp_API(fish)
         "💰 *Sell Price:* %s\n" ..
         "🎒 *Backpack:* %d/4500\n" ..
         "🪙 *Coins:* %s\n\n" ..
-        "— VoraHub Auto Fishing",
+        "— DevHub Auto Fishing",
         fishInfo.Name, rarity, weight, mutation, price, totalFish, coins
     )
 
@@ -2709,14 +2709,14 @@ end
             { name = "Chance",  value = string.format("`1 in %s`", chance),   inline = true },
             { name = "Player",  value = string.format("`%s`", censored),      inline = true },
         },
-        footer    = { text = "VoraHub Server Tracker" },
+        footer    = { text = "DevHub Server Tracker" },
         timestamp = os.date("!%Y-%m-%dT%H:%M:%S.000Z"),
     }
     if imageUrl and imageUrl ~= "" then
         embed.thumbnail = { url = imageUrl }
     end
     local payload = {
-        username   = "VoraHub | Server Tracker",
+        username   = "DevHub | Server Tracker",
         avatar_url = "https://cdn.discordapp.com/attachments/1434789394929287178/1448926732705988659/Swuppie.jpg?ex=693d09ac&is=693bb82c&hm=88d4c68207470eb4abc79d9b68227d85171aded5d3d99e9a76edcd823862f5fe",
         embeds = { embed }
     }
@@ -2804,25 +2804,25 @@ MonitoringTab:CreateToggle({
 })
 
 -- =========================================================================
--- VORAHUB WEB MONITORING
+-- DevHub WEB MONITORING
 -- =========================================================================
-MonitoringTab:CreateSection({ Name = "VoraHub Web Monitoring" })
+MonitoringTab:CreateSection({ Name = "DevHub Web Monitoring" })
 
-local VoraMonitoringSettings = {
-    VoraKey = "", -- Replace in UI
+local DevMonitoringSettings = {
+    DevKey = "", -- Replace in UI
     AutoSync = true,
     Interval = 5,
     Enabled = false -- Master Toggle State
 }
 
-local VORA_API_URL = "https://monitor.vorahub.xyz/api/inventory/sync"
+local Dev_API_URL = "https://monitor.DevHub.xyz/api/inventory/sync"
 
 MonitoringTab:CreateInput({
-    Name = "VoraHub Key",
-    Placeholder = "Enter VoraHub Key...",
-    Default = VoraMonitoringSettings.VoraKey,
+    Name = "DevHub Key",
+    Placeholder = "Enter DevHub Key...",
+    Default = DevMonitoringSettings.DevKey,
     Callback = function(val)
-        VoraMonitoringSettings.VoraKey = val
+        DevMonitoringSettings.DevKey = val
     end
 })
 
@@ -2830,7 +2830,7 @@ MonitoringTab:CreateToggle({
     Name = "Enable Web Monitoring",
     Default = false,
     Callback = function(val)
-        VoraMonitoringSettings.Enabled = val
+        DevMonitoringSettings.Enabled = val
     end
 })
 
@@ -2870,7 +2870,7 @@ MonitoringTab:CreateToggle({
     return success and result or nil
 end
 
- function GatherVoraInventory()
+ function GatherDevInventory()
     local inventory = {
         Rods = {},
         Charms = {},
@@ -3017,7 +3017,7 @@ end
     }
 
     return {
-        apiKey = VoraMonitoringSettings.VoraKey,
+        apiKey = DevMonitoringSettings.DevKey,
         playerName = safeString(Player.Name),
         userId = Player.UserId,
         playerStats = playerStats,
@@ -3027,11 +3027,11 @@ end
     }
 end
 
- function SendVoraInventory(isOffline)
-    if VoraMonitoringSettings.VoraKey == "yourkey" or VoraMonitoringSettings.VoraKey == "" then return end
+ function SendDevInventory(isOffline)
+    if DevMonitoringSettings.DevKey == "yourkey" or DevMonitoringSettings.DevKey == "" then return end
     
     local success, err = pcall(function()
-        local data = GatherVoraInventory()
+        local data = GatherDevInventory()
         if not data then return end
         
         if isOffline then data.isOnline = false end
@@ -3040,7 +3040,7 @@ end
         
         -- Use httpRequest function defined earlier
         httpRequest({
-            Url = VORA_API_URL,
+            Url = Dev_API_URL,
             Method = "POST",
             Headers = {
                 ["Content-Type"] = "application/json",
@@ -3051,12 +3051,12 @@ end
     end)
 end
 
--- Auto-sync loop for VoraHub
+-- Auto-sync loop for DevHub
 task.spawn(function()
     while true do
-        task.wait(VoraMonitoringSettings.Interval)
-        if VoraMonitoringSettings.Enabled and VoraMonitoringSettings.AutoSync then
-            SendVoraInventory(false)    
+        task.wait(DevMonitoringSettings.Interval)
+        if DevMonitoringSettings.Enabled and DevMonitoringSettings.AutoSync then
+            SendDevInventory(false)    
         end
     end
 end)
@@ -3064,7 +3064,7 @@ end)
 -- Handle leaving
 game:GetService("Players").PlayerRemoving:Connect(function(p)
     if p == game.Players.LocalPlayer then
-        SendVoraInventory(true)
+        SendDevInventory(true)
     end
 end)
 
@@ -3805,7 +3805,7 @@ task.spawn(function()
 end)
 
 -- =============================================================================
--- STATUS OVERLAY UI (ported from CompleteVorahub/mainkaitun.lua)
+-- STATUS OVERLAY UI (ported from CompleteDevHub/mainkaitun.lua)
 -- - ScreenGui shows quest progress + best rod/bait/coins
 -- - Visible when any quest mode is ON (or forced by toggle)
 -- =============================================================================
@@ -3814,7 +3814,7 @@ PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 Lighting = game:GetService("Lighting")
 
 screenGui = Instance.new("ScreenGui")
-screenGui.Name = "VoraHub Status"
+screenGui.Name = "DevHub Status"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = PlayerGui
 
@@ -3841,7 +3841,7 @@ function makeLabel(name, size, pos, text, fontSize)
     return l
 end
 
-titleLabel = makeLabel("Title", UDim2.new(0, 300, 0, 40), UDim2.new(0.5, 0, 0.25, 0), "VoraHub Status", 24)
+titleLabel = makeLabel("Title", UDim2.new(0, 300, 0, 40), UDim2.new(0.5, 0, 0.25, 0), "DevHub Status", 24)
 titleLabel.TextColor3 = Color3.fromRGB(64, 224, 208)
 titleLabel.TextScaled = true
 
@@ -4000,7 +4000,7 @@ end)
 
 -- =============================================================================
 -- =============================================================================
--- QUEST PROCESS FUNCTIONS (ported from Main.lua, adapted for Vora.lua)
+-- QUEST PROCESS FUNCTIONS (ported from Main.lua, adapted for Dev.lua)
 -- Handles: Deep Sea, Element, Diamond, Temple Lever auto-teleport + item actions
 -- =============================================================================
 _G.AutoDeepSeaQuest = _G.AutoDeepSeaQuest or _G.DeepSeaQuestMode or false
@@ -4732,7 +4732,7 @@ spawn(function()
             for name, rod in pairs(FishingRods) do
                 local uuid = getRodUUID(rod.id)
                 if not uuid and coins >= rod.price then
-                    print("[VoraHub] Buying " .. name .. " (Price: " .. rod.price .. ")")
+                    print("[DevHub] Buying " .. name .. " (Price: " .. rod.price .. ")")
                     local wasDeepSea = _G.DeepSeaQuestMode
                     local wasElement = _G.ElementQuestMode
                     local wasDiamond = _G.DiamondQuestMode
@@ -4769,7 +4769,7 @@ spawn(function()
                                     equipTool:FireServer(1)
                                 end)
                             end
-                            print("[VoraHub] " .. name .. " equipped!")
+                            print("[DevHub] " .. name .. " equipped!")
                         end
 
                         teleportBasedOnCondition(getBestRod())
@@ -4797,7 +4797,7 @@ spawn(function()
 
             for baitId, bait in pairs(Baits) do
                 if not hasBait(baitId) and coins >= bait.price then
-                    print("[VoraHub] Buying " .. bait.name .. "...")
+                    print("[DevHub] Buying " .. bait.name .. "...")
                     local wasDeepSea = _G.DeepSeaQuestMode
                     local wasElement = _G.ElementQuestMode
                     local wasDiamond = _G.DiamondQuestMode
@@ -6236,18 +6236,18 @@ AutoTab:CreateToggle({
                                     local args = { chestId }
                                     RE:FireServer(unpack(args))
                                     chestsFound = chestsFound + 1
-                                    print("[VoraHub] Claiming chest: " .. chestId)
+                                    print("[DevHub] Claiming chest: " .. chestId)
                                     task.wait(0.3)
                                 end
                             end
                             
                             if chestsFound > 0 then
-                                print("[VoraHub] Successfully claimed " .. chestsFound .. " pirate chests!")
+                                print("[DevHub] Successfully claimed " .. chestsFound .. " pirate chests!")
                             else
-                                print("[VoraHub] No pirate chests found in PirateChestStorage")
+                                print("[DevHub] No pirate chests found in PirateChestStorage")
                             end
                         else
-                            print("[VoraHub] PirateChestStorage not found in workspace")
+                            print("[DevHub] PirateChestStorage not found in workspace")
                         end
                     end)
                     task.wait(2) -- Wait 2 seconds before scanning again
@@ -8395,7 +8395,7 @@ SettingsTab:CreateToggle({
         if not replicateConn and RE.ReplicateCutscene then
             replicateConn = RE.ReplicateCutscene and RE.ReplicateCutscene.OnClientEvent:Connect(function(...)
                 if skipCutscene then
-                    warn("[VoraHub] Blocked ReplicateCutscene event!")
+                    warn("[DevHub] Blocked ReplicateCutscene event!")
                 end
             end)
         end
@@ -8403,7 +8403,7 @@ SettingsTab:CreateToggle({
         if not stopConn and RE.StopCutscene then
             stopConn = RE.StopCutscene and RE.StopCutscene.OnClientEvent:Connect(function()
                 if skipCutscene then
-                    warn("[VoraHub] Blocked StopCutscene event!")
+                    warn("[DevHub] Blocked StopCutscene event!")
                 end
             end)
         end
@@ -8418,7 +8418,7 @@ SettingsTab:CreateToggle({
             end)
 
             if not ok or not CutsceneController then
-                warn("[VoraHub] CutsceneController not found.")
+                warn("[DevHub] CutsceneController not found.")
                 return
             end
 
@@ -8429,10 +8429,10 @@ SettingsTab:CreateToggle({
             while true do
                 if skipCutscene then
                     CutsceneController.Play = function(...)
-                        warn("[VoraHub] Cutscene skipped (Play).")
+                        warn("[DevHub] Cutscene skipped (Play).")
                     end
                     CutsceneController.Stop = function(...)
-                        warn("[VoraHub] Cutscene skipped (Stop).")
+                        warn("[DevHub] Cutscene skipped (Stop).")
                     end
                 else
                     CutsceneController.Play = originalPlay
@@ -8960,9 +8960,9 @@ defaultHeader = header.Text
 defaultLevel = levelLabel.Text
 
 -- Configuration Defaults
-local FakeName = "discord.gg/vorahub"
+local FakeName = "discord.gg/DevHub"
 local FakeLevel = "MAX"
-local ScriptName = "Vorahub"
+local ScriptName = "DevHub"
 local HideStatsEnabled = false
 
 -- Storage
@@ -9016,11 +9016,11 @@ function createMovingGradient(label)
     return gradient
 end
 
--- Helper: Create Script Name Label (Vorahub)
+-- Helper: Create Script Name Label (DevHub)
 function createScriptNameLabel(nameLabel, billboard)
     if not nameLabel or not billboard then return end
     
-    local existingFrame = billboard:FindFirstChild("VorahubFrame")
+    local existingFrame = billboard:FindFirstChild("DevHubFrame")
     if existingFrame then return existingFrame end
     
     local nameFrame = nameLabel.Parent
@@ -9034,24 +9034,24 @@ function createScriptNameLabel(nameLabel, billboard)
         originalNamePos.Y.Offset
     )
     
-    local voraFrame = Instance.new("Frame")
-    voraFrame.Name = "VorahubFrame"
-    voraFrame.Size = nameFrame.Size
-    voraFrame.Position = originalNamePos
-    voraFrame.BackgroundTransparency = 1
-    voraFrame.Parent = billboard
+    local DevFrame = Instance.new("Frame")
+    DevFrame.Name = "DevHubFrame"
+    DevFrame.Size = nameFrame.Size
+    DevFrame.Position = originalNamePos
+    DevFrame.BackgroundTransparency = 1
+    DevFrame.Parent = billboard
     
     local scriptLabel = nameLabel:Clone()
-    scriptLabel.Name = "VorahubLabel"
+    scriptLabel.Name = "DevHubLabel"
     scriptLabel.Text = ScriptName
     scriptLabel.TextScaled = true
     scriptLabel.Font = Enum.Font.GothamBold
     scriptLabel.TextStrokeTransparency = 0.5
     scriptLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-    scriptLabel.Parent = voraFrame
+    scriptLabel.Parent = DevFrame
     
     createMovingGradient(scriptLabel)
-    return voraFrame
+    return DevFrame
 end
 
 -- Helper: Remove Script Name Labels
@@ -9063,8 +9063,8 @@ function removeAllScriptNames()
     local overhead = hrp:FindFirstChild("Overhead")
     if not overhead then return end
     
-    local voraFrame = overhead:FindFirstChild("VorahubFrame")
-    if voraFrame then
+    local DevFrame = overhead:FindFirstChild("DevHubFrame")
+    if DevFrame then
         for threadId, _ in pairs(ActiveGradientThreads) do
             ActiveGradientThreads[threadId] = nil
         end
@@ -9082,7 +9082,7 @@ function removeAllScriptNames()
                 )
             end
         end
-        voraFrame:Destroy()
+        DevFrame:Destroy()
     end
 end
 
@@ -9110,7 +9110,7 @@ function updateStats()
             local originalText = OriginalTexts[fullPath]
             if originalText and originalText ~= "" then
                 if obj.Name == "Header" then
-                    if not overhead:FindFirstChild("VorahubFrame") then
+                    if not overhead:FindFirstChild("DevHubFrame") then
                         createScriptNameLabel(obj, overhead)
                     end
                     obj.Text = FakeName
@@ -9720,7 +9720,7 @@ TabConfig:CreateSection({
  configName = ""
  selectedConfig = ""
  configDropdown = nil
- CONFIG_FOLDER = "VoraHubConfigs"
+ CONFIG_FOLDER = "DevHubConfigs"
 
 function sanitizeConfigName(name)
     name = tostring(name or ""):gsub("^%s+", ""):gsub("%s+$", "")
