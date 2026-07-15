@@ -3339,6 +3339,90 @@ MainTab:CreateToggle({
     end
 })
 
+MainTab:CreateSection({ Name = "Fishing Simulator" })
+
+-- ============================================
+-- [SECURITY] State lokal
+-- ============================================
+local fishingSimulatorEnabled = false
+local fishingSimulatorConnections = {}  -- simpan semua koneksi
+
+-- Fungsi untuk memulai casting
+local function startCasting()
+    pcall(function()
+        ChargeRod:InvokeServer(nil, nil, workspace:GetServerTimeNow(), nil)
+        StartMini:InvokeServer(0, 0.5, workspace:GetServerTimeNow())
+    end)
+end
+
+-- Bersihkan semua koneksi
+local function cleanupFishingSimulator()
+    for _, conn in ipairs(fishingSimulatorConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    fishingSimulatorConnections = {}
+end
+
+-- Aktifkan Simulator
+local function enableFishingSimulator()
+    if fishingSimulatorEnabled then return end
+    fishingSimulatorEnabled = true
+
+    cleanupFishingSimulator()
+
+    -- Hook 1: Saat minigame muncul, langsung selesaikan
+    if FishingMinigameChanged then
+        local conn1 = FishingMinigameChanged.OnClientEvent:Connect(function()
+            if not fishingSimulatorEnabled then return end
+            -- Selesaikan minigame secepatnya
+            pcall(function()
+                (REFishDoneRE or REFishDone):FireServer()
+            end)
+        end)
+        table.insert(fishingSimulatorConnections, conn1)
+    end
+
+    -- Hook 2: Setelah ikan tertangkap (atau minigame selesai), langsung lempar lagi
+    -- Gunakan event FishingCompleted jika ada, jika tidak pakai FishCaught
+    local catchEvent = REFishingCompleted or REFishCaught or REFishGot
+    if catchEvent then
+        local conn2 = catchEvent.OnClientEvent:Connect(function()
+            if not fishingSimulatorEnabled then return end
+            -- Lempar kail baru
+            startCasting()
+        end)
+        table.insert(fishingSimulatorConnections, conn2)
+    end
+
+    -- Mulai casting pertama kali
+    startCasting()
+
+    print("[Fishing Simulator] Activated – event-driven mode")
+end
+
+-- Matikan Simulator
+local function disableFishingSimulator()
+    fishingSimulatorEnabled = false
+    cleanupFishingSimulator()
+    print("[Fishing Simulator] Deactivated")
+end
+
+-- UI Toggle
+MainTab:CreateToggle({
+    Name = "Fishing Simulator",
+    SubText = "Event-driven instant catch & recast (fastest possible)",
+    Default = false,
+    Callback = function(state)
+        if state then
+            enableFishingSimulator()
+            Window:Notify({ Title = "Fishing Simulator", Content = "Activated", Duration = 2 })
+        else
+            disableFishingSimulator()
+            Window:Notify({ Title = "Fishing Simulator", Content = "Stopped", Duration = 2 })
+        end
+    end
+})
+
 -- =================
 -- Instant Bobber UI
 -- =================
