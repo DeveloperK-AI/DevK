@@ -3341,21 +3341,33 @@ MainTab:CreateToggle({
 
 MainTab:CreateSection({ Name = "Fishing Simulator" })
 
--- ============================================
--- [SECURITY] State lokal
--- ============================================
 local fishingSimulatorEnabled = false
-local fishingSimulatorConnections = {}  -- simpan semua koneksi
+local fishingSimulatorConnections = {}
 
--- Fungsi untuk memulai casting
+-- Helper: panggil catch dengan cara yang benar (Invoke dulu, fallback Fire)
+local function forceCatch()
+    local catchRemote = REFishDoneRE or REFishDone
+    if not catchRemote then return end
+    local ok = pcall(function()
+        catchRemote:InvokeServer()
+    end)
+    if not ok then
+        pcall(function()
+            catchRemote:FireServer()
+        end)
+    end
+end
+
+-- Helper: mulai casting (charge + minigame request)
 local function startCasting()
     pcall(function()
-        ChargeRod:InvokeServer(nil, nil, workspace:GetServerTimeNow(), nil)
-        StartMini:InvokeServer(0, 0.5, workspace:GetServerTimeNow())
+        -- Kirim timestamp dan power = 1 agar pasti diterima
+        local t = workspace:GetServerTimeNow()
+        ChargeRod:InvokeServer(nil, nil, t, nil)
+        StartMini:InvokeServer(-1, 1, t)   -- power 1, parameter -1 seperti Blatant
     end)
 end
 
--- Bersihkan semua koneksi
 local function cleanupFishingSimulator()
     for _, conn in ipairs(fishingSimulatorConnections) do
         pcall(function() conn:Disconnect() end)
@@ -3363,54 +3375,45 @@ local function cleanupFishingSimulator()
     fishingSimulatorConnections = {}
 end
 
--- Aktifkan Simulator
 local function enableFishingSimulator()
     if fishingSimulatorEnabled then return end
     fishingSimulatorEnabled = true
-
     cleanupFishingSimulator()
 
-    -- Hook 1: Saat minigame muncul, langsung selesaikan
+    -- Hook 1: Saat minigame muncul, selesaikan (dengan jeda kecil agar server siap)
     if FishingMinigameChanged then
-        local conn1 = FishingMinigameChanged.OnClientEvent:Connect(function()
+        local conn = FishingMinigameChanged.OnClientEvent:Connect(function()
             if not fishingSimulatorEnabled then return end
-            -- Selesaikan minigame secepatnya
-            pcall(function()
-                (REFishDoneRE or REFishDone):FireServer()
-            end)
+            task.wait(0.03)  -- jeda 30ms agar server siap menerima catch
+            forceCatch()
         end)
-        table.insert(fishingSimulatorConnections, conn1)
+        table.insert(fishingSimulatorConnections, conn)
     end
 
-    -- Hook 2: Setelah ikan tertangkap (atau minigame selesai), langsung lempar lagi
-    -- Gunakan event FishingCompleted jika ada, jika tidak pakai FishCaught
-    local catchEvent = REFishingCompleted or REFishCaught or REFishGot
+    -- Hook 2: Setelah ikan tertangkap, langsung lempar lagi
+    local catchEvent = REFishGot or REFishCaught or REFishingCompleted
     if catchEvent then
-        local conn2 = catchEvent.OnClientEvent:Connect(function()
+        local conn = catchEvent.OnClientEvent:Connect(function()
             if not fishingSimulatorEnabled then return end
-            -- Lempar kail baru
             startCasting()
         end)
-        table.insert(fishingSimulatorConnections, conn2)
+        table.insert(fishingSimulatorConnections, conn)
     end
 
-    -- Mulai casting pertama kali
+    -- Mulai casting pertama
     startCasting()
-
-    print("[Fishing Simulator] Activated – event-driven mode")
+    print("[Fishing Simulator] Activated – improved")
 end
 
--- Matikan Simulator
 local function disableFishingSimulator()
     fishingSimulatorEnabled = false
     cleanupFishingSimulator()
     print("[Fishing Simulator] Deactivated")
 end
 
--- UI Toggle
 MainTab:CreateToggle({
     Name = "Fishing Simulator",
-    SubText = "Event-driven instant catch & recast (fastest possible)",
+    SubText = "Event-driven instant catch (fixed)",
     Default = false,
     Callback = function(state)
         if state then
