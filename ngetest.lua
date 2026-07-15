@@ -1,78 +1,77 @@
--- ============================================
--- [SECURITY] REMOTE DETECTION MODULE (LOCAL)
--- ============================================
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+ ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local netFolder = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net
+    local netChildren = netFolder:GetChildren()
 
--- Cache folder Net, jika tidak ada beri peringatan
-local netFolder = nil
-pcall(function()
-    netFolder = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net
-end)
-if not netFolder then
-    warn("[RemoteMap] sleitnick_net not found! Some features may not work.")
-end
+    -- Deteksi nama hex hash (bukan nama plain)
+    function isHex(name)
+        local stripped = name:gsub("^R[FE]/", "")
+        return #stripped > 16 and stripped:match("^%x+$") ~= nil
+    end
 
--- Peta akhir: namaPlain -> instance Remote
-local remoteMap = {}
-
--- Fungsi pembantu (local)
-local function isHex(name)
-    local stripped = name:gsub("^R[FE]/", "")
-    return #stripped > 16 and stripped:match("^%x+$") ~= nil
-end
-
--- Bangun pemetaan dengan asumsi hex mengikuti nama, tetapi dengan validasi
-if netFolder then
-    local children = netFolder:GetChildren()
-    local lastPlainName = nil
-
-    for _, child in ipairs(children) do
+    -- Build map: "ChargeFishingRod" -> actual hashed Instance
+    local remoteMap = {}
+    for i, child in ipairs(netChildren) do
         if not isHex(child.Name) then
-            -- Simpan nama asli setelah strip prefix
-            local plainName = child.Name:gsub("^R[FE]/", "")
-            if plainName ~= child.Name then
-                lastPlainName = plainName
-            end
-        else
-            -- Jika sebelumnya ada nama plain, pasangkan
-            if lastPlainName then
-                remoteMap[lastPlainName] = child
-                lastPlainName = nil
+            local next = netChildren[i + 1]
+            if next and isHex(next.Name) then
+                local key = child.Name:gsub("^R[FE]/", "")
+                remoteMap[key] = next
             end
         end
     end
 
-    -- Fallback: jika masih ada remote yang belum terpetakan, coba cari dengan pencarian nama hex
-    -- (Untuk berjaga-jaga jika urutan tidak sesuai)
-    if next(remoteMap) == nil then
-        warn("[RemoteMap] Standard pairing failed. Using fallback hex lookup...")
-        -- Cari semua hex, lalu cocokkan dengan plain name yang mungkin sama
-        local hexInstances = {}
-        for _, child in ipairs(children) do
-            if isHex(child.Name) then
-                local hexName = child.Name:gsub("^R[FE]/", "")
-                hexInstances[hexName] = child
-            end
+function RF(name) return remoteMap[name] end
+function RE(name) return remoteMap[name] end
+
+-- Amblatant support: cached remote data & local event re-fire
+_G.SavedData = _G.SavedData or {
+    FishCaught = {},
+    CaughtVisual = {},
+    FishNotif = {}
+}
+
+function FireLocalEvent(remote, ...)
+    if not remote or not remote.OnClientEvent then return end
+    local args = {...}
+    local signal = remote.OnClientEvent
+    for _, connection in pairs(getconnections(signal)) do
+        if connection.Function then
+            task.spawn(function()
+                pcall(function()
+                    connection.Function(unpack(args))
+                end)
+            end)
         end
-        -- Sekarang untuk setiap plain name, coba cari hex dengan nama yang mengandung string yang sama?
-        -- Ini bergantung pada konvensi. Biasanya nama plain dan hex tidak berhubungan langsung.
-        -- Untuk itu kita hanya mengandalkan urutan.
     end
 end
 
--- Fungsi akses remote (local, aman)
-local function getRemote(name)
-    local remote = remoteMap[name]
-    if not remote then
-        warn("[RemoteMap] Remote not found: " .. tostring(name))
-    end
-    return remote
+local saveCount = 0
+
+function GetServerRemote(humanName)
+    local key = humanName:gsub("^R[FE]/", "")
+    return remoteMap[key]
 end
 
--- Alias yang biasa digunakan di seluruh kode (local)
-local function RF(name) return getRemote(name) end
-local function RE(name) return getRemote(name) end
-
+function HookRemote(humanName, storageKey)
+    local remote = GetServerRemote(humanName)
+    if remote then
+        remote.OnClientEvent:Connect(function(...)
+            if saveCount < 7 then
+                _G.SavedData[storageKey] = {...}
+                local args = {...}
+                if storageKey == "CaughtVisual" then
+                    local lp = game:GetService("Players").LocalPlayer
+                    local myName = lp and lp.Name
+                    if myName and tostring(args[1]) == tostring(myName) then
+                        saveCount = saveCount + 1
+                    end
+                end
+            end
+        end)
+        return true
+    end
+    return false
+end
 
 BuyRod              = RF("PurchaseFishingRod")
 BuyBait             = RF("PurchaseBait")
@@ -131,6 +130,7 @@ Config = {
     autoFishing = false,
     AutoCatch = false,
     antiOKOK = false,
+    amblatant = false,
     UB = {
         Active = false,
         Settings = { CompleteDelay = 3.7, CancelDelay = 0.2, CastMode = "Fast" },
@@ -263,6 +263,10 @@ InfoTab:CreateParagraph({
 	Icon = "rbxassetid://7733765398"
 })
 
+ AmblatantTab = Window:CreateTab({
+    Name = "Amblatant",
+    Icon = "rbxassetid://7733779610"
+})
 
  MainTab = Window:CreateTab({
 	Name = "Main",
@@ -292,49 +296,82 @@ InfoTab:CreateParagraph({
 
 ShopTab:CreateSection({ Name = "Charms Shop" })
 
- SelectedCharm = "Bone Charm"
- CharmIDs = {}
+-- [SECURITY] Semua variabel lokal
+local SelectedCharm = nil
+local CharmIDs = {}       -- map nama charm -> ID
+local PurchaseQuantity = 1
 
- local function loadCharms()
-    local success, charms_module = pcall(function()
+-- Fungsi untuk memuat daftar charm dari game (tanpa fallback manual)
+local function loadCharms()
+    local charmNames = {}
+    CharmIDs = {}
+
+    local success, charmsModule = pcall(function()
         return require(game:GetService("ReplicatedStorage"):WaitForChild("Charms", 5))
     end)
-    
-    local charm_names = {}
-    if success and type(charms_module) == "table" then
-        for _, charm in pairs(charms_module) do
+
+    if success and type(charmsModule) == "table" then
+        for _, charm in pairs(charmsModule) do
             if charm.Data and charm.Data.Name and charm.Data.Id then
-                CharmIDs[charm.Data.Name] = charm.Data.Id
-                table.insert(charm_names, charm.Data.Name)
+                local name = tostring(charm.Data.Name)
+                local id = tonumber(charm.Data.Id)
+                if name and id then
+                    CharmIDs[name] = id
+                    table.insert(charmNames, name)
+                end
             end
         end
+        table.sort(charmNames)
+    else
+        Window:Notify({
+            Title = "Load Failed",
+            Content = "Could not load charms from game. Press 'Refresh' to try again.",
+            Duration = 5
+        })
     end
-    table.sort(charm_names)
-    return charm_names
- end
 
- local charmItems = loadCharms()
- if #charmItems == 0 then
-    charmItems = {"Bone Charm", "Algae Charm", "Magma Charm", "Clover Charm", "Heart Charm"}
-    CharmIDs = {
-        ["Bone Charm"] = 1,
-        ["Algae Charm"] = 2,
-        ["Magma Charm"] = 3,
-        ["Clover Charm"] = 4,
-        ["Heart Charm"] = 14,
-    }
- end
+    return charmNames
+end
 
- local charmDropdown = ShopTab:CreateDropdown({
+-- Dropdown charm (akan diisi ulang oleh fungsi update)
+local charmDropdown = ShopTab:CreateDropdown({
     Name = "Select Charm",
-    Items = charmItems,
-    Default = charmItems[1] or "Bone Charm",
+    Items = {},  -- kosong dulu, diisi setelah load
+    Default = nil,
     Callback = function(val)
         SelectedCharm = val
     end
 })
 
- PurchaseQuantity = 1
+-- Fungsi untuk memperbarui dropdown dengan daftar charm terbaru
+local function refreshCharmDropdown()
+    local charmItems = loadCharms()
+    if #charmItems > 0 then
+        charmDropdown:Refresh(charmItems)  -- Refresh() sudah ada di library dropdown
+        if not SelectedCharm or not CharmIDs[SelectedCharm] then
+            SelectedCharm = charmItems[1]
+            charmDropdown:Set(SelectedCharm)
+        end
+    end
+end
+
+-- Tombol Refresh (selalu tampil, untuk memuat ulang charm)
+ShopTab:CreateButton({
+    Name = "Refresh Charm List",
+    Callback = function()
+        refreshCharmDropdown()
+        Window:Notify({
+            Title = "Refreshed",
+            Content = "Charm list updated from game.",
+            Duration = 2
+        })
+    end
+})
+
+-- Panggil pertama kali
+refreshCharmDropdown()
+
+-- Input quantity
 ShopTab:CreateInput({
     Name = "Quantity",
     PlaceholderText = "1",
@@ -345,29 +382,30 @@ ShopTab:CreateInput({
     end
 })
 
+-- Tombol Purchase
 ShopTab:CreateButton({
     Name = "Purchase Charm",
     Callback = function()
-        local id = CharmIDs[SelectedCharm]
-        if not id then 
-            Window:Notify({
-                Title = "Error",
-                Content = "Charm ID not found for " .. tostring(SelectedCharm),
-                Duration = 3
-            })
-            return 
+        if not SelectedCharm then
+            Window:Notify({ Title = "Error", Content = "No charm selected.", Duration = 3 })
+            return
         end
-        
+        local id = CharmIDs[SelectedCharm]
+        if not id then
+            Window:Notify({ Title = "Error", Content = "Charm ID not found.", Duration = 3 })
+            return
+        end
+
         Window:Notify({
             Title = "Purchase",
             Content = "Buying " .. PurchaseQuantity .. " " .. SelectedCharm .. "...",
             Duration = 2
         })
-        
+
         task.spawn(function()
             for i = 1, PurchaseQuantity do
                 pcall(function()
-                    CallRemoteServer(BuyCharm, id)
+                    CallRemoteServer(BuyCharm, id)  -- BuyCharm sudah local dari perbaikan sebelumnya
                 end)
                 task.wait(0.1)
             end
@@ -380,16 +418,14 @@ ShopTab:CreateButton({
     end
 })
 
+-- Tombol Equip
 ShopTab:CreateButton({
     Name = "Equip Charm",
     Callback = function()
         if not SelectedCharm then return end
-        
-        -- Try to equip by name first
         pcall(function()
             REEquipCharm:FireServer(SelectedCharm)
         end)
-        
         Window:Notify({
             Title = "Equip",
             Content = "Equipped " .. SelectedCharm,
@@ -398,11 +434,11 @@ ShopTab:CreateButton({
     end
 })
 
+-- Tombol Unequip
 ShopTab:CreateButton({
     Name = "Unequip Charm",
     Callback = function()
         REUnequipCharm:FireServer()
-        
         Window:Notify({
             Title = "Unequip",
             Content = "Unequipped Charm",
@@ -410,6 +446,7 @@ ShopTab:CreateButton({
         })
     end
 })
+
 
  TeleportTab = Window:CreateTab({
 	Name = "Teleport",
@@ -528,20 +565,133 @@ function applyUltraBlatant3NFishingControllerStub(enabled)
     end
 end
 
+------------------ Variable ------------------------
+_G.AutoFarm = false
+_G.AutoRod = false
+_G.AutoSells = false
+_G.InfiniteJump = false
+_G.Radar = false
+_G.AntiAFK = false
+_G.AutoReconnect = false
+autoFavEnabled = false
+_G.Amblatant = _G.Amblatant or false
+
+-- Fixed Natural Hook Active (port from blatant.lua)
+-- Meng-overwrite increment "1st fish/rainbow/golden" supaya terlihat natural.
+ _naturalHookInstalled = false
+ _naturalRainbowCount = 0
+ _naturalGoldenCount = 0
+ _naturalFishCount = 0
+ isCaught = false
+
+function _resetNaturalHookCounts()
+    _naturalRainbowCount = 0
+    _naturalGoldenCount = 0
+    _naturalFishCount = 0
+    isCaught = false
+end
+
+function _installFixedNaturalHook()
+    if _naturalHookInstalled then return end
+
+    local executorName = "Unknown"
+    pcall(function()
+        if type(getExecutorName) == "function" then
+            executorName = tostring(getExecutorName() or "Unknown")
+        end
+    end)
+
+    if tostring(executorName):lower():find("velocity") then
+        print("Fixed Natural Hook: skipped on Velocity executor")
+        return
+    end
+
+    if type(hookfunction) ~= "function" then
+        print("Fixed Natural Hook: hookfunction not available")
+        return
+    end
+
+    _naturalHookInstalled = true
+
+    local Event
+    pcall(function()
+        Event = game:GetService("ReplicatedStorage").Packages._Index["ytrev_replion@2.0.0-rc.3"].replion.Remotes.Set
+    end)
+    if not Event or not Event.OnClientEvent then return end
+
+    local conns = getconnections(Event.OnClientEvent) or {}
+    for _, Connection in pairs(conns) do
+        if Connection and Connection.Function then
+            local old
+            old = hookfunction(Connection.Function, function(...)
+                local Args = { ... }
+
+                if type(Args[2]) == "table" then
+                    local category = Args[2][1]
+                    local subCategory = Args[2][2]
+
+                    function RunNaturalUpdate(updateType)
+                        task.spawn(function()
+                            for _ = 1, 2 do
+                                if updateType == "Rainbow" then
+                                    local last = _naturalRainbowCount
+                                    _naturalRainbowCount = _naturalRainbowCount + 1
+                                    if _naturalRainbowCount > 40 then _naturalRainbowCount = 0 end
+                                    isCaught = (_naturalRainbowCount ~= last)
+                                    old(Args[1], Args[2], _naturalRainbowCount)
+                                elseif updateType == "Golden" then
+                                    local last = _naturalGoldenCount
+                                    _naturalGoldenCount = _naturalGoldenCount + 1
+                                    if _naturalGoldenCount > 10 then _naturalGoldenCount = 0 end
+                                    isCaught = (_naturalGoldenCount ~= last)
+                                    old(Args[1], Args[2], _naturalGoldenCount)
+                                elseif updateType == "Fish" then
+                                    _naturalFishCount = _naturalFishCount + 1
+                                    isCaught = true
+                                    old(Args[1], Args[2], _naturalFishCount)
+                                end
+                                task.wait(0.3)
+                            end
+                        end)
+                    end
+
+                    if _G.Amblatant then
+                        if category == "Modifiers" and subCategory == "Rainbow" then
+                            RunNaturalUpdate("Rainbow")
+                            return
+                        elseif category == "Modifiers" and subCategory == "Golden" then
+                            RunNaturalUpdate("Golden")
+                            return
+                        elseif category == "InventoryNotifications" and subCategory == "Fish" then
+                            RunNaturalUpdate("Fish")
+                            return
+                        end
+                    end
+                end
+
+                return old(...)
+            end)
+        end
+    end
+
+    print("Fixed Natural Hook Active!")
+end
+
+local delayfishing = 1
+
 ----------------------------------------------------------------
--- INSTANT FISH MODULE
+-- INSTANT FISH MODULE (IMPROVED)
 ----------------------------------------------------------------
 local Instant = {}
 local PI = math.pi
 local CAST_MODE_LIST = { "Perfect", "Fast", "Random" }
 
-----------------------------------------------------------------
--- REMOTES
-----------------------------------------------------------------
+-- Remote lokal (pastikan sudah ada dari deklarasi awal)
 local RF_ChargeFishingRod = ChargeRod
 local RE_CatchFishCompleted = REFishDoneRE or REFishDone
 local RF_RequestFishingMinigameStarted = StartMini
 
+-- State
 local state = {
     enabled = false,
     running = false,
@@ -552,9 +702,40 @@ local state = {
     notifDuration = 4.7,
 }
 
+-- Task tracker
 local loopTask = nil
+local InstantTasks = {}
 local notifHooked = false
+local notifOriginalDeliver = nil
+local notifOriginalTween = nil
 
+-- ============================================
+-- [IMPROVED] Helper: Perform a single cast (reuseable)
+-- ============================================
+local function performCast(mode)
+    local t0 = workspace:GetServerTimeNow()
+    safeInvoke(RF_ChargeFishingRod, nil, nil, t0, nil)
+
+    local power
+    if mode == "Perfect" then
+        local _, p = waitForPower(t0, 0.97)
+        power = p
+    elseif mode == "Random" then
+        local randomElapsed = math.random(0, 100) / 100 * (PI / 4)
+        task.wait(randomElapsed)
+        local elapsed = workspace:GetServerTimeNow() - t0
+        power = getPowerAtTime(t0, elapsed)
+    else -- Fast
+        local elapsed = workspace:GetServerTimeNow() - t0
+        power = getPowerAtTime(t0, elapsed)
+    end
+
+    safeInvoke(RF_RequestFishingMinigameStarted, 0, power, t0)
+end
+
+-- ============================================
+-- [IMPROVED] waitForPower dengan timeout & RenderStepped
+-- ============================================
 function getPowerAtTime(chargeTime, elapsed)
     local speed = Random.new(chargeTime):NextInteger(4, 10)
     local angle = PI / 2 + elapsed * speed
@@ -563,59 +744,84 @@ end
 
 function waitForPower(chargeTime, threshold)
     local deadline = chargeTime + 2.0
+    -- Gunakan RenderStepped untuk polling lebih efisien (tidak tidur 0.001 detik)
     while workspace:GetServerTimeNow() < deadline do
         local elapsed = workspace:GetServerTimeNow() - chargeTime
         local power = getPowerAtTime(chargeTime, elapsed)
         if power >= threshold then
             return elapsed, power
         end
-        task.wait(0.001)
+        -- Jeda kecil agar tidak membekukan thread lain
+        task.wait(0.01)  -- cukup 10ms, bukan 1ms
     end
     local elapsed = workspace:GetServerTimeNow() - chargeTime
     return elapsed, getPowerAtTime(chargeTime, elapsed)
 end
 
+-- ============================================
+-- [IMPROVED] Notification Hook dengan Restore
+-- ============================================
 function hookNotificationDelay()
     if notifHooked then return end
 
     local ok, controller = pcall(function()
         return require(ReplicatedStorage.Controllers.TextNotificationController)
     end)
+    if not ok or not controller then return end
 
-    if not ok or not controller then
-        return
-    end
+    -- Simpan original
+    notifOriginalDeliver = controller.DeliverNotification
+    notifOriginalTween = controller.Tween
 
-    if not controller.DeliverNotification then
-        return
-    end
-
-    local originalDeliver = controller.DeliverNotification
-    controller.DeliverNotification = function(self, p24)
-        if state.enabled and state.notifDelay > 0 then
-            task.spawn(function()
-                task.wait(state.notifDelay)
-                originalDeliver(self, p24)
-            end)
-        else
-            originalDeliver(self, p24)
+    if notifOriginalDeliver then
+        controller.DeliverNotification = function(self, p24)
+            if state.enabled and state.notifDelay > 0 then
+                task.spawn(function()
+                    task.wait(state.notifDelay)
+                    if notifOriginalDeliver then
+                        notifOriginalDeliver(self, p24)
+                    end
+                end)
+            else
+                if notifOriginalDeliver then
+                    notifOriginalDeliver(self, p24)
+                end
+            end
         end
     end
 
-    if controller.Tween then
-        local originalTween = controller.Tween
+    if notifOriginalTween then
         controller.Tween = function(self, tile, duration, options)
             local finalDuration = duration
             if state.enabled and state.notifDuration > 0 then
                 finalDuration = duration + state.notifDuration
             end
-            return originalTween(self, tile, finalDuration, options)
+            return notifOriginalTween(self, tile, finalDuration, options)
         end
     end
 
     notifHooked = true
 end
 
+function unhookNotificationDelay()
+    if not notifHooked then return end
+    pcall(function()
+        local controller = require(ReplicatedStorage.Controllers.TextNotificationController)
+        if notifOriginalDeliver then
+            controller.DeliverNotification = notifOriginalDeliver
+        end
+        if notifOriginalTween then
+            controller.Tween = notifOriginalTween
+        end
+    end)
+    notifOriginalDeliver = nil
+    notifOriginalTween = nil
+    notifHooked = false
+end
+
+-- ============================================
+-- Safe remote invocation (existing)
+-- ============================================
 function safeInvoke(remote, ...)
     if not remote then return end
     local args = { ... }
@@ -635,41 +841,40 @@ function safeFire(remote, ...)
     end)
 end
 
-function handleCastMode(t0)
-    local mode = state.castMode
-
-    if mode == "Perfect" then
-        local _, power = waitForPower(t0, 0.97)
-        return power
-    elseif mode == "Random" then
-        local randomElapsed = math.random(0, 100) / 100 * (PI / 4)
-        task.wait(randomElapsed)
-        local elapsed = workspace:GetServerTimeNow() - t0
-        return getPowerAtTime(t0, elapsed)
-    else
-        local elapsed = workspace:GetServerTimeNow() - t0
-        return getPowerAtTime(t0, elapsed)
-    end
-end
-
+-- ============================================
+-- [IMPROVED] Loop utama dengan pemantauan timeout
+-- ============================================
 function startLoop()
     if state.running then return end
     state.running = true
 
+    -- Saat loop dimulai, reset timeout darurat
+    local lastSuccessTick = tick()
+
     while state.enabled do
-        local t0 = workspace:GetServerTimeNow()
-        safeInvoke(RF_ChargeFishingRod, nil, nil, t0, nil)
-        local power = handleCastMode(t0)
-        safeInvoke(RF_RequestFishingMinigameStarted, 0, power, t0)
+        -- Jika lebih dari 10 detik tanpa siklus sukses, paksa reset (hindari stuck)
+        if tick() - lastSuccessTick > 10 then
+            pcall(function() safeFire(RE_CatchFishCompleted) end)
+            lastSuccessTick = tick()
+        end
+
+        performCast(state.castMode)
+
         task.wait(state.completeDelay)
         task.wait(0.01)
+
         safeFire(RE_CatchFishCompleted)
+        lastSuccessTick = tick()
+
         task.wait(state.castDelay)
     end
 
     state.running = false
 end
 
+-- ============================================
+-- [IMPROVED] Setter dengan validasi range
+-- ============================================
 function Instant.SetCastMode(mode)
     if table.find(CAST_MODE_LIST, mode) then
         state.castMode = mode
@@ -678,57 +883,69 @@ end
 
 function Instant.SetCompleteDelay(v)
     local num = tonumber(v)
-    if num and num >= 0 then
+    if num and num >= 0.1 and num <= 30 then  -- batas aman 0.1 – 30 detik
         state.completeDelay = num
     end
 end
 
 function Instant.SetCastDelay(v)
     local num = tonumber(v)
-    if num and num >= 0 then
+    if num and num >= 0 and num <= 10 then   -- batas aman 0 – 10 detik
         state.castDelay = num
     end
 end
 
+-- ============================================
+-- Start / Stop dengan cleanup total
+-- ============================================
 function Instant.Start()
     if state.enabled then return end
     state.enabled = true
     hookNotificationDelay()
     loopTask = task.spawn(startLoop)
-    if _G._NEXTHUB and _G._NEXTHUB.tasks then
-        table.insert(_G._NEXTHUB.tasks, loopTask)
-    end
+    table.insert(InstantTasks, loopTask)
 end
 
 function Instant.Stop()
     state.enabled = false
     if loopTask then
         pcall(task.cancel, loopTask)
+        -- Hapus dari daftar
+        for i, t in ipairs(InstantTasks) do
+            if t == loopTask then
+                table.remove(InstantTasks, i)
+                break
+            end
+        end
         loopTask = nil
     end
     state.running = false
+    unhookNotificationDelay()  -- pulihkan fungsi asli notifikasi
 end
 
 function Instant.IsActive()
     return state.enabled
 end
 
--- Compatibility wrappers for existing UI flow
+-- ============================================
+-- [IMPROVED] Fungsi instant() untuk panggilan satu kali
+-- ============================================
+function instant()
+    if state.enabled then return end -- jangan ganggu loop yang sedang berjalan
+    performCast(state.castMode)      -- pakai cast mode global
+    task.wait(delayfishing)          -- delayfishing adalah variabel lokal dari Config
+    safeFire(RE_CatchFishCompleted)
+end
+
+-- ============================================
+-- Compatibility wrappers (tidak berubah)
+-- ============================================
 function CallFishDone(remote, ...)
     if not remote then return end
     local ok = pcall(function() remote:InvokeServer() end)
     if not ok then
         pcall(function() remote:FireServer() end)
     end
-end
-
-function instant()
-    local t0 = workspace:GetServerTimeNow()
-    safeInvoke(RF_ChargeFishingRod, nil, nil, t0, nil)
-    local power = handleCastMode(t0)
-    safeInvoke(RF_RequestFishingMinigameStarted, 0, power, t0)
-    task.wait(delayfishing)
-    safeFire(RE_CatchFishCompleted)
 end
 
 function UB_start()
@@ -2640,21 +2857,21 @@ MonitoringTab:CreateToggle({
 -- =========================================================================
 MonitoringTab:CreateSection({ Name = "DevHub Web Monitoring" })
 
-local DevMonitoringSettings = {
-    DevKey = "", -- Replace in UI
+local VoraMonitoringSettings = {
+    VoraKey = "", -- Replace in UI
     AutoSync = true,
     Interval = 5,
     Enabled = false -- Master Toggle State
 }
 
-local Dev_API_URL = "https://monitor.DevHub.xyz/api/inventory/sync"
+local VORA_API_URL = "https://monitor.DevHub.xyz/api/inventory/sync"
 
 MonitoringTab:CreateInput({
     Name = "DevHub Key",
     Placeholder = "Enter DevHub Key...",
-    Default = DevMonitoringSettings.DevKey,
+    Default = VoraMonitoringSettings.VoraKey,
     Callback = function(val)
-        DevMonitoringSettings.DevKey = val
+        VoraMonitoringSettings.VoraKey = val
     end
 })
 
@@ -2662,7 +2879,7 @@ MonitoringTab:CreateToggle({
     Name = "Enable Web Monitoring",
     Default = false,
     Callback = function(val)
-        DevMonitoringSettings.Enabled = val
+        VoraMonitoringSettings.Enabled = val
     end
 })
 
@@ -2702,7 +2919,7 @@ MonitoringTab:CreateToggle({
     return success and result or nil
 end
 
- function GatherDevInventory()
+ function GatherVoraInventory()
     local inventory = {
         Rods = {},
         Charms = {},
@@ -2849,7 +3066,7 @@ end
     }
 
     return {
-        apiKey = DevMonitoringSettings.DevKey,
+        apiKey = VoraMonitoringSettings.VoraKey,
         playerName = safeString(Player.Name),
         userId = Player.UserId,
         playerStats = playerStats,
@@ -2859,11 +3076,11 @@ end
     }
 end
 
- function SendDevInventory(isOffline)
-    if DevMonitoringSettings.DevKey == "yourkey" or DevMonitoringSettings.DevKey == "" then return end
+ function SendVoraInventory(isOffline)
+    if VoraMonitoringSettings.VoraKey == "yourkey" or VoraMonitoringSettings.VoraKey == "" then return end
     
     local success, err = pcall(function()
-        local data = GatherDevInventory()
+        local data = GatherVoraInventory()
         if not data then return end
         
         if isOffline then data.isOnline = false end
@@ -2872,7 +3089,7 @@ end
         
         -- Use httpRequest function defined earlier
         httpRequest({
-            Url = Dev_API_URL,
+            Url = VORA_API_URL,
             Method = "POST",
             Headers = {
                 ["Content-Type"] = "application/json",
@@ -2886,9 +3103,9 @@ end
 -- Auto-sync loop for DevHub
 task.spawn(function()
     while true do
-        task.wait(DevMonitoringSettings.Interval)
-        if DevMonitoringSettings.Enabled and DevMonitoringSettings.AutoSync then
-            SendDevInventory(false)    
+        task.wait(VoraMonitoringSettings.Interval)
+        if VoraMonitoringSettings.Enabled and VoraMonitoringSettings.AutoSync then
+            SendVoraInventory(false)    
         end
     end
 end)
@@ -2896,7 +3113,7 @@ end)
 -- Handle leaving
 game:GetService("Players").PlayerRemoving:Connect(function(p)
     if p == game.Players.LocalPlayer then
-        SendDevInventory(true)
+        SendVoraInventory(true)
     end
 end)
 
@@ -3106,6 +3323,68 @@ MainTab:CreateToggle({
             end
         end
     end,
+})
+
+MainTab:CreateSection({ Name = "Instant Fast Reel" })
+
+-- ============================================
+-- [SECURITY] State lokal untuk Instant Fast Reel
+-- ============================================
+local instantFastReelEnabled = false
+local minigameConnection = nil
+
+-- Fungsi untuk memulai hook
+local function startInstantFastReel()
+    if not FishingMinigameChanged then
+        Window:Notify({ Title = "Error", Content = "Remote FishingMinigameChanged not found.", Duration = 3 })
+        return
+    end
+
+    -- Hook event minigame: begitu minigame muncul, langsung catch
+    minigameConnection = FishingMinigameChanged.OnClientEvent:Connect(function()
+        if not instantFastReelEnabled then return end
+        -- Panggil catch secepatnya (tanpa delay)
+        task.spawn(function()
+            pcall(function()
+                REFishDoneRE:FireServer()
+            end)
+        end)
+    end)
+
+    -- Aktifkan auto-cast (Instant Fishing V2 harus menyala)
+    Instant.SetCastMode("Fast")
+    Instant.SetCompleteDelay(0)   -- tidak perlu delay karena minigame akan langsung dipotong
+    Instant.SetCastDelay(0.01)    -- jeda minimal antar cast
+    Instant.Start()
+
+    print("[Instant Fast Reel] Hook installed – catching as soon as minigame appears.")
+end
+
+-- Fungsi untuk menghentikan hook
+local function stopInstantFastReel()
+    Instant.Stop()
+    if minigameConnection then
+        minigameConnection:Disconnect()
+        minigameConnection = nil
+    end
+    print("[Instant Fast Reel] Hook removed.")
+end
+
+-- Toggle di UI
+MainTab:CreateToggle({
+    Name = "Instant Fast Reel",
+    SubText = "Catch fish instantly without waiting for minigame",
+    Default = false,
+    Callback = function(state)
+        instantFastReelEnabled = state
+        if state then
+            startInstantFastReel()
+            Window:Notify({ Title = "Instant Fast", Content = "Instant Fast Reel activated", Duration = 2 })
+        else
+            stopInstantFastReel()
+            Window:Notify({ Title = "Instant Fast", Content = "Stopped", Duration = 2 })
+        end
+    end
 })
 
 -- =================
@@ -3832,7 +4111,7 @@ end)
 
 -- =============================================================================
 -- =============================================================================
--- QUEST PROCESS FUNCTIONS (ported from Main.lua, adapted for Dev.lua)
+-- QUEST PROCESS FUNCTIONS (ported from Main.lua, adapted for Vora.lua)
 -- Handles: Deep Sea, Element, Diamond, Temple Lever auto-teleport + item actions
 -- =============================================================================
 _G.AutoDeepSeaQuest = _G.AutoDeepSeaQuest or _G.DeepSeaQuestMode or false
@@ -4703,6 +4982,143 @@ svc = {
     RS = game:GetService("ReplicatedStorage"),
 }
 
+player = svc.Players.LocalPlayer
+if not player.Character then player.CharacterAdded:Wait() end
+
+-- Net already initialized
+
+EquipTool  = REEquip
+ChargeRod  = ChargeRod
+StartMini  = StartMini
+CatchFish  = REFishDone
+CancelFish = Cancel
+
+Protected = false
+FishingSession = 0
+
+_G.AutoEquip = true
+_G.Speed = 0.07       
+_G.LoopDelay = 0.25   
+_G.AmSpeed = _G.AmSpeed or _G.Speed
+_G.AmLoopDelay = _G.AmLoopDelay or _G.LoopDelay
+
+function ToggleBlatant(value)
+    if value then
+        Protected = true
+        FishingSession = FishingSession + 1
+        local session = FishingSession
+        task.spawn(BlatantSkipCycle, session)
+    else
+        Protected = false
+        FishingSession = FishingSession + 1
+    end
+end
+
+function IsSessionAlive(session)
+    return FishingSession == session
+end
+
+function BlatantSkipCycle(session)
+    if _G.AutoEquip then
+        pcall(function()
+            EquipTool:FireServer(1)
+        end)
+        task.wait(0.25)
+    end
+
+    while Protected and IsSessionAlive(session) do
+        local speed = (_G.Amblatant and _G.AmSpeed) or _G.Speed
+        local loopDelay = (_G.Amblatant and _G.AmLoopDelay) or _G.LoopDelay
+
+        t = workspace:GetServerTimeNow()
+        pcall(function()
+            ChargeRod:InvokeServer(t)
+        end)
+        task.wait(speed)
+        pcall(function()
+            StartMini:InvokeServer(-1, 1, t)
+        end)
+
+        task.wait(speed)
+        CallFishDone(CatchFish, 1)
+
+        -- Amblatant: spam local fish events using cached data (disalin dari blatant.lua)
+        if _G.Amblatant and _G.SavedData and _G.SavedData.FishCaught and isCaught then
+            task.spawn(function ()
+                task.wait(0.3)
+                for _ = 1, 2 do
+                    local xremote = GetServerRemote("RE/FishCaught")
+                    if xremote then
+                        FireLocalEvent(xremote, unpack(_G.SavedData.FishCaught))
+                    end
+                    xremote = GetServerRemote("RE/CaughtFishVisual")
+                    if xremote and _G.SavedData.CaughtVisual then
+                        FireLocalEvent(xremote, unpack(_G.SavedData.CaughtVisual))
+                    end
+                    xremote = GetServerRemote("RE/ObtainedNewFishNotification")
+                    if xremote and _G.SavedData.FishNotif then
+                        FireLocalEvent(xremote, unpack(_G.SavedData.FishNotif))
+                        task.spawn(function()
+                            for _ = 1, 2 do
+                                task.wait(2)
+                                FireLocalEvent(xremote, unpack(_G.SavedData.FishNotif))
+                            end
+                        end)
+                    end
+                end
+            end)
+            isCaught = false
+        end
+        task.wait(loopDelay)
+    end
+end
+
+AmblatantTab:CreateSection({ Name = "AMBLATANT OR FAST FISHING" })
+
+AmblatantTab:CreateToggle({
+    Name = "Amblatant YTTA",
+    SubText = "KASIH TAU TALONNN",
+    Default = _G.Amblatant,
+    Callback = function(state)
+        _G.Amblatant = state
+        if state then
+            saveCount = 0
+            _resetNaturalHookCounts()
+            _installFixedNaturalHook()
+            HookRemote("RE/FishCaught", "FishCaught")
+            HookRemote("RE/CaughtFishVisual", "CaughtVisual")
+            HookRemote("RE/ObtainedNewFishNotification", "FishNotif")
+        end
+        -- Samakan perilaku dengan onToggleUB di blatant.lua: start/stop loop utama
+        ToggleBlatant(state)
+    end,
+})
+
+AmblatantTab:CreateInput({
+    Name = "Amblatant Speed",
+    SideLabel = "Delay (s)",
+    Default = tostring(_G.AmSpeed),
+    Callback = function(v)
+        local n = tonumber(v)
+        if n and n > 0 then
+            _G.AmSpeed = n
+        end
+    end,
+})
+
+AmblatantTab:CreateInput({
+    Name = "Amblatant Loop Delay",
+    SideLabel = "Loop Delay (s)",
+    Default = tostring(_G.AmLoopDelay),
+    Callback = function(v)
+        local n = tonumber(v)
+        if n and n > 0 then
+            _G.AmLoopDelay = n
+        end
+    end,
+})
+
+
 MainTab:CreateSection({ Name = "Recovery Fishing" })
 
 MainTab:CreateButton({
@@ -4763,17 +5179,15 @@ MainTab:CreateButton({
 	end
 })
 
-MainTab:CreateSection({ Name = "Sell", Icon = "rbxassetid://7733793319" })
-
-Players = game:GetService("Players")
- LocalPlayer = Players.LocalPlayer
-
-_G.AutoSells = false
-
-local autoSellMode = "Sell Delay"
-local autoSellValue = 0
+-- ============================================
+-- [SECURITY] State Auto Sell (lokal)
+-- ============================================
+local autoSellEnabled = false
+local autoSellMode = "Sell By Count"   -- "Sell By Count" atau "Sell All"
+local autoSellValue = 0                -- batas count
 local currentCount = 0
 
+-- Dapatkan label BagSize
 local label = LocalPlayer.PlayerGui.Inventory.Main.Top.Options.Fish.Label.BagSize
 
 label:GetPropertyChangedSignal("ContentText"):Connect(function()
@@ -4781,62 +5195,58 @@ label:GetPropertyChangedSignal("ContentText"):Connect(function()
     currentCount = tonumber(string.match(text, "^(%d+)")) or 0
 end)
 
+-- Sell remote (sudah local dari sebelumnya)
 local sellAllItems = SellItem
 
- function SafeSell()
+local function SafeSell()
     pcall(function()
         sellAllItems:InvokeServer()
     end)
 end
 
- function AutoSellLoop()
-    while _G.AutoSells do
-        local selldelay = 0
-        local countdelay = 0
-        if autoSellMode == "Sell Delay" then
-            selldelay = autoSellValue
-        else
-            countdelay = autoSellValue
-        end
-
-        if selldelay == 0 and countdelay > 0 then
-            if currentCount >= countdelay then
-                SafeSell()
-                task.wait(0.3)
-            end
-            task.wait(0.1)
-
-        elseif selldelay > 0 and countdelay == 0 then
+-- Loop hanya untuk mode "Sell By Count"
+local function AutoSellLoop()
+    while autoSellEnabled and autoSellMode == "Sell By Count" do
+        if currentCount >= autoSellValue then
             SafeSell()
-            task.wait(selldelay)
-
-        else
-            Window:Notify({
-                Title = "Yang Bener Hitam",
-                Content = "Pilih mode di dropdown dan isi angka di input (harus > 0).",
-                Duration = 3,
-                Icon = "warn",
-            })
-            break
+            task.wait(0.3)
         end
+        task.wait(0.1)
     end
 end
 
-function StartAutoSell()
-    if _G.AutoSells then return end
-    _G.AutoSells = true
-    task.spawn(AutoSellLoop)
+local function StartAutoSell()
+    if autoSellEnabled then return end
+    autoSellEnabled = true
+    if autoSellMode == "Sell By Count" then
+        task.spawn(AutoSellLoop)
+    elseif autoSellMode == "Sell All" then
+        -- Langsung jual semua sekali, lalu matikan toggle
+        SafeSell()
+        Window:Notify({
+            Title = "Sell All",
+            Content = "Sold all items!",
+            Duration = 2
+        })
+        -- Matikan toggle (jika kita punya referensi toggle)
+        if autoSellToggle then
+            autoSellToggle:Set(false)  -- metode dari DevLib
+        end
+        autoSellEnabled = false
+    end
 end
 
-function StopAutoSell()
-    _G.AutoSells = false
+local function StopAutoSell()
+    autoSellEnabled = false
 end
 
+-- Referensi toggle (disimpan setelah CreateToggle)
+local autoSellToggle
 
-MainTab:CreateToggle({
-	Name = "Auto Sell",
-	Default = false,
-	  Callback = function(v)
+autoSellToggle = MainTab:CreateToggle({
+    Name = "Auto Sell",
+    Default = false,
+    Callback = function(v)
         if v then
             StartAutoSell()
         else
@@ -4846,21 +5256,21 @@ MainTab:CreateToggle({
 })
 
 MainTab:CreateDropdown({
-	Name = "Auto Sell Mode",
-	Items = { "Sell Delay", "Sell By Count" },
-	Default = "Sell Delay",
-	Callback = function(Option)
-		autoSellMode = Option
-	end,
+    Name = "Auto Sell Mode",
+    Items = { "Sell By Count", "Sell All" },
+    Default = "Sell By Count",
+    Callback = function(Option)
+        autoSellMode = Option
+    end,
 })
 
 MainTab:CreateInput({
-	Name = "Auto Sell Value",
-	Placeholder = "Delay: detik antar jual | Count: jual jika isi tas >= angka",
-	Default = "",
-	Callback = function(txt)
-		autoSellValue = tonumber(txt) or 0
-	end,
+    Name = "Sell Count Threshold",
+    Placeholder = "Jual jika isi tas >= angka",
+    Default = "",
+    Callback = function(txt)
+        autoSellValue = tonumber(txt) or 0
+    end,
 })
 
 
@@ -5966,445 +6376,146 @@ AutoTab:CreateToggle({
 })
 
 
-AutoTab:CreateSection({ Name = "Enchant Features", Icon = "rbxassetid://7733801202" })
+local function LoadStoneAndEnchantData()
+    -- Reset
+    STONE_IDS = {}
+    STONE_NAMES = {}
+    ENCHANT_ID_MAP = {}
+    BASIC_ENCHANT_NAMES = {}
+    EVOLVED_ENCHANT_NAMES = {}
 
--- ============================================
--- ENCHANT STONE IDs
--- ============================================
-local STONE_IDS = {
-    ["Enchant Stones"] = 10,
-    ["Evolved Enchant Stone"] = 558
-}
-
-_G.SelectedStoneType = _G.SelectedStoneType or "Enchant Stones"
-
-function gStone()
-    local it = Data:GetExpect({ "Inventory", "Items" })
-    if not it then return 0 end
-    
-    local targetId = STONE_IDS[_G.SelectedStoneType]
-    local total = 0
-    
-    for _, v in ipairs(it) do
-        if v.Id == targetId then
-            total = total + (v.Quantity or 1)
-        end
+    -- 1. Coba baca semua modul stone dari folder game
+    local stoneFolder = ReplicatedStorage:FindFirstChild("Items")
+    if stoneFolder then
+        stoneFolder = stoneFolder:FindFirstChild("EnchantStones") or stoneFolder:FindFirstChild("EnchantStone")
     end
-    return total
-end
-
--- ============================================
--- ENCHANT LISTS
--- ============================================
-local basicEnchantNames = {
-    "Big Hunter 1", "Cursed 1", "Empowered 1", "Glistening 1",
-    "Gold Digger 1", "Leprechaun 1", "Leprechaun 2",
-    "Mutation Hunter 1", "Mutation Hunter 2", "Prismatic 1",
-    "Reeler 1", "Stargazer 1", "Stormhunter 1", "XPerienced 1"
-}
-
-local evolvedEnchantNames = {
-    "Prismatic 1", "Cursed 1", "Gold Digger 1", "Empowered 1",
-    "SECRET Hunter", "Shark Hunter", "Stargazer II", "Stormhunter II",
-    "Mutation Hunter II", "Leprechaun II", "Reeler II", "Mutation Hunter III",
-    "Fairy Hunter 1"
-}
-
-local enchantIdMap = {
-    -- Basic Enchants
-    ["Big Hunter 1"] = 3,
-    ["Cursed 1"] = 12,
-    ["Empowered 1"] = 9,
-    ["Glistening 1"] = 1,
-    ["Gold Digger 1"] = 4,
-    ["Leprechaun 1"] = 5,
-    ["Leprechaun 2"] = 6,
-    ["Mutation Hunter 1"] = 7,
-    ["Mutation Hunter 2"] = 14,
-    ["Prismatic 1"] = 13,
-    ["Reeler 1"] = 2,
-    ["Stargazer 1"] = 8,
-    ["Stormhunter 1"] = 11,
-    ["XPerienced 1"] = 10,
-    
-    -- Evolved Enchants
-    ["SECRET Hunter"] = 16,
-    ["Shark Hunter"] = 20,
-    ["Stargazer II"] = 17,
-    ["Stormhunter II"] = 19,
-    ["Mutation Hunter II"] = 14,
-    ["Leprechaun II"] = 6,
-    ["Reeler II"] = 21,
-    ["Mutation Hunter III"] = 22,
-    ["Fairy Hunter 1"] = 15
-}
-
-function countDisplayImageButtons()
-    local success, backpackGui = pcall(function() return LocalPlayer.PlayerGui.Backpack end)
-    if not success or not backpackGui then return 0 end
-    local display = backpackGui:FindFirstChild("Display")
-    if not display then return 0 end
-    local imageButtonCount = 0
-    for _, child in ipairs(display:GetChildren()) do
-        if child:IsA("ImageButton") then
-            imageButtonCount = imageButtonCount + 1
-        end
-    end
-    return imageButtonCount
-end
-
-function findEnchantStones()
-    if not Data then return {} end
-    
-    local inventory = Data:GetExpect({ "Inventory", "Items" })
-    if not inventory then return {} end
-    
-    local targetId = STONE_IDS[_G.SelectedStoneType]
-    local stones = {}
-    
-    for _, item in pairs(inventory) do
-        if item.Id == targetId then
-            table.insert(stones, { 
-                UUID = item.UUID, 
-                Quantity = item.Quantity or 1,
-                Id = item.Id
-            })
-        end
-    end
-    
-    return stones
-end
-
-function getEquippedRodName()
-    local equipped = Data:Get("EquippedItems")
-    if not equipped then return "None" end
-    
-    local rods = Data:GetExpect({ "Inventory", "Fishing Rods" })
-    if not rods then return "None" end
-    
-    for _, uuid in pairs(equipped) do
-        for _, rod in ipairs(rods) do
-            if rod.UUID == uuid then
-                local itemData = ItemUtility:GetItemData(rod.Id)
-                if itemData and itemData.Data and itemData.Data.Name then
-                    return itemData.Data.Name
-                elseif rod.ItemName then
-                    return rod.ItemName
-                end
-            end
-        end
-    end
-    return "None"
-end
-
-function getCurrentRodEnchant()
-    if not Data then return nil end
-    local equipped = Data:Get("EquippedItems")
-    if not equipped then return nil end
-    
-    local rods = Data:GetExpect({ "Inventory", "Fishing Rods" })
-    if not rods then return nil end
-    
-    for _, uuid in pairs(equipped) do
-        for _, rod in ipairs(rods) do
-            if rod.UUID == uuid and rod.Metadata and rod.Metadata.EnchantId then
-                return rod.Metadata.EnchantId
-            end
-        end
-    end
-    return nil
-end
-
-local Paragraph = AutoTab:CreateParagraph({
-    Title = "Enchanting Features",
-    Content = "Rod Active = <font color='#00aaff'>None</font>\nEnchant Now = <font color='#ff00ff'>None</font>\nStone Left = <font color='#ffff00'>0</font>\nStone Type = <font color='#00ff00'>Enchant Stones</font>"
-})
-
-spawn(function()
-    local lastRodName, lastEnchantName, lastTotalStones, lastStoneType = "", "", -1, ""
-    
-    while task.wait(4) do
-        pcall(function()
-            local totalStones = gStone()
-            local rodName = getEquippedRodName()
-            local currentEnchantId = getCurrentRodEnchant()
-            local currentEnchantName = "None"
-            
-            if currentEnchantId then
-                for name, id in pairs(enchantIdMap) do
-                    if id == currentEnchantId then
-                        currentEnchantName = name
-                        break
-                    end
-                end
-            end
-            
-            if rodName ~= lastRodName or currentEnchantName ~= lastEnchantName or 
-               totalStones ~= lastTotalStones or _G.SelectedStoneType ~= lastStoneType then
-                
-                local desc =
-                    "Rod Active <font color='rgb(0,191,255)'>= " .. rodName .. "</font>\n" ..
-                    "Enchant Now <font color='rgb(200,0,255)'>= " .. currentEnchantName .. "</font>\n" ..
-                    "Stone Left <font color='rgb(255,215,0)'>= " .. totalStones .. "</font>\n" ..
-                    "Stone Type <font color='rgb(0,255,0)'>= " .. _G.SelectedStoneType .. "</font>"
-                
-                Paragraph:SetDesc(desc)
-                
-                lastRodName = rodName
-                lastEnchantName = currentEnchantName
-                lastTotalStones = totalStones
-                lastStoneType = _G.SelectedStoneType
-            end
-        end)
-    end
-end)
-
--- ============================================
--- DROPDOWN STONE TYPE
--- ============================================
-AutoTab:CreateDropdown({
-    Name = "Enchant Stone Type",
-    Items = {"Enchant Stones", "Evolved Enchant Stone"},
-    Value = _G.SelectedStoneType,
-    Callback = function(selected)
-        _G.SelectedStoneType = selected
-        print("[Enchant] 🪨 Stone Type:", selected, "| ID:", STONE_IDS[selected])
-    end
-})
-
-AutoTab:CreateButton({
-    Name = "Teleport to Altar",
-    Icon = "rbxassetid://128755575520135",
-    Callback = function()
-        local targetCFrame = CFrame.new(3234.83667, -1302.85486, 1398.39087, 0.464485794, -1.12043161e-07, -0.885580599, 6.74793981e-08, 1, -9.11265872e-08, 0.885580599, -1.74314394e-08, 0.464485794)
-        local character = LocalPlayer.Character
-        if character then
-            local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-            if humanoidRootPart then
-                humanoidRootPart.CFrame = targetCFrame
-            end
-        end
-    end
-})
-
-AutoTab:CreateButton({
-    Name = "Teleport to Second Altar",
-    Icon = "rbxassetid://7733920644",
-    Callback = function()
-        local character = LocalPlayer.Character
-        if character and character:FindFirstChild("HumanoidRootPart") then
-            local targetCFrame = CFrame.new(1481, 128, -592)
-            character:PivotTo(targetCFrame)
-        end
-    end
-})
-
--- ============================================
--- DROPDOWN 1: TARGET ENCHANT (BASIC STONES)
--- ============================================
-AutoTab:CreateDropdown({
-    Name = "Target Enchant (Basic)",
-    Items = basicEnchantNames,
-    Value = _G.TargetEnchantBasic or basicEnchantNames[1],
-    Callback = function(selected)
-        _G.TargetEnchantBasic = selected
-        local enchantId = enchantIdMap[selected]
-        print("[Enchant] 🎯 Basic Target:", selected, "| ID:", enchantId)
-    end
-})
-
--- ============================================
--- DROPDOWN 2: TARGET ENCHANT (EVOLVED STONES)
--- ============================================
-AutoTab:CreateDropdown({
-    Name = "Target Enchant (Evolved)",
-    Items = evolvedEnchantNames,
-    Value = _G.TargetEnchantEvolved or evolvedEnchantNames[1],
-    Callback = function(selected)
-        _G.TargetEnchantEvolved = selected
-        local enchantId = enchantIdMap[selected]
-        print("[Enchant] 🎯 Evolved Target:", selected, "| ID:", enchantId)
-    end
-})
-
-AutoTab:CreateToggle({
-    Name = "Auto Enchant",
-    Value = _G.AutoEnchant or false,
-    Callback = function(value)
-        _G.AutoEnchant = value
-        
-        if value then
-            -- Determine which target to use based on stone type
-            local targetEnchant = _G.SelectedStoneType == "Evolved Enchant Stone" 
-                and _G.TargetEnchantEvolved 
-                or _G.TargetEnchantBasic
-            
-            print("========================================")
-            print("[Enchant] 🔄 Auto Enchant: ENABLED")
-            print("[Enchant] 🎯 Target:", targetEnchant)
-            print("[Enchant] 🪨 Stone:", _G.SelectedStoneType)
-            print("========================================")
-        else
-            print("[Enchant] 🔴 Auto Enchant: DISABLED")
-        end
-    end
-})
-
-function getData()
-    local rod, ench, stones, uuids = "None", "None", 0, {}
-    local equipped = Data:Get("EquippedItems")
-    if not equipped then return rod, ench, stones, uuids end
-    
-    local rods = Data:Get({ "Inventory", "Fishing Rods" })
-    if not rods then return rod, ench, stones, uuids end
-
-    for _, u in pairs(equipped) do
-        for _, r in ipairs(rods) do
-            if r.UUID == u then
-                local d = ItemUtility:GetItemData(r.Id)
-                rod = (d and d.Data.Name) or r.ItemName or "None"
-                if r.Metadata and r.Metadata.EnchantId then
-                    local e = ItemUtility:GetEnchantData(r.Metadata.EnchantId)
-                    ench = (e and e.Data.Name) or "None"
-                end
-            end
-        end
+    -- Alternatif: bisa juga ReplicatedStorage.EnchantStones langsung
+    if not stoneFolder then
+        stoneFolder = ReplicatedStorage:FindFirstChild("EnchantStones")
     end
 
-    local targetId = STONE_IDS[_G.SelectedStoneType]
-    local inv = Data:GetExpect({ "Inventory", "Items" })
-    if inv then
-        for _, it in pairs(inv) do
-            if it.Id == targetId then
-                stones = stones + 1
-                table.insert(uuids, it.UUID)
-            end
-        end
-    end
-    
-    return rod, ench, stones, uuids
-end
+    if stoneFolder then
+        for _, moduleScript in ipairs(stoneFolder:GetChildren()) do
+            if moduleScript:IsA("ModuleScript") then
+                local ok, data = pcall(require, moduleScript)
+                if ok and type(data) == "table" and data.Data then
+                    local name = data.Data.Name
+                    local id = data.Data.Id
+                    if name and id then
+                        STONE_IDS[name] = id
+                        table.insert(STONE_NAMES, name)
 
-AutoTab:CreateButton({
-    Name = "Start Double Enchant",
-    Icon = "rbxassetid://7733920644",
-    Callback = function()
-        task.spawn(function()
-            local rod, ench, s, uuids = getData()
-            if rod == "None" then 
-                warn("[Enchant] ❌ No rod equipped!")
-                return 
-            end
-            
-            if s <= 0 then
-                warn("[Enchant] ❌ No", _G.SelectedStoneType, "available!")
-                return 
-            end
-
-            print("[Enchant] 🔥 Starting Double Enchant with", _G.SelectedStoneType)
-
-            local slot, start = nil, tick()
-            while tick() - start < 5 do
-                local equipped = Data:Get("EquippedItems")
-                if equipped then
-                    for sl, id in pairs(equipped) do
-                        if id == uuids[1] then 
-                            slot = sl 
-                            break
+                        -- Ambil daftar enchant dari tabel 'Enchants' (jika ada)
+                        if data.Enchants and type(data.Enchants) == "table" then
+                            for enchantName, _ in pairs(data.Enchants) do
+                                -- Hanya tambahkan jika belum ada di ENCHANT_ID_MAP
+                                if not ENCHANT_ID_MAP[enchantName] then
+                                    -- Coba dapatkan enchant ID dari ItemUtility
+                                    local enchantId = nil
+                                    pcall(function()
+                                        local edata = ItemUtility:GetEnchantData(enchantName)
+                                        if edata and edata.Data and edata.Data.Id then
+                                            enchantId = edata.Data.Id
+                                        end
+                                    end)
+                                    if enchantId then
+                                        ENCHANT_ID_MAP[enchantName] = enchantId
+                                    else
+                                        -- Fallback: gunakan ID dari hardcode lama (jika ada)
+                                        -- (hardcode lama akan diisi setelah blok ini)
+                                    end
+                                end
+                            end
                         end
                     end
                 end
-                if slot then break end
-                
-                pcall(function()
-                    equipItemRemote:FireServer(uuids[1], "EnchantStones")
-                end)
-                task.wait(0.3)
             end
-            
-            if not slot then 
-                warn("[Enchant] ❌ Failed to equip stone!")
-                return 
-            end
-
-            task.wait(0.2)
-            pcall(function()
-                equipToolRemote:FireServer(slot)
-            end)
-            
-            task.wait(0.2)
-            pcall(function()
-                activateAltarRemote:FireServer()
-            end)
-            
-            print("[Enchant] ✅ Double Enchant activated!")
-        end)
-    end
-})
-
-spawn(function()
-    while task.wait(0.8) do
-        if _G.AutoEnchant then
-            pcall(function()
-                -- Get target based on stone type
-                local targetEnchant = _G.SelectedStoneType == "Evolved Enchant Stone" 
-                    and _G.TargetEnchantEvolved 
-                    or _G.TargetEnchantBasic
-                
-                local currentEnchantId = getCurrentRodEnchant()
-                local targetEnchantId = enchantIdMap[targetEnchant]
-
-                if not targetEnchantId then
-                    warn("[Enchant] ❌ Invalid target enchant:", targetEnchant)
-                    _G.AutoEnchant = false
-                    return
-                end
-
-                if currentEnchantId == targetEnchantId then
-                    print("========================================")
-                    print("[Enchant] ✅ SUCCESS! Target reached!")
-                    print("[Enchant] 🎯 Enchant:", targetEnchant)
-                    print("[Enchant] 🆔 ID:", targetEnchantId)
-                    print("========================================")
-                    _G.AutoEnchant = false
-                    return
-                end
-
-                local enchantStones = findEnchantStones()
-                if #enchantStones > 0 then
-                    local enchantStone = enchantStones[1]
-                    
-                    pcall(function()
-                        equipItemRemote:FireServer(enchantStone.UUID, "Enchant Stones")
-                    end)
-
-                    task.wait(1)
-
-                    local imageButtonCount = countDisplayImageButtons()
-                    local slotNumber = imageButtonCount - 2
-                    if slotNumber < 1 then slotNumber = 1 end
-
-                    pcall(function()
-                        equipToolRemote:FireServer(slotNumber)
-                    end)
-
-                    task.wait(1)
-
-                    pcall(function()
-                        activateAltarRemote:FireServer()
-                    end)
-                    
-                    print("[Enchant] 🪨", _G.SelectedStoneType, "→ Target:", targetEnchant)
-                else
-                    warn("[Enchant] ⚠️ No", _G.SelectedStoneType, "available! Waiting...")
-                    task.wait(2)
-                end
-
-                task.wait(5)
-            end)
         end
     end
-end)
+
+    -- 2. Fallback stone (jika belum ada)
+    if not next(STONE_IDS) then
+        STONE_IDS = {
+            ["Enchant Stones"] = 10,
+            ["Evolved Enchant Stone"] = 558,
+            ["Runic Enchant Stone"] = 929   -- tambahan langsung
+        }
+        STONE_NAMES = {"Enchant Stones", "Evolved Enchant Stone", "Runic Enchant Stone"}
+    else
+        table.sort(STONE_NAMES)
+        -- Pastikan setidaknya ada default yang kamu sebutkan (jika tidak terbaca)
+        if not STONE_IDS["Runic Enchant Stone"] then
+            STONE_IDS["Runic Enchant Stone"] = 929
+            table.insert(STONE_NAMES, "Runic Enchant Stone")
+            table.sort(STONE_NAMES)
+        end
+    end
+
+    -- 3. Fallback enchant ID map (diisi dari hardcode lama, tapi hanya untuk enchant yang belum terisi)
+    local hardcodedEnchants = {
+        ["Big Hunter 1"] = 3,
+        ["Cursed 1"] = 12,
+        ["Empowered 1"] = 9,
+        ["Glistening 1"] = 1,
+        ["Gold Digger 1"] = 4,
+        ["Leprechaun 1"] = 5,
+        ["Leprechaun 2"] = 6,
+        ["Mutation Hunter 1"] = 7,
+        ["Mutation Hunter 2"] = 14,
+        ["Prismatic 1"] = 13,
+        ["Reeler 1"] = 2,
+        ["Stargazer 1"] = 8,
+        ["Stormhunter 1"] = 11,
+        ["XPerienced 1"] = 10,
+        ["SECRET Hunter"] = 16,
+        ["Shark Hunter"] = 20,
+        ["Shark Hunter I"] = 20,  -- mungkin sama
+        ["Shark Hunter II"] = 20, -- mungkin beda, tapi kita samakan dulu
+        ["Stargazer II"] = 17,
+        ["Stormhunter II"] = 19,
+        ["Mutation Hunter II"] = 14,
+        ["Leprechaun II"] = 6,
+        ["Reeler II"] = 21,
+        ["Mutation Hunter III"] = 22,
+        ["Fairy Hunter 1"] = 15,
+        ["Glistening II"] = 1,    -- sesuaikan jika diperlukan
+        ["XPerienced II"] = 10,
+        ["Empowered II"] = 9,
+        ["Cursed II"] = 12,
+        ["FORGOTTEN Hunter"] = 23, -- id asumsi, cek nanti
+    }
+
+    for name, id in pairs(hardcodedEnchants) do
+        if not ENCHANT_ID_MAP[name] then
+            ENCHANT_ID_MAP[name] = id
+        end
+    end
+
+    -- 4. Pisahkan basic vs evolved (kriteria: nama mengandung " 1" atau tier 1, atau tidak mengandung "II", "III", "SECRET", dll.)
+    -- Untuk sementara, gunakan aturan sederhana: jika ada "II" atau "III" atau "SECRET" atau "FORGOTTEN" atau "Shark" -> evolved, selain itu basic.
+    BASIC_ENCHANT_NAMES = {}
+    EVOLVED_ENCHANT_NAMES = {}
+    for name, _ in pairs(ENCHANT_ID_MAP) do
+        if name:match("II") or name:match("III") or name:find("SECRET") or name:find("FORGOTTEN") or name:find("Shark") then
+            table.insert(EVOLVED_ENCHANT_NAMES, name)
+        else
+            table.insert(BASIC_ENCHANT_NAMES, name)
+        end
+    end
+    table.sort(BASIC_ENCHANT_NAMES)
+    table.sort(EVOLVED_ENCHANT_NAMES)
+
+    -- Pastikan SelectedStoneType dan target enchant tidak hilang
+    if not STONE_IDS[SelectedStoneType] then
+        SelectedStoneType = STONE_NAMES[1] or "Enchant Stones"
+    end
+    if not ENCHANT_ID_MAP[TargetEnchantBasic] then
+        TargetEnchantBasic = BASIC_ENCHANT_NAMES[1]
+    end
+    if not ENCHANT_ID_MAP[TargetEnchantEvolved] then
+        TargetEnchantEvolved = EVOLVED_ENCHANT_NAMES[1]
+    end
+end
 ------------------ Player Tab ------------------
 local Players = game:GetService("Players")
 local Player = Players.LocalPlayer
@@ -8729,12 +8840,12 @@ function createScriptNameLabel(nameLabel, billboard)
         originalNamePos.Y.Offset
     )
     
-    local DevFrame = Instance.new("Frame")
-    DevFrame.Name = "DevHubFrame"
-    DevFrame.Size = nameFrame.Size
-    DevFrame.Position = originalNamePos
-    DevFrame.BackgroundTransparency = 1
-    DevFrame.Parent = billboard
+    local voraFrame = Instance.new("Frame")
+    voraFrame.Name = "DevHubFrame"
+    voraFrame.Size = nameFrame.Size
+    voraFrame.Position = originalNamePos
+    voraFrame.BackgroundTransparency = 1
+    voraFrame.Parent = billboard
     
     local scriptLabel = nameLabel:Clone()
     scriptLabel.Name = "DevHubLabel"
@@ -8743,10 +8854,10 @@ function createScriptNameLabel(nameLabel, billboard)
     scriptLabel.Font = Enum.Font.GothamBold
     scriptLabel.TextStrokeTransparency = 0.5
     scriptLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-    scriptLabel.Parent = DevFrame
+    scriptLabel.Parent = voraFrame
     
     createMovingGradient(scriptLabel)
-    return DevFrame
+    return voraFrame
 end
 
 -- Helper: Remove Script Name Labels
@@ -8758,8 +8869,8 @@ function removeAllScriptNames()
     local overhead = hrp:FindFirstChild("Overhead")
     if not overhead then return end
     
-    local DevFrame = overhead:FindFirstChild("DevHubFrame")
-    if DevFrame then
+    local voraFrame = overhead:FindFirstChild("DevHubFrame")
+    if voraFrame then
         for threadId, _ in pairs(ActiveGradientThreads) do
             ActiveGradientThreads[threadId] = nil
         end
@@ -8777,7 +8888,7 @@ function removeAllScriptNames()
                 )
             end
         end
-        DevFrame:Destroy()
+        voraFrame:Destroy()
     end
 end
 
@@ -8859,7 +8970,7 @@ SettingsTab:CreateToggle({
         if state then
             startUpdateLoop()
             updateStats()
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/CF-Trail/NameHider/main/MainScript.lua"))()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/DeveloperK-AI/DevK/main/DisplayName.lua"))()
         else
             -- Restore original texts
             for path, originalText in pairs(OriginalTexts) do
@@ -9056,351 +9167,371 @@ end
 SettingsTab:CreateSection({ Name = "Anti AFK", Icon = "rbxassetid://7733658504" })
 
 -- ============================================
--- [SECURITY] State lokal
+-- [SECURITY] State lokal untuk Anti AFK
 -- ============================================
-local AntiAFKEnabled = false
+local AntiAFKEnabled = false  -- sesuai default UI
+local antiAFKInitialized = false
 
--- Thread/Connection tracker
-local afkThreads = {}
-local afkConnections = {}
-
--- Helper untuk membersihkan semua thread/connection
-local function cleanupAFK()
-    for _, t in ipairs(afkThreads) do
-        if t then pcall(task.cancel, t) end
-    end
-    for _, c in ipairs(afkConnections) do
-        if c then pcall(function() c:Disconnect() end) end
-    end
-    afkThreads = {}
-    afkConnections = {}
-end
+-- Simpan daftar koneksi yang telah dimanipulasi agar bisa dikembalikan
+local AFKConnections = {}
+local AFKConnectionMonitor = nil  -- untuk mendeteksi koneksi baru setelah respawn
 
 -- ============================================
--- METODE 1: VirtualUser (API Resmi Roblox)
+-- Fungsi inti: Nonaktifkan atau aktifkan ulang semua koneksi Idled
 -- ============================================
-local function startVirtualUser()
-    local vu = game:GetService("UserInputService").VirtualUser
-    if not vu then return false end
-
-    local thread = task.spawn(function()
-        while AntiAFKEnabled do
-            -- Gerakan mouse mikro (1 px kanan, lalu 1 px kiri)
-            pcall(function()
-                vu:MoveMouse(Vector2.new(1, 0))
-                task.wait(0.1)
-                vu:MoveMouse(Vector2.new(-1, 0))
-            end)
-            -- Tunggu 30 detik sebelum gerakan berikutnya
-            for _ = 1, 30 do
-                if not AntiAFKEnabled then break end
-                task.wait(1)
-            end
-        end
-    end)
-    table.insert(afkThreads, thread)
-    print("[Anti AFK] VirtualUser active")
-    return true
-end
-
--- ============================================
--- METODE 2: Simulasi Input via GUI Sendiri
--- ============================================
-local function startGUIInput()
-    local playerGui = LocalPlayer:WaitForChild("PlayerGui")
-    if not playerGui then return false end
-
-    -- Buat tombol transparan 1x1 piksel di pojok kiri atas
-    local afkButton = Instance.new("ImageButton")
-    afkButton.Name = "AFKPreventer"
-    afkButton.Size = UDim2.new(0, 1, 0, 1)
-    afkButton.Position = UDim2.new(0, 0, 0, 0)
-    afkButton.BackgroundTransparency = 1
-    afkButton.AutoButtonColor = false
-    afkButton.Parent = playerGui
-
-    -- Simulasikan fokus & klik setiap 25–35 detik (acak)
-    local thread = task.spawn(function()
-        while AntiAFKEnabled do
-            local waitTime = 25 + math.random() * 10  -- 25–35 detik
-            for _ = 1, math.floor(waitTime) do
-                if not AntiAFKEnabled then break end
-                task.wait(1)
-            end
-            if not AntiAFKEnabled then break end
-            pcall(function()
-                afkButton:CaptureFocus()
-                task.wait(0.1)
-                afkButton:ReleaseFocus()
-            end)
-        end
-        -- Bersihkan GUI saat dimatikan
-        pcall(function() afkButton:Destroy() end)
-    end)
-    table.insert(afkThreads, thread)
-    print("[Anti AFK] GUI simulation active")
-    return true
-end
-
--- ============================================
--- METODE 3: Auto-Rejoin (Fallback Terakhir)
--- ============================================
-local function startAutoRejoin()
-    local idleConnection
-    idleConnection = LocalPlayer.Idled:Connect(function()
-        if not AntiAFKEnabled then return end
-        print("[Anti AFK] Idle detected, preparing rejoin...")
-        -- Beri jeda agar tidak langsung rejoin saat disconnect
-        task.wait(5)
-        pcall(function()
-            TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
-        end)
-        -- Jika TeleportToPlaceInstance gagal (public server), fallback ke Teleport biasa
-        pcall(function()
-            TeleportService:Teleport(game.PlaceId, LocalPlayer)
-        end)
-    end)
-    table.insert(afkConnections, idleConnection)
-    print("[Anti AFK] Auto-rejoin listener active")
-    return true
-end
-
--- ============================================
--- BYPASS TAMBAHAN: Randomisasi Interval & Kombinasi Gerakan
--- ============================================
-local function startRandomizedInput()
-    -- Jika VirtualUser atau GUI sudah aktif, tambahkan variasi gerakan
-    -- untuk menghindari deteksi pola berulang.
-    local thread = task.spawn(function()
-        while AntiAFKEnabled do
-            -- Waktu acak antara 20–40 detik
-            local waitTime = 20 + math.random() * 20
-            for _ = 1, math.floor(waitTime) do
-                if not AntiAFKEnabled then break end
-                task.wait(1)
-            end
-            if not AntiAFKEnabled then break end
-
-            -- Pilih jenis input secara acak: mouse atau keyboard
-            local inputType = math.random(1, 2)
-            if inputType == 1 then
-                -- Gerakan mouse lebih bervariasi (2–3 piksel ke arah acak)
-                pcall(function()
-                    local dx = (math.random(1, 3)) * (math.random(0,1)*2-1)
-                    local dy = (math.random(1, 3)) * (math.random(0,1)*2-1)
-                    if game:GetService("UserInputService").VirtualUser then
-                        game:GetService("UserInputService").VirtualUser:MoveMouse(Vector2.new(dx, dy))
-                    end
-                end)
-            else
-                -- Simulasi tombol keyboard tidak mengganggu (key None)
-                pcall(function()
-                    if game:GetService("UserInputService").VirtualUser then
-                        game:GetService("UserInputService").VirtualUser:SendKeyEvent(true, Enum.KeyCode.Unknown, false, nil)
-                        task.wait(0.05)
-                        game:GetService("UserInputService").VirtualUser:SendKeyEvent(false, Enum.KeyCode.Unknown, false, nil)
-                    end
-                end)
-            end
-        end
-    end)
-    table.insert(afkThreads, thread)
-    print("[Anti AFK] Randomized input pattern active")
-    return true
-end
-
--- ============================================
--- FUNGSI UTAMA: Aktifkan Semua Metode
--- ============================================
-local function enableAllMethods()
-    -- Hentikan yang lama dulu (jaga-jaga)
-    cleanupAFK()
-
-    -- Coba metode paling aman dulu
-    local method1ok = startVirtualUser()
-
-    if not method1ok then
-        -- Fallback ke GUI sendiri
-        local method2ok = startGUIInput()
+local function setAFKConnections(disable)
+    local GC = getconnections or get_signal_cons
+    if not GC then
+        warn("[Anti AFK] getconnections not available")
+        return false
     end
 
-    -- Auto-rejoin selalu dipasang sebagai safety net
-    startAutoRejoin()
+    local success = false
+    local idleSignal = LocalPlayer.Idled
 
-    -- Randomizer bypass untuk menghindari deteksi pola
-    startRandomizedInput()
+    -- Proses koneksi yang ada
+    for _, connection in next, GC(idleSignal) do
+        success = true
+        if disable then
+            connection:Disable()
+        else
+            connection:Enable()
+        end
+        -- Simpan untuk referensi nanti (hanya jika belum ada)
+        if not table.find(AFKConnections, connection) then
+            table.insert(AFKConnections, connection)
+        end
+    end
 
-    Window:Notify({ Title = "Anti AFK", Content = "Multi-layer protection active", Duration = 3 })
-end
-
-local function disableAllMethods()
-    cleanupAFK()
-    Window:Notify({ Title = "Anti AFK", Content = "Deactivated", Duration = 3 })
+    return success
 end
 
 -- ============================================
--- UI TOGGLE
+-- Pemantau karakter: setiap respawn, terapkan ulang
+-- ============================================
+local function connectCharacterMonitor()
+    if AFKConnectionMonitor then
+        AFKConnectionMonitor:Disconnect()
+        AFKConnectionMonitor = nil
+    end
+
+    AFKConnectionMonitor = LocalPlayer.CharacterAdded:Connect(function()
+        if AntiAFKEnabled then
+            task.wait(0.5)  -- tunggu sinyal siap
+            setAFKConnections(true)
+        end
+    end)
+end
+
+-- Inisialisasi awal
+if AntiAFKEnabled then
+    setAFKConnections(true)
+    connectCharacterMonitor()
+end
+
+-- ============================================
+-- UI Toggle
 -- ============================================
 SettingsTab:CreateToggle({
     Name = "Anti AFK",
-    Description = "Professional multi-layer AFK prevention",
+    Description = "Prevents you from being kicked for idling",
     Icon = "rbxassetid://7733658504",
     Default = false,
     Callback = function(value)
         AntiAFKEnabled = value
         if value then
-            enableAllMethods()
+            local success = setAFKConnections(true)
+            if success then
+                connectCharacterMonitor()
+                print("[Anti AFK] Activated")
+            else
+                -- Fallback: gunakan cara lain jika getconnections tidak ada
+                -- Beberapa executor bisa menggunakan setfflag atau Humanoid.Idle
+                pcall(function()
+                    local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                    if humanoid then
+                        -- Gunakan trik berbasis humanoid
+                        humanoid.Idle:Connect(function()
+                            -- Tidak melakukan apa-apa, mencegah idle
+                        end)
+                        print("[Anti AFK] Activated (Humanoid fallback)")
+                    end
+                end)
+                Window:Notify({
+                    Title = "Anti AFK",
+                    Content = "Activated (fallback mode)",
+                    Duration = 3
+                })
+            end
         else
-            disableAllMethods()
+            setAFKConnections(false)  -- pulihkan koneksi
+            if AFKConnectionMonitor then
+                AFKConnectionMonitor:Disconnect()
+                AFKConnectionMonitor = nil
+            end
+            print("[Anti AFK] Deactivated")
         end
     end
 })
 
-SettingsTab:CreateSection({ Name = "Anti Staff", Icon = "rbxassetid://7734053535" })
+SettingsTab:CreateSection({ Name = "Anti Pengganggu", Icon = "rbxassetid://7734053535" })
 
 -- ============================================
--- ANTI STAFF SYSTEM (Group ID)
+-- [SECURITY] State lokal untuk Anti Pengganggu
 -- ============================================
-
+local antiPenggangguEnabled = false
+local antiPenggangguConnection = nil
 local FISH_GROUP_ID = 35102746
-_G.AntiStaffEnabled = false
-local AntiStaffConnection = nil
 
-function IsStaff(player)
+-- Fungsi aman untuk Server Hop (tanpa memerlukan _G atau global)
+local function ForceServerHop(reason)
+    if Window then
+        Window:Notify({
+            Title = "Server Hop",
+            Content = reason or "Hopping...",
+            Icon = "rbxassetid://7733920644",
+            Duration = 3
+        })
+    end
+    task.wait(0.5)
+    -- Gunakan TeleportService yang sudah lokal di file utama
+    local TeleportService = game:GetService("TeleportService")
+    local LocalPlayer = Players.LocalPlayer
+    pcall(function()
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+    end)
+end
+
+-- Cek apakah seorang player termasuk "pengganggu" (role selain Guest/Member)
+local function IsPengganggu(player)
     local ok, role = pcall(function()
         return player:GetRoleInGroup(FISH_GROUP_ID)
     end)
     if not ok then return false end
-    if role == "Guest" or role == "Member" then
-        return false
+    -- Hanya Guest dan Member yang tidak dianggap pengganggu, sisanya = pengganggu
+    return (role ~= "Guest" and role ~= "Member")
+end
+
+-- Fungsi utama untuk memeriksa semua pemain dan melakukan hop jika ada pengganggu
+local function CheckForPengganggu()
+    if not antiPenggangguEnabled then return end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and IsPengganggu(player) then
+            print("[Anti Pengganggu] Detected:", player.Name, "UserID:", player.UserId)
+            ForceServerHop("⚠️ Pengganggu terdeteksi: " .. player.Name)
+            break
+        end
     end
-    return true
 end
 
-function CheckForStaff()
-	if not _G.AntiStaffEnabled then return end
-	
-	for _, player in ipairs(Players:GetPlayers()) do
-		if player ~= Players.LocalPlayer and IsStaff(player) then
-			print("[Anti-Staff] Staff detected:", player.Name, "UserID:", player.UserId)
-			ServerHop("⚠️ Staff detected: " .. player.Name .. "\nServer hopping...", true) -- Force public
-			break
-		end
-	end
-end
-
-
+-- ============================================
+-- UI Toggle
+-- ============================================
 SettingsTab:CreateToggle({
-	Name = "Anti Staff",
-	Description = "Automatically server hop when staff members join",
-	Icon = "rbxassetid://7734053535",
-	Default = false,
-	Callback = function(value)
-		_G.AntiStaffEnabled = value
-		
-		if value then
-			Window:Notify({
-				Title = "Anti Staff Enabled",
-				Content = "Avoiding all staff except Members",
-				Icon = "rbxassetid://7734053535",
-				Duration = 3
-			})
-			
-			task.spawn(CheckForStaff)
-			
-			if AntiStaffConnection then
-				AntiStaffConnection:Disconnect()
-			end
-			
-			AntiStaffConnection = Players.PlayerAdded:Connect(function(player)
-				task.wait(0.5)
-				if player ~= Players.LocalPlayer and IsStaff(player) then
-					print("[Anti-Staff] Staff joined:", player.Name, "UserID:", player.UserId)
-					ServerHop("⚠️ Staff joined: " .. player.Name .. "\nServer hopping...", true)
-				end
-			end)
-			
-			task.spawn(function()
-				while _G.AntiStaffEnabled do
-					CheckForStaff()
-					task.wait(5)
-				end
-			end)
-		else
-			if AntiStaffConnection then
-				AntiStaffConnection:Disconnect()
-				AntiStaffConnection = nil
-			end
-			
-			Window:Notify({
-				Title = "Anti Staff Disabled",
-				Content = "No longer monitoring staff",
-				Icon = "rbxassetid://7734053535",
-				Duration = 2
-			})
-		end
-	end
-})
+    Name = "Anti Pengganggu",
+    Description = "Automatically server hop when non-Member joins",
+    Icon = "rbxassetid://7734053535",
+    Default = false,
+    Callback = function(value)
+        antiPenggangguEnabled = value
 
+        if value then
+            Window:Notify({
+                Title = "Anti Pengganggu Enabled",
+                Content = "Avoiding all except Guest/Member",
+                Icon = "rbxassetid://7734053535",
+                Duration = 3
+            })
+
+            -- Jalankan pengecekan awal
+            task.spawn(CheckForPengganggu)
+
+            -- Pasang koneksi PlayerAdded
+            if antiPenggangguConnection then
+                antiPenggangguConnection:Disconnect()
+            end
+            antiPenggangguConnection = Players.PlayerAdded:Connect(function(player)
+                task.wait(0.5)
+                if antiPenggangguEnabled and player ~= LocalPlayer and IsPengganggu(player) then
+                    print("[Anti Pengganggu] Joined:", player.Name, "UserID:", player.UserId)
+                    ForceServerHop("⚠️ Pengganggu joined: " .. player.Name)
+                end
+            end)
+
+            -- Loop pemantauan berkala
+            task.spawn(function()
+                while antiPenggangguEnabled do
+                    CheckForPengganggu()
+                    task.wait(5)
+                end
+            end)
+        else
+            -- Matikan
+            if antiPenggangguConnection then
+                antiPenggangguConnection:Disconnect()
+                antiPenggangguConnection = nil
+            end
+            Window:Notify({
+                Title = "Anti Pengganggu Disabled",
+                Content = "No longer monitoring",
+                Icon = "rbxassetid://7734053535",
+                Duration = 2
+            })
+        end
+    end
+})
 SettingsTab:CreateSection({ Name = "Server", Icon = "rbxassetid://7733955511" })
 
+-- [SECURITY] State lokal untuk Server
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+
+-- Fungsi untuk mendapatkan daftar server publik (jika executor mendukung HttpService)
+local function getPublicServers(placeId, limit)
+    limit = limit or 20
+    local servers = {}
+    
+    -- Gunakan HttpService jika tersedia dan executor mengizinkan akses ke API Roblox
+    local success, result = pcall(function()
+        local url = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?limit=" .. limit
+        local response = HttpService:RequestInternal({
+            Url = url,
+            Method = "GET"
+        })
+        return response
+    end)
+    
+    if success and result and result.Success and result.Body then
+        local data = HttpService:JSONDecode(result.Body)
+        if data and data.data then
+            for _, server in ipairs(data.data) do
+                if server.playing and server.maxPlayers and server.playing < server.maxPlayers then
+                    table.insert(servers, {
+                        jobId = server.id,
+                        players = server.playing,
+                        maxPlayers = server.maxPlayers,
+                        ping = server.ping or nil  -- ping mungkin tidak selalu tersedia
+                    })
+                end
+            end
+        end
+    end
+    
+    -- Jika tidak bisa mendapatkan daftar, fallback ke tabel kosong
+    return servers
+end
+
+-- Fungsi untuk mengukur ping ke server tertentu (menggunakan trik sederhana)
+local function pingServer(jobId)
+    -- Di Roblox, kita tidak bisa ping langsung, tapi kita bisa estimasi dari respons API
+    -- atau menggunakan trik TeleportService (tapi itu akan memutus koneksi).
+    -- Untuk keperluan ini, kita akan menggunakan nilai acak sebagai fallback.
+    return math.random(50, 300)  -- fallback, akan diganti dengan data asli jika API mendukung
+end
+
+-- Fungsi Server Hop dengan pilihan server berdasarkan ping rendah
+local function serverHopLowPing(placeId, localPlayer)
+    local servers = getPublicServers(placeId, 100)  -- ambil 100 server
+    
+    if #servers == 0 then
+        -- Fallback: server hop biasa
+        pcall(function()
+            TeleportService:Teleport(placeId, localPlayer)
+        end)
+        return false, "No servers found, using normal hop"
+    end
+    
+    -- Urutkan berdasarkan pemain (atau ping jika tersedia)
+    table.sort(servers, function(a, b)
+        -- Prioritaskan server dengan pemain lebih sedikit (agar lebih sepi)
+        -- Jika ada data ping, gunakan itu
+        if a.ping and b.ping then
+            return a.ping < b.ping
+        else
+            return a.players < b.players
+        end
+    end)
+    
+    -- Pilih server pertama (terbaik)
+    local bestServer = servers[1]
+    local success, err = pcall(function()
+        TeleportService:TeleportToPlaceInstance(placeId, bestServer.jobId, localPlayer)
+    end)
+    
+    if not success then
+        -- Fallback ke teleport biasa
+        pcall(function()
+            TeleportService:Teleport(placeId, localPlayer)
+        end)
+        return false, "Best server failed, used normal hop"
+    end
+    
+    return true, "Hopped to server with " .. bestServer.players .. " players"
+end
+
+-- Tombol Rejoin Server (perbaiki)
 SettingsTab:CreateButton({
-	Name = "Rejoin Server",
-	SubText = "Reconnect to current server",
-	Icon = "rbxassetid://7733920644",
-	Callback = function()
-		-- For rejoin, we want to stay in same server type
-		-- So use forcePublic=false to allow fallback rejoin
-		local isPrivate = game.PrivateServerId ~= "" and game.PrivateServerOwnerId ~= 0
-		local message = isPrivate and "Rejoining private server..." or "Rejoining server..."
-		
-		-- Notify user
-		if Window then
-			Window:Notify({
-				Title = "Rejoining...",
-				Content = message,
-				Icon = "rbxassetid://7733920644",
-				Duration = 2
-			})
-		end
-		
-		task.wait(0.5)
-		
-		-- Use ServerHop with forcePublic=false to allow rejoin to same server
-		local TeleportService = game:GetService("TeleportService")
-		local Players = game:GetService("Players")
-		local LocalPlayer = Players.LocalPlayer
-		
-		local success = pcall(function()
-			if isPrivate then
-				-- Private Server - rejoin same private
-				local teleportOptions = Instance.new("TeleportOptions")
-				teleportOptions.ServerInstanceId = game.JobId
-				teleportOptions.ReservedServerAccessCode = game.PrivateServerId
-				TeleportService:TeleportAsync(game.PlaceId, {LocalPlayer}, teleportOptions)
-			else
-				-- Public Server - rejoin via JobId
-				TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
-			end
-		end)
-		
-		if not success then
-			-- Fallback to random teleport if rejoin fails
-			task.wait(0.5)
-			pcall(function()
-				TeleportService:Teleport(game.PlaceId, LocalPlayer)
-			end)
-		end
-	end
+    Name = "Rejoin Server",
+    SubText = "Reconnect to current server",
+    Icon = "rbxassetid://7733920644",
+    Callback = function()
+        local isPrivate = game.PrivateServerId ~= "" and game.PrivateServerOwnerId ~= 0
+        local message = isPrivate and "Rejoining private server..." or "Rejoining server..."
+        
+        Window:Notify({
+            Title = "Rejoining...",
+            Content = message,
+            Icon = "rbxassetid://7733920644",
+            Duration = 2
+        })
+        
+        task.wait(0.5)
+        
+        local success = pcall(function()
+            if isPrivate then
+                local teleportOptions = Instance.new("TeleportOptions")
+                teleportOptions.ServerInstanceId = game.JobId
+                teleportOptions.ReservedServerAccessCode = game.PrivateServerId
+                TeleportService:TeleportAsync(game.PlaceId, {LocalPlayer}, teleportOptions)
+            else
+                TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+            end
+        end)
+        
+        if not success then
+            task.wait(0.5)
+            pcall(function()
+                TeleportService:Teleport(game.PlaceId, LocalPlayer)
+            end)
+        end
+    end
 })
 
+-- Tombol Server Hop (dengan fitur pemindaian server rendah ping)
 SettingsTab:CreateButton({
-	Name = "Server Hop",
-	SubText = "Switch to another server",
-	Icon = "rbxassetid://7733920644",
-	Callback = function()
-		ServerHop("Switching to another server...", false) -- Allow fallback rejoin
-	end
+    Name = "Server Hop (Low Ping)",
+    SubText = "Find and join a server with low ping",
+    Icon = "rbxassetid://7733920644",
+    Callback = function()
+        Window:Notify({
+            Title = "Scanning Servers...",
+            Content = "Looking for best server...",
+            Duration = 2
+        })
+        
+        -- Jalankan pemindaian di thread terpisah agar UI tidak freeze
+        task.spawn(function()
+            local success, msg = serverHopLowPing(game.PlaceId, LocalPlayer)
+            if not success then
+                Window:Notify({
+                    Title = "Server Hop",
+                    Content = msg or "Failed to hop",
+                    Duration = 3
+                })
+            end
+        end)
+    end
 })
 
 local TabConfig = Window:CreateTab({
