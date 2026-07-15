@@ -3232,65 +3232,71 @@ MainTab:CreateSection({ Name = "Instant Fast Reel" })
 -- State lokal
 local instantFastReelEnabled = false
 local instantFastReelThread = nil
+local aggressiveMode = false
 
--- Fungsi untuk memulai loop
 local function startInstantFastReel()
     if instantFastReelThread then
         task.cancel(instantFastReelThread)
     end
 
+    local chargeRemote = ChargeRod
+    local minigameRemote = StartMini
+    local catchRemote = REFishDoneRE or REFishDone
+    local minigameEvent = FishingMinigameChanged
+
+    if not minigameEvent then
+        Window:Notify({ Title = "Error", Content = "FishingMinigameChanged not found", Duration = 3 })
+        return
+    end
+
     instantFastReelThread = task.spawn(function()
-        -- Siapkan remote (pastikan sudah lokal di file utama)
-        local chargeRodRemote = ChargeRod          -- RF("ChargeFishingRod")
-        local minigameRemote = StartMini           -- RF("RequestFishingMinigameStarted")
-        local catchRemote = REFishDoneRE or REFishDone  -- RE("CatchFishCompleted")
-        local minigameChangedEvent = FishingMinigameChanged  -- RE("FishingMinigameChanged")
-
-        if not minigameChangedEvent then
-            warn("[Instant Fast Reel] FishingMinigameChanged not found!")
-            return
-        end
-
         while instantFastReelEnabled do
-            -- Step 1: Mulai charge (tanpa power, langsung)
-            pcall(function()
-                chargeRodRemote:InvokeServer(nil, nil, workspace:GetServerTimeNow(), nil)
-            end)
+            local ok = pcall(function()
+                -- Step 1: Charge
+                chargeRemote:InvokeServer(nil, nil, workspace:GetServerTimeNow(), nil)
 
-            -- Step 2: Minta minigame dimulai
-            pcall(function()
+                -- Step 2: Request minigame
                 minigameRemote:InvokeServer(0, 0.5, workspace:GetServerTimeNow())
-            end)
 
-            -- Step 3: Tunggu server mengkonfirmasi minigame sudah dimulai
-            local minigameStarted = false
-            local connection
-            connection = minigameChangedEvent.OnClientEvent:Connect(function()
-                minigameStarted = true
-            end)
-
-            -- Tunggu maksimal 1 detik
-            local waited = 0
-            while not minigameStarted and waited < 1 do
-                task.wait(0.01)
-                waited = waited + 0.01
-            end
-            connection:Disconnect()
-
-            if minigameStarted then
-                -- Step 4: Segera selesaikan minigame
-                pcall(function()
+                if aggressiveMode then
+                    -- Aggressive: langsung catch tanpa menunggu event
+                    task.wait(0.01)  -- jeda minimal untuk server memproses
                     catchRemote:FireServer()
-                end)
+                else
+                    -- Normal: tunggu event minigame
+                    local minigameStarted = false
+                    local conn
+                    conn = minigameEvent.OnClientEvent:Connect(function()
+                        minigameStarted = true
+                    end)
+
+                    -- Tunggu maksimal 0.3 detik dengan polling cepat
+                    for _ = 1, 60 do  -- 60 * 0.005 = 0.3 detik
+                        if minigameStarted then break end
+                        task.wait(0.005)
+                    end
+                    conn:Disconnect()
+
+                    if minigameStarted then
+                        catchRemote:FireServer()
+                    else
+                        -- Fallback: tetap coba catch meskipun event tak terdeteksi
+                        catchRemote:FireServer()
+                    end
+                end
+            end)
+
+            if not ok then
+                warn("[Instant Fast Reel] Cycle error, retrying...")
             end
 
-            -- Jeda minimal sebelum siklus berikutnya (agar tidak di-spam server)
-            task.wait(0.02)
+            -- Jeda acak sebelum siklus berikutnya (hindari deteksi pola)
+            local delay = 0.005 + math.random() * 0.015  -- 0.005–0.02 detik
+            task.wait(delay)
         end
     end)
 end
 
--- Fungsi untuk menghentikan
 local function stopInstantFastReel()
     instantFastReelEnabled = false
     if instantFastReelThread then
@@ -3299,7 +3305,7 @@ local function stopInstantFastReel()
     end
 end
 
--- UI Toggle
+-- Toggle Utama
 MainTab:CreateToggle({
     Name = "Instant Fast Reel",
     SubText = "Catch fish immediately after minigame starts",
@@ -3312,6 +3318,23 @@ MainTab:CreateToggle({
         else
             stopInstantFastReel()
             Window:Notify({ Title = "Instant Fast Reel", Content = "Stopped", Duration = 2 })
+        end
+    end
+})
+
+-- Toggle Aggressive Mode
+MainTab:CreateToggle({
+    Name = "Aggressive Mode (No Event Wait)",
+    SubText = "Catch without waiting for minigame event (may fail more)",
+    Default = false,
+    Callback = function(state)
+        aggressiveMode = state
+        if instantFastReelEnabled then
+            -- Restart loop agar mode baru diterapkan
+            stopInstantFastReel()
+            instantFastReelEnabled = true
+            startInstantFastReel()
+            Window:Notify({ Title = "Aggressive Mode", Content = state and "ON" or "OFF", Duration = 2 })
         end
     end
 })
