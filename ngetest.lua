@@ -665,10 +665,10 @@ local state = {
     enabled = false,
     running = false,
     castMode = "Fast",
-    completeDelay = 3,
-    castDelay = 0.3,
+    completeDelay = 1,
+    castDelay = 0.2,
     notifDelay = 1.6,
-    notifDuration = 2.5,
+    notifDuration = ,
 }
 
 local loopTask = nil
@@ -3195,8 +3195,8 @@ local function startInstantFastReel()
     end)
 
     -- Aktifkan auto-cast (Instant Fishing V2 harus menyala)
-    Instant.SetCastMode("Random")
-    Instant.SetCompleteDelay(0.8)   -- tidak perlu delay karena minigame akan langsung dipotong
+    Instant.SetCastMode(Config.UB.Settings.CastMode or "Fast")
+    Instant.SetCompleteDelay(1)   -- tidak perlu delay karena minigame akan langsung dipotong
     Instant.SetCastDelay(0.2)    -- jeda minimal antar cast
     Instant.Start()
 
