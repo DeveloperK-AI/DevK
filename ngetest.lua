@@ -4920,6 +4920,8 @@ MainTab:CreateSection({ Name = "Multi Catch (Blatant Style)" })
 -- State lokal
 local multiCatchEnabled = false
 local multiCatchThread = nil
+local multiCatchCycles = 5      -- default 5 siklus per tarikan
+local multiCatchDelay = 0.02    -- default 0.02 detik antar siklus
 
 -- Fungsi untuk memulai multi catch
 local function startMultiCatch()
@@ -4935,24 +4937,21 @@ local function startMultiCatch()
 
     multiCatchThread = task.spawn(function()
         while multiCatchEnabled do
-            -- Lakukan 5 siklus berturut-turut dalam satu "tarikan"
-            for _ = 1, 5 do
+            -- Lakukan sejumlah siklus berturut‑turut dalam satu tarikan
+            for i = 1, multiCatchCycles do
                 if not multiCatchEnabled then break end
                 pcall(function()
                     local t = workspace:GetServerTimeNow()
-                    -- Charge
                     chargeRemote:InvokeServer(nil, nil, t, nil)
-                    -- Minigame dengan power = 1 (langsung siap)
                     minigameRemote:InvokeServer(-1, 1, t)
-                    -- Jeda sangat kecil agar server menerima
-                    task.wait(0.01)
-                    -- Catch
+                    -- Gunakan jeda yang bisa diatur
+                    task.wait(multiCatchDelay)
                     catchRemote:FireServer()
                 end)
-                -- Jeda antar siklus dalam satu tarikan
-                task.wait(0.02)
+                -- Jeda mikro setelah setiap catch agar server tidak menolak
+                task.wait(0.005)
             end
-            -- Jeda setelah 5 ikan sebelum mengulang (atur sesuai keinginan)
+            -- Jeda setelah satu tarikan sebelum mengulang (bisa diatur juga nanti)
             task.wait(0.5)
         end
     end)
@@ -4965,23 +4964,50 @@ local function stopMultiCatch()
         task.cancel(multiCatchThread)
         multiCatchThread = nil
     end
-    -- Kembalikan FishingController ke normal
     applyUltraBlatant3NFishingControllerStub(false)
 end
 
 -- UI Toggle
 MainTab:CreateToggle({
     Name = "Multi Catch (3-7 Fish)",
-    SubText = "Blatant-style multi catch in one pull",
+    SubText = "Blatant-style multi catch with adjustable settings",
     Default = false,
     Callback = function(state)
         multiCatchEnabled = state
         if state then
             startMultiCatch()
-            Window:Notify({ Title = "Multi Catch", Content = "Activated – attempting 5 fish per cycle", Duration = 2 })
+            Window:Notify({ Title = "Multi Catch", Content = "Activated", Duration = 2 })
         else
             stopMultiCatch()
             Window:Notify({ Title = "Multi Catch", Content = "Stopped", Duration = 2 })
+        end
+    end
+})
+
+-- Input untuk jumlah siklus (fish per pull)
+MainTab:CreateInput({
+    Name = "Cycles per Pull",
+    SideLabel = "5",
+    Placeholder = "e.g., 5",
+    Default = "5",
+    Callback = function(value)
+        local num = tonumber(value)
+        if num and num >= 1 and num <= 20 then
+            multiCatchCycles = num
+        end
+    end
+})
+
+-- Input untuk jeda antar siklus (detik)
+MainTab:CreateInput({
+    Name = "Cycle Delay (seconds)",
+    SideLabel = "0.02",
+    Placeholder = "e.g., 0.02",
+    Default = "0.02",
+    Callback = function(value)
+        local num = tonumber(value)
+        if num and num >= 0.001 and num <= 1 then
+            multiCatchDelay = num
         end
     end
 })
