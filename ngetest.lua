@@ -3196,7 +3196,7 @@ local function startInstantFastReel()
 
     -- Aktifkan auto-cast (Instant Fishing V2 harus menyala)
     Instant.SetCastMode("Random")
-    Instant.SetCompleteDelay(1)   -- tidak perlu delay karena minigame akan langsung dipotong
+    Instant.SetCompleteDelay(0.5)   -- tidak perlu delay karena minigame akan langsung dipotong
     Instant.SetCastDelay(0.2)    -- jeda minimal antar cast
     Instant.Start()
 
