@@ -995,6 +995,156 @@ _G.stopInstantFishingV2 = Instant.stopInstantFishingV2
 _G.onToggleUB = Instant.onToggleUB
 _G.instant = Instant.instant
 _G.CallFishDone = Instant.CallFishDone
+
+MainTab:CreateSection({ Name = "Hybrid Adaptive" })
+
+-- ============================================
+-- [SECURITY] State lokal untuk Hybrid Adaptive
+-- ============================================
+local hybridEnabled = false
+local hybridThread = nil
+
+-- Metode yang tersedia (dari yang paling aman ke paling agresif)
+local methods = {
+    { name = "Legit",     enable = function() Instant.SetCastMode("Fast"); Instant.SetCompleteDelay(2); Instant.SetCastDelay(1); Instant.Start() end, disable = function() Instant.Stop() end },
+    { name = "V2 Fast",   enable = function() Instant.SetCastMode("Fast"); Instant.SetCompleteDelay(0.3); Instant.SetCastDelay(0.1); Instant.Start() end, disable = function() Instant.Stop() end },
+    { name = "V2 Turbo",  enable = function() Instant.SetCastMode("Turbo"); Instant.SetCompleteDelay(0.1); Instant.SetCastDelay(0.02); Instant.Start() end, disable = function() Instant.Stop() end },
+    { name = "Blatant V1",enable = function() if not Protected then ToggleBlatant(true) end end, disable = function() if Protected then ToggleBlatant(false) end end },
+}
+
+local currentMethodIndex = 1
+local successStreak = 0
+local failStreak = 0
+local lastEventTime = tick()
+
+-- Pantau event fishing untuk menghitung sukses/gagal
+local fishCaughtEvent = REFishGot or REFishCaught
+local fishFailedEvent = FishingStopped  -- biasanya dipanggil saat minigame gagal
+
+local hybridConnections = {}
+
+local function connectMonitors()
+    -- Sukses
+    if fishCaughtEvent then
+        local conn = fishCaughtEvent.OnClientEvent:Connect(function()
+            successStreak = math.min(successStreak + 1, 10)
+            failStreak = 0
+            lastEventTime = tick()
+        end)
+        table.insert(hybridConnections, conn)
+    end
+    -- Gagal
+    if fishFailedEvent then
+        local conn = fishFailedEvent.OnClientEvent:Connect(function()
+            failStreak = math.min(failStreak + 1, 5)
+            successStreak = 0
+            lastEventTime = tick()
+        end)
+        table.insert(hybridConnections, conn)
+    end
+end
+
+local function disconnectMonitors()
+    for _, conn in ipairs(hybridConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    hybridConnections = {}
+end
+
+-- Pindah ke metode tertentu
+local function switchToMethod(index)
+    if index == currentMethodIndex then return end
+    if index < 1 or index > #methods then return end
+
+    -- Matikan metode lama
+    methods[currentMethodIndex].disable()
+    -- Aktifkan metode baru
+    methods[index].enable()
+    currentMethodIndex = index
+    Window:Notify({ Title = "Hybrid", Content = "Switched to " .. methods[index].name, Duration = 2 })
+end
+
+-- Evaluasi kondisi setiap 2 detik
+local function evaluate()
+    local playerCount = #Players:GetPlayers()
+
+    -- Aturan 1: Sepi → paling agresif
+    if playerCount <= 3 then
+        switchToMethod(#methods)  -- Blatant
+        return
+    end
+
+    -- Aturan 2: Idle lebih dari 10 detik → reset ke Legit
+    if tick() - lastEventTime > 10 then
+        switchToMethod(1)
+        return
+    end
+
+    -- Aturan 3: 2 gagal berturut‑turut → turunkan
+    if failStreak >= 2 and currentMethodIndex > 1 then
+        switchToMethod(currentMethodIndex - 1)
+        failStreak = 0
+        return
+    end
+
+    -- Aturan 4: 5 sukses berturut‑turut → naikkan (tapi jangan lebih dari Blatant)
+    if successStreak >= 5 and currentMethodIndex < #methods then
+        switchToMethod(currentMethodIndex + 1)
+        successStreak = 0
+        return
+    end
+end
+
+-- Loop utama hybrid
+local function hybridLoop()
+    while hybridEnabled do
+        evaluate()
+        for _ = 1, 20 do
+            if not hybridEnabled then break end
+            task.wait(0.1)
+        end
+    end
+end
+
+-- Fungsi start/stop
+local function startHybrid()
+    if hybridEnabled then return end
+    hybridEnabled = true
+    -- Mulai dengan metode pertama (Legit)
+    methods[1].enable()
+    currentMethodIndex = 1
+    -- Pasang monitor
+    connectMonitors()
+    -- Jalankan evaluator
+    hybridThread = task.spawn(hybridLoop)
+    Window:Notify({ Title = "Hybrid Adaptive", Content = "Activated – monitoring conditions", Duration = 3 })
+end
+
+local function stopHybrid()
+    hybridEnabled = false
+    if hybridThread then
+        task.cancel(hybridThread)
+        hybridThread = nil
+    end
+    disconnectMonitors()
+    methods[currentMethodIndex].disable()
+    Window:Notify({ Title = "Hybrid Adaptive", Content = "Stopped", Duration = 2 })
+end
+
+-- UI Toggle
+MainTab:CreateToggle({
+    Name = "Hybrid Adaptive Fishing",
+    SubText = "Auto‑switch between methods based on server response",
+    Default = false,
+    Callback = function(state)
+        if state then
+            startHybrid()
+        else
+            stopHybrid()
+        end
+    end
+})
+
 -- =============================
 -- Instant Bobber (moons.lua: patchInstantBaitOverrideToCastPosition)
 -- =============================
