@@ -3227,99 +3227,7 @@ MainTab:CreateToggle({
     end,
 })
 
-MainTab:CreateSection({ Name = "Controller Spoof" })
 
--- State lokal
-local spoofEnabled = false
-local spoofConnections = {}
-
--- Simpan referensi asli (jika diperlukan untuk restore)
-local originalClick = nil
-
-local function enableSpoof()
-    if spoofEnabled then return end
-    spoofEnabled = true
-
-    -- 1. Timpa fungsi click minigame agar langsung mengirim power = 1
-    if FishingController and FishingController.RequestFishingMinigameClick then
-        originalClick = FishingController.RequestFishingMinigameClick
-        FishingController.RequestFishingMinigameClick = function(self, ...)
-            -- Alih-alih menunggu input mouse, langsung kirim power = 1 (atau 0.97 untuk Perfect)
-            if spoofEnabled then
-                -- Panggil fungsi asli dengan power tinggi
-                -- (biasanya parameter: power, timestamp)
-                return originalClick(self, 1, workspace:GetServerTimeNow())
-            else
-                return originalClick(self, ...)
-            end
-        end
-    end
-
-    -- 2. Hook event minigame untuk memulai charging ulang setelah selesai
-    if FishingMinigameChanged then
-        local conn = FishingMinigameChanged.OnClientEvent:Connect(function()
-            if not spoofEnabled then return end
-            -- Setelah minigame selesai (atau dimulai?), lempar kail lagi
-            -- Kita bisa menggunakan event FishingStopped atau CatchFishCompleted untuk trigger ulang
-        end)
-        table.insert(spoofConnections, conn)
-    end
-
-    -- 3. Gunakan event CatchFishCompleted untuk memulai siklus berikutnya
-    local catchEvent = REFishGot or REFishCaught or REFishingCompleted
-    if catchEvent then
-        local conn = catchEvent.OnClientEvent:Connect(function()
-            if not spoofEnabled then return end
-            -- Lempar kail baru setelah 0.5 detik (meniru jeda manusia)
-            task.wait(0.5)
-            pcall(function()
-                FishingController:RequestChargeFishingRod(Vector2.new(0, 0), true)
-            end)
-        end)
-        table.insert(spoofConnections, conn)
-    end
-
-    -- 4. Mulai casting pertama
-    pcall(function()
-        FishingController:RequestChargeFishingRod(Vector2.new(0, 0), true)
-    end)
-
-    print("[Controller Spoof] Activated – human-like input simulation")
-end
-
-local function disableSpoof()
-    spoofEnabled = false
-
-    -- Kembalikan fungsi click asli
-    if originalClick and FishingController then
-        FishingController.RequestFishingMinigameClick = originalClick
-        originalClick = nil
-    end
-
-    -- Putuskan semua koneksi
-    for _, conn in ipairs(spoofConnections) do
-        pcall(function() conn:Disconnect() end)
-    end
-    spoofConnections = {}
-
-    print("[Controller Spoof] Deactivated")
-end
-
--- UI Toggle
-MainTab:CreateToggle({
-    Name = "Controller Spoof",
-    SubText = "Simulate human fishing inputs (undetectable)",
-    Default = false,
-    Callback = function(state)
-        if state then
-            enableSpoof()
-            Window:Notify({ Title = "Controller Spoof", Content = "Activated – fishing like a human", Duration = 3 })
-        else
-            disableSpoof()
-            Window:Notify({ Title = "Controller Spoof", Content = "Stopped", Duration = 2 })
-        end
-    end
-})
 
 -- =================
 -- Instant Bobber UI
@@ -5006,6 +4914,77 @@ function BlatantSkipCycle(session)
         task.wait(loopDelay)
     end
 end
+
+MainTab:CreateSection({ Name = "Multi Catch (Blatant Style)" })
+
+-- State lokal
+local multiCatchEnabled = false
+local multiCatchThread = nil
+
+-- Fungsi untuk memulai multi catch
+local function startMultiCatch()
+    if multiCatchThread then task.cancel(multiCatchThread) end
+
+    -- Pastikan stub FishingController aktif (seperti Blatant V1)
+    applyUltraBlatant3NFishingControllerStub(true)
+
+    -- Remote lokal (pastikan sudah ada)
+    local chargeRemote = ChargeRod
+    local minigameRemote = StartMini
+    local catchRemote = REFishDoneRE or REFishDone
+
+    multiCatchThread = task.spawn(function()
+        while multiCatchEnabled do
+            -- Lakukan 5 siklus berturut-turut dalam satu "tarikan"
+            for _ = 1, 5 do
+                if not multiCatchEnabled then break end
+                pcall(function()
+                    local t = workspace:GetServerTimeNow()
+                    -- Charge
+                    chargeRemote:InvokeServer(nil, nil, t, nil)
+                    -- Minigame dengan power = 1 (langsung siap)
+                    minigameRemote:InvokeServer(-1, 1, t)
+                    -- Jeda sangat kecil agar server menerima
+                    task.wait(0.01)
+                    -- Catch
+                    catchRemote:FireServer()
+                end)
+                -- Jeda antar siklus dalam satu tarikan
+                task.wait(0.02)
+            end
+            -- Jeda setelah 5 ikan sebelum mengulang (atur sesuai keinginan)
+            task.wait(0.5)
+        end
+    end)
+end
+
+-- Fungsi untuk menghentikan
+local function stopMultiCatch()
+    multiCatchEnabled = false
+    if multiCatchThread then
+        task.cancel(multiCatchThread)
+        multiCatchThread = nil
+    end
+    -- Kembalikan FishingController ke normal
+    applyUltraBlatant3NFishingControllerStub(false)
+end
+
+-- UI Toggle
+MainTab:CreateToggle({
+    Name = "Multi Catch (3-7 Fish)",
+    SubText = "Blatant-style multi catch in one pull",
+    Default = false,
+    Callback = function(state)
+        multiCatchEnabled = state
+        if state then
+            startMultiCatch()
+            Window:Notify({ Title = "Multi Catch", Content = "Activated – attempting 5 fish per cycle", Duration = 2 })
+        else
+            stopMultiCatch()
+            Window:Notify({ Title = "Multi Catch", Content = "Stopped", Duration = 2 })
+        end
+    end
+})
 
 AmblatantTab:CreateSection({ Name = "AMBLATANT OR FAST FISHING" })
 
