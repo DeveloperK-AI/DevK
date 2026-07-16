@@ -3227,74 +3227,72 @@ MainTab:CreateToggle({
     end,
 })
 
-MainTab:CreateSection({ Name = "Multi Catch" })
+MainTab:CreateSection({ Name = "Multi Catch (10x)" })
 
--- State lokal
 local multiCatchEnabled = false
-local multiCatchCount = 10  -- jumlah ikan per tarikan
-local multiCatchConnection = nil
+local multiCatchThread = nil
 
--- Fungsi untuk mengirim banyak catch
-local function performMultiCatch()
+local function startMultiCatch()
+    if multiCatchThread then task.cancel(multiCatchThread) end
+
+    local minigameEvent = FishingMinigameChanged
     local catchRemote = REFishDoneRE or REFishDone
-    if not catchRemote then return end
 
-    for i = 1, multiCatchCount do
-        pcall(function()
-            catchRemote:FireServer()
-        end)
-        -- Jeda sangat kecil antar catch (agar server memproses semua)
-        task.wait(0.01)
-    end
-end
-
--- Pasang hook ke event minigame
-local function enableMultiCatch()
-    if multiCatchConnection then return end
-    if not FishingMinigameChanged then
-        Window:Notify({ Title = "Error", Content = "FishingMinigameChanged not found", Duration = 3 })
+    if not minigameEvent or not catchRemote then
+        Window:Notify({ Title = "Error", Content = "Missing remotes", Duration = 3 })
         return
     end
 
-    multiCatchConnection = FishingMinigameChanged.OnClientEvent:Connect(function()
-        if not multiCatchEnabled then return end
-        task.spawn(performMultiCatch)
+    multiCatchThread = task.spawn(function()
+        while multiCatchEnabled do
+            -- 1. Lempar kail
+            pcall(function()
+                ChargeRod:InvokeServer(nil, nil, workspace:GetServerTimeNow(), nil)
+                StartMini:InvokeServer(0, 0.5, workspace:GetServerTimeNow())
+            end)
+
+            -- 2. Tunggu minigame dikonfirmasi
+            local confirmed = false
+            local conn
+            conn = minigameEvent.OnClientEvent:Connect(function()
+                confirmed = true
+            end)
+
+            for _ = 1, 50 do  -- tunggu maks 0.5 detik
+                if confirmed then break end
+                task.wait(0.01)
+            end
+            conn:Disconnect()
+
+            if confirmed then
+                -- 3. Kirim banyak catch sekaligus
+                for i = 1, 10 do
+                    pcall(function() catchRemote:FireServer() end)
+                    task.wait(0.005)  -- jeda sangat kecil antar catch
+                end
+            end
+        end
     end)
 end
 
-local function disableMultiCatch()
-    if multiCatchConnection then
-        multiCatchConnection:Disconnect()
-        multiCatchConnection = nil
+local function stopMultiCatch()
+    multiCatchEnabled = false
+    if multiCatchThread then
+        task.cancel(multiCatchThread)
+        multiCatchThread = nil
     end
 end
 
--- Input untuk jumlah ikan
-MainTab:CreateInput({
-    Name = "Fish Count per Cast",
-    Placeholder = "10",
-    Default = "10",
-    Callback = function(value)
-        local num = tonumber(value)
-        if num and num > 0 and num <= 100 then
-            multiCatchCount = num
-        end
-    end
-})
-
--- Toggle Multi Catch
 MainTab:CreateToggle({
-    Name = "Multi Catch (God Mode)",
-    SubText = "Catch multiple fish in one pull",
+    Name = "Multi Catch (10 Fish)",
+    SubText = "Attempt to catch 10 fish in one pull",
     Default = false,
     Callback = function(state)
         multiCatchEnabled = state
         if state then
-            enableMultiCatch()
-            Window:Notify({ Title = "Multi Catch", Content = "Will catch " .. multiCatchCount .. " fish per pull", Duration = 3 })
+            startMultiCatch()
         else
-            disableMultiCatch()
-            Window:Notify({ Title = "Multi Catch", Content = "Disabled", Duration = 2 })
+            stopMultiCatch()
         end
     end
 })
