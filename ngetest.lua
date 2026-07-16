@@ -668,7 +668,7 @@ local state = {
     completeDelay = 3,
     castDelay = 0.3,
     notifDelay = 1.6,
-    notifDuration = 4.7,
+    notifDuration = 2.5,
 }
 
 local loopTask = nil
@@ -4915,95 +4915,25 @@ function BlatantSkipCycle(session)
     end
 end
 
-MainTab:CreateSection({ Name = "Lag-Switch Fishing" })
-
--- State lokal
-local lagSwitchEnabled = false
-local lagSwitchThread = nil
-local burstCount = 5        -- jumlah permintaan minigame yang ditumpuk
-local burstDelay = 0.3      -- jeda sebelum catch (detik)
-
-local function startLagSwitch()
-    if lagSwitchThread then task.cancel(lagSwitchThread) end
-
-    -- Pastikan stub FishingController aktif (seperti Blatant V1)
-    applyUltraBlatant3NFishingControllerStub(true)
-
-    local chargeRemote = ChargeRod
-    local minigameRemote = StartMini
-    local catchRemote = REFishDoneRE or REFishDone
-
-    lagSwitchThread = task.spawn(function()
-        while lagSwitchEnabled do
-            pcall(function()
-                local t = workspace:GetServerTimeNow()
-                -- Satu kali charge
-                chargeRemote:InvokeServer(nil, nil, t, nil)
-                -- Kirim banyak permintaan minigame sekaligus
-                for _ = 1, burstCount do
-                    minigameRemote:InvokeServer(-1, 1, t)
-                    task.wait(0.005)  -- jeda sangat kecil antar permintaan
-                end
-                -- Tunggu sebentar agar semua minigame terproses di server
-                task.wait(burstDelay)
-                -- Satu kali catch untuk menyelesaikan semua minigame
-                catchRemote:FireServer()
-            end)
-            -- Jeda sebelum siklus berikutnya (bisa diatur)
-            task.wait(0.5)
-        end
-    end)
-end
-
-local function stopLagSwitch()
-    lagSwitchEnabled = false
-    if lagSwitchThread then
-        task.cancel(lagSwitchThread)
-        lagSwitchThread = nil
-    end
-    applyUltraBlatant3NFishingControllerStub(false)
-end
+MainTab:CreateSection({ Name = "Ultra Fast Reel" })
 
 MainTab:CreateToggle({
-    Name = "Lag-Switch Fishing",
-    SubText = "Burst minigames then catch all at once",
+    Name = "Ultra Fast Reel",
+    SubText = "Extreme speed fishing (use at own risk)",
     Default = false,
     Callback = function(state)
-        lagSwitchEnabled = state
         if state then
-            startLagSwitch()
-            Window:Notify({ Title = "Lag-Switch", Content = "Activated", Duration = 2 })
+            -- Set mode cast ke Fast (tidak perlu nunggu power)
+            Instant.SetCastMode("Fast")
+            -- Delay super kecil (0.05 detik)
+            Instant.SetCompleteDelay(0.05)
+            Instant.SetCastDelay(0.05)
+            -- Aktifkan Instant Fishing V2
+            Instant.Start()
+            Window:Notify({ Title = "Ultra Fast", Content = "Ultra Fast Reel activated", Duration = 2 })
         else
-            stopLagSwitch()
-            Window:Notify({ Title = "Lag-Switch", Content = "Stopped", Duration = 2 })
-        end
-    end
-})
-
--- Input untuk jumlah burst
-MainTab:CreateInput({
-    Name = "Burst Count",
-    SideLabel = "5",
-    Placeholder = "e.g., 5",
-    Default = "5",
-    Callback = function(value)
-        local num = tonumber(value)
-        if num and num >= 1 and num <= 20 then
-            burstCount = num
-        end
-    end
-})
-
--- Input untuk jeda sebelum catch
-MainTab:CreateInput({
-    Name = "Burst Delay (seconds)",
-    SideLabel = "0.3",
-    Placeholder = "e.g., 0.3",
-    Default = "0.3",
-    Callback = function(value)
-        local num = tonumber(value)
-        if num and num >= 0.01 and num <= 2 then
-            burstDelay = num
+            Instant.Stop()
+            Window:Notify({ Title = "Ultra Fast", Content = "Stopped", Duration = 2 })
         end
     end
 })
