@@ -647,20 +647,20 @@ end
 
 local delayfishing = 1
 
-----------------------------------------------------------------
--- INSTANT FISH MODULE
-----------------------------------------------------------------
+-- ============================================
+-- INSTANT FISH MODULE (FINAL – TURBO EDITION)
+-- ============================================
 local Instant = {}
 local PI = math.pi
-local CAST_MODE_LIST = { "Perfect", "Fast", "Random" }
+local CAST_MODE_LIST = { "Perfect", "Fast", "Random", "Turbo" }
 
-----------------------------------------------------------------
--- REMOTES
-----------------------------------------------------------------
+-- Remote lokal (pastikan sudah ada di file utama)
 local RF_ChargeFishingRod = ChargeRod
 local RE_CatchFishCompleted = REFishDoneRE or REFishDone
 local RF_RequestFishingMinigameStarted = StartMini
+local FishingMinigameEvent = FishingMinigameChanged  -- RemoteEvent lokal
 
+-- State
 local state = {
     enabled = false,
     running = false,
@@ -671,81 +671,31 @@ local state = {
     notifDuration = 4.7,
 }
 
+-- Task tracker
 local loopTask = nil
+local InstantTasks = {}
 local notifHooked = false
+local notifOriginalDeliver = nil
+local notifOriginalTween = nil
 
-function getPowerAtTime(chargeTime, elapsed)
-    local speed = Random.new(chargeTime):NextInteger(4, 10)
-    local angle = PI / 2 + elapsed * speed
-    return (1 - math.sin(angle)) / 2
-end
+-- Turbo
+local turboConnection = nil
+local turboMinigameStarted = false
 
-function waitForPower(chargeTime, threshold)
-    local deadline = chargeTime + 2.0
-    while workspace:GetServerTimeNow() < deadline do
-        local elapsed = workspace:GetServerTimeNow() - chargeTime
-        local power = getPowerAtTime(chargeTime, elapsed)
-        if power >= threshold then
-            return elapsed, power
-        end
-        task.wait(0.001)
-    end
-    local elapsed = workspace:GetServerTimeNow() - chargeTime
-    return elapsed, getPowerAtTime(chargeTime, elapsed)
-end
-
-function hookNotificationDelay()
-    if notifHooked then return end
-
-    local ok, controller = pcall(function()
-        return require(ReplicatedStorage.Controllers.TextNotificationController)
-    end)
-
-    if not ok or not controller then
-        return
-    end
-
-    if not controller.DeliverNotification then
-        return
-    end
-
-    local originalDeliver = controller.DeliverNotification
-    controller.DeliverNotification = function(self, p24)
-        if state.enabled and state.notifDelay > 0 then
-            task.spawn(function()
-                task.wait(state.notifDelay)
-                originalDeliver(self, p24)
-            end)
-        else
-            originalDeliver(self, p24)
-        end
-    end
-
-    if controller.Tween then
-        local originalTween = controller.Tween
-        controller.Tween = function(self, tile, duration, options)
-            local finalDuration = duration
-            if state.enabled and state.notifDuration > 0 then
-                finalDuration = duration + state.notifDuration
-            end
-            return originalTween(self, tile, finalDuration, options)
-        end
-    end
-
-    notifHooked = true
-end
-
-function safeInvoke(remote, ...)
+-- ============================================
+-- Safe remote invocations
+-- ============================================
+local function safeInvoke(remote, ...)
     if not remote then return end
     local args = { ... }
     task.spawn(function()
         pcall(function()
-            remote:InvokeServer(unpack(args))
+            remote:InvokeServer(table.unpack(args))
         end)
     end)
 end
 
-function safeFire(remote, ...)
+local function safeFire(remote, ...)
     if not remote then return end
     task.spawn(function()
         pcall(function()
@@ -754,57 +704,209 @@ function safeFire(remote, ...)
     end)
 end
 
-function handleCastMode(t0)
-    local mode = state.castMode
+-- ============================================
+-- Power calculation & wait
+-- ============================================
+local function getPowerAtTime(chargeTime, elapsed)
+    local speed = Random.new(chargeTime):NextInteger(4, 10)
+    local angle = PI / 2 + elapsed * speed
+    return (1 - math.sin(angle)) / 2
+end
 
-    if mode == "Perfect" then
-        local _, power = waitForPower(t0, 0.97)
-        return power
+local function waitForPower(chargeTime, threshold)
+    local deadline = chargeTime + 2.0
+    while workspace:GetServerTimeNow() < deadline do
+        local elapsed = workspace:GetServerTimeNow() - chargeTime
+        local power = getPowerAtTime(chargeTime, elapsed)
+        if power >= threshold then
+            return elapsed, power
+        end
+        task.wait(0.01)
+    end
+    local elapsed = workspace:GetServerTimeNow() - chargeTime
+    return elapsed, getPowerAtTime(chargeTime, elapsed)
+end
+
+-- ============================================
+-- Turbo mode handler
+-- ============================================
+local function enableTurboMode()
+    if turboConnection then return end
+    if not FishingMinigameEvent then
+        warn("[Instant V2 Turbo] FishingMinigameChanged not found!")
+        return
+    end
+    turboConnection = FishingMinigameEvent.OnClientEvent:Connect(function()
+        turboMinigameStarted = true
+    end)
+end
+
+local function disableTurboMode()
+    if turboConnection then
+        turboConnection:Disconnect()
+        turboConnection = nil
+    end
+    turboMinigameStarted = false
+end
+
+-- ============================================
+-- Core casting logic
+-- ============================================
+local function performCast(mode)
+    local t0 = workspace:GetServerTimeNow()
+    safeInvoke(RF_ChargeFishingRod, nil, nil, t0, nil)
+
+    if mode == "Turbo" then
+        -- Kirim minigame request dengan power minimal
+        safeInvoke(RF_RequestFishingMinigameStarted, 0, 0.5, t0)
+        -- Tunggu event minigame dengan timeout
+        local waited = 0
+        while not turboMinigameStarted and waited < 0.2 do
+            task.wait(0.001)
+            waited = waited + 0.001
+        end
+        turboMinigameStarted = false
+        -- Langsung selesaikan
+        safeFire(RE_CatchFishCompleted)
+    elseif mode == "Perfect" then
+        local _, p = waitForPower(t0, 0.97)
+        safeInvoke(RF_RequestFishingMinigameStarted, 0, p, t0)
     elseif mode == "Random" then
         local randomElapsed = math.random(0, 100) / 100 * (PI / 4)
         task.wait(randomElapsed)
         local elapsed = workspace:GetServerTimeNow() - t0
-        return getPowerAtTime(t0, elapsed)
-    else
+        local power = getPowerAtTime(t0, elapsed)
+        safeInvoke(RF_RequestFishingMinigameStarted, 0, power, t0)
+    else -- Fast
+        task.wait(0.02)
         local elapsed = workspace:GetServerTimeNow() - t0
-        return getPowerAtTime(t0, elapsed)
+        local power = getPowerAtTime(t0, elapsed)
+        safeInvoke(RF_RequestFishingMinigameStarted, 0, power, t0)
     end
 end
 
-function startLoop()
+-- ============================================
+-- Notification hook (with restore)
+-- ============================================
+local function hookNotificationDelay()
+    if notifHooked then return end
+    local ok, controller = pcall(function()
+        return require(ReplicatedStorage.Controllers.TextNotificationController)
+    end)
+    if not ok or not controller then return end
+    notifOriginalDeliver = controller.DeliverNotification
+    notifOriginalTween = controller.Tween
+
+    if notifOriginalDeliver then
+        controller.DeliverNotification = function(self, p24)
+            if state.enabled and state.notifDelay > 0 then
+                task.spawn(function()
+                    task.wait(state.notifDelay)
+                    if notifOriginalDeliver then notifOriginalDeliver(self, p24) end
+                end)
+            else
+                if notifOriginalDeliver then notifOriginalDeliver(self, p24) end
+            end
+        end
+    end
+
+    if notifOriginalTween then
+        controller.Tween = function(self, tile, duration, options)
+            local finalDuration = duration
+            if state.enabled and state.notifDuration > 0 then
+                finalDuration = duration + state.notifDuration
+            end
+            if notifOriginalTween then
+                return notifOriginalTween(self, tile, finalDuration, options)
+            end
+        end
+    end
+    notifHooked = true
+end
+
+local function unhookNotificationDelay()
+    if not notifHooked then return end
+    pcall(function()
+        local controller = ReplicatedStorage.Controllers:FindFirstChild("TextNotificationController")
+        if controller then
+            if notifOriginalDeliver then controller.DeliverNotification = notifOriginalDeliver end
+            if notifOriginalTween then controller.Tween = notifOriginalTween end
+        end
+    end)
+    notifOriginalDeliver = nil
+    notifOriginalTween = nil
+    notifHooked = false
+end
+
+-- ============================================
+-- Main loop (optimized for Turbo)
+-- ============================================
+local function startLoop()
     if state.running then return end
     state.running = true
+    local lastSuccessTick = tick()
 
-    while state.enabled do
-        local t0 = workspace:GetServerTimeNow()
-        safeInvoke(RF_ChargeFishingRod, nil, nil, t0, nil)
-        local power = handleCastMode(t0)
-        safeInvoke(RF_RequestFishingMinigameStarted, 0, power, t0)
-        task.wait(state.completeDelay)
-        task.wait(0.01)
-        safeFire(RE_CatchFishCompleted)
-        task.wait(state.castDelay)
+    local ok, err = pcall(function()
+        while state.enabled do
+            -- Anti‑stuck
+            if tick() - lastSuccessTick > 10 then
+                if state.castMode ~= "Turbo" then
+                    safeFire(RE_CatchFishCompleted)
+                end
+                lastSuccessTick = tick()
+            end
+
+            performCast(state.castMode)
+
+            if state.castMode == "Turbo" then
+                -- Turbo already caught fish in performCast, just wait cast delay
+                task.wait(state.castDelay)
+                lastSuccessTick = tick()
+            else
+                -- Normal modes: wait complete delay, then fire catch
+                task.wait(state.completeDelay)
+                task.wait(0.01)
+                safeFire(RE_CatchFishCompleted)
+                lastSuccessTick = tick()
+                task.wait(state.castDelay)
+            end
+        end
+    end)
+
+    if not ok then
+        warn("[Instant Fishing V2] Loop error:", err)
     end
-
     state.running = false
+    if state.enabled then
+        warn("[Instant Fishing V2] Force stopping due to error.")
+        Instant.Stop()
+    end
 end
 
+-- ============================================
+-- Public API
+-- ============================================
 function Instant.SetCastMode(mode)
     if table.find(CAST_MODE_LIST, mode) then
         state.castMode = mode
+        if mode == "Turbo" then
+            enableTurboMode()
+        else
+            disableTurboMode()
+        end
     end
 end
 
 function Instant.SetCompleteDelay(v)
     local num = tonumber(v)
-    if num and num >= 0 then
+    if num and num >= 0.1 and num <= 30 then
         state.completeDelay = num
     end
 end
 
 function Instant.SetCastDelay(v)
     local num = tonumber(v)
-    if num and num >= 0 then
+    if num and num >= 0 and num <= 10 then
         state.castDelay = num
     end
 end
@@ -814,26 +916,41 @@ function Instant.Start()
     state.enabled = true
     hookNotificationDelay()
     loopTask = task.spawn(startLoop)
-    if _G._NEXTHUB and _G._NEXTHUB.tasks then
-        table.insert(_G._NEXTHUB.tasks, loopTask)
-    end
+    table.insert(InstantTasks, loopTask)
 end
 
 function Instant.Stop()
     state.enabled = false
     if loopTask then
         pcall(task.cancel, loopTask)
+        for i, t in ipairs(InstantTasks) do
+            if t == loopTask then
+                table.remove(InstantTasks, i)
+                break
+            end
+        end
         loopTask = nil
     end
     state.running = false
+    unhookNotificationDelay()
+    disableTurboMode()
 end
 
 function Instant.IsActive()
     return state.enabled
 end
 
--- Compatibility wrappers for existing UI flow
-function CallFishDone(remote, ...)
+-- ============================================
+-- Compatibility functions
+-- ============================================
+function Instant.instant()
+    if state.enabled then return end
+    performCast(state.castMode)
+    task.wait(delayfishing)
+    safeFire(RE_CatchFishCompleted)
+end
+
+function Instant.CallFishDone(remote, ...)
     if not remote then return end
     local ok = pcall(function() remote:InvokeServer() end)
     if not ok then
@@ -841,16 +958,7 @@ function CallFishDone(remote, ...)
     end
 end
 
-function instant()
-    local t0 = workspace:GetServerTimeNow()
-    safeInvoke(RF_ChargeFishingRod, nil, nil, t0, nil)
-    local power = handleCastMode(t0)
-    safeInvoke(RF_RequestFishingMinigameStarted, 0, power, t0)
-    task.wait(delayfishing)
-    safeFire(RE_CatchFishCompleted)
-end
-
-function UB_start()
+function Instant.UB_start()
     Config.UB.Active = true
     Config.UB.Stats.startTime = tick()
     Instant.SetCompleteDelay(Config.UB.Settings.CompleteDelay)
@@ -859,29 +967,34 @@ function UB_start()
     Instant.Start()
 end
 
-function UB_stop()
+function Instant.UB_stop()
     Config.UB.Active = false
     Instant.Stop()
 end
 
-function onToggleUB(value)
+function Instant.onToggleUB(value)
+    Config.HookNotif = value
     if value then
-        Config.HookNotif = true
-        UB_start()
+        Instant.UB_start()
     else
-        UB_stop()
-        Config.HookNotif = false
+        Instant.UB_stop()
     end
 end
 
-function startInstantFishingV2()
-    UB_start()
+function Instant.startInstantFishingV2()
+    Instant.UB_start()
 end
 
-function stopInstantFishingV2()
-    UB_stop()
+function Instant.stopInstantFishingV2()
+    Instant.UB_stop()
 end
 
+-- Backward compatibility (opsional)
+_G.startInstantFishingV2 = Instant.startInstantFishingV2
+_G.stopInstantFishingV2 = Instant.stopInstantFishingV2
+_G.onToggleUB = Instant.onToggleUB
+_G.instant = Instant.instant
+_G.CallFishDone = Instant.CallFishDone
 -- =============================
 -- Instant Bobber (moons.lua: patchInstantBaitOverrideToCastPosition)
 -- =============================
@@ -3227,204 +3340,7 @@ MainTab:CreateToggle({
     end,
 })
 
-MainTab:CreateSection({ Name = "Instant Fast Reel" })
 
--- State lokal
-local instantFastReelEnabled = false
-local instantFastReelThread = nil
-local aggressiveMode = false
-
-local function startInstantFastReel()
-    if instantFastReelThread then
-        task.cancel(instantFastReelThread)
-    end
-
-    local chargeRemote = ChargeRod
-    local minigameRemote = StartMini
-    local catchRemote = REFishDoneRE or REFishDone
-    local minigameEvent = FishingMinigameChanged
-
-    if not minigameEvent then
-        Window:Notify({ Title = "Error", Content = "FishingMinigameChanged not found", Duration = 3 })
-        return
-    end
-
-    instantFastReelThread = task.spawn(function()
-        while instantFastReelEnabled do
-            local ok = pcall(function()
-                -- Step 1: Charge
-                chargeRemote:InvokeServer(nil, nil, workspace:GetServerTimeNow(), nil)
-
-                -- Step 2: Request minigame
-                minigameRemote:InvokeServer(0, 0.5, workspace:GetServerTimeNow())
-
-                if aggressiveMode then
-                    -- Aggressive: langsung catch tanpa menunggu event
-                    task.wait(0.01)  -- jeda minimal untuk server memproses
-                    catchRemote:FireServer()
-                else
-                    -- Normal: tunggu event minigame
-                    local minigameStarted = false
-                    local conn
-                    conn = minigameEvent.OnClientEvent:Connect(function()
-                        minigameStarted = true
-                    end)
-
-                    -- Tunggu maksimal 0.3 detik dengan polling cepat
-                    for _ = 1, 60 do  -- 60 * 0.005 = 0.3 detik
-                        if minigameStarted then break end
-                        task.wait(0.005)
-                    end
-                    conn:Disconnect()
-
-                    if minigameStarted then
-                        catchRemote:FireServer()
-                    else
-                        -- Fallback: tetap coba catch meskipun event tak terdeteksi
-                        catchRemote:FireServer()
-                    end
-                end
-            end)
-
-            if not ok then
-                warn("[Instant Fast Reel] Cycle error, retrying...")
-            end
-
-            -- Jeda acak sebelum siklus berikutnya (hindari deteksi pola)
-            local delay = 0.005 + math.random() * 0.015  -- 0.005–0.02 detik
-            task.wait(delay)
-        end
-    end)
-end
-
-local function stopInstantFastReel()
-    instantFastReelEnabled = false
-    if instantFastReelThread then
-        task.cancel(instantFastReelThread)
-        instantFastReelThread = nil
-    end
-end
-
--- Toggle Utama
-MainTab:CreateToggle({
-    Name = "Instant Fast Reel",
-    SubText = "Catch fish immediately after minigame starts",
-    Default = false,
-    Callback = function(state)
-        instantFastReelEnabled = state
-        if state then
-            startInstantFastReel()
-            Window:Notify({ Title = "Instant Fast Reel", Content = "Activated", Duration = 2 })
-        else
-            stopInstantFastReel()
-            Window:Notify({ Title = "Instant Fast Reel", Content = "Stopped", Duration = 2 })
-        end
-    end
-})
-
--- Toggle Aggressive Mode
-MainTab:CreateToggle({
-    Name = "Aggressive Mode (No Event Wait)",
-    SubText = "Catch without waiting for minigame event (may fail more)",
-    Default = false,
-    Callback = function(state)
-        aggressiveMode = state
-        if instantFastReelEnabled then
-            -- Restart loop agar mode baru diterapkan
-            stopInstantFastReel()
-            instantFastReelEnabled = true
-            startInstantFastReel()
-            Window:Notify({ Title = "Aggressive Mode", Content = state and "ON" or "OFF", Duration = 2 })
-        end
-    end
-})
-
-MainTab:CreateSection({ Name = "Fishing Simulator" })
-
-local fishingSimulatorEnabled = false
-local fishingSimulatorConnections = {}
-
--- Helper: panggil catch dengan cara yang benar (Invoke dulu, fallback Fire)
-local function forceCatch()
-    local catchRemote = REFishDoneRE or REFishDone
-    if not catchRemote then return end
-    local ok = pcall(function()
-        catchRemote:InvokeServer()
-    end)
-    if not ok then
-        pcall(function()
-            catchRemote:FireServer()
-        end)
-    end
-end
-
--- Helper: mulai casting (charge + minigame request)
-local function startCasting()
-    pcall(function()
-        -- Kirim timestamp dan power = 1 agar pasti diterima
-        local t = workspace:GetServerTimeNow()
-        ChargeRod:InvokeServer(nil, nil, t, nil)
-        StartMini:InvokeServer(-1, 1, t)   -- power 1, parameter -1 seperti Blatant
-    end)
-end
-
-local function cleanupFishingSimulator()
-    for _, conn in ipairs(fishingSimulatorConnections) do
-        pcall(function() conn:Disconnect() end)
-    end
-    fishingSimulatorConnections = {}
-end
-
-local function enableFishingSimulator()
-    if fishingSimulatorEnabled then return end
-    fishingSimulatorEnabled = true
-    cleanupFishingSimulator()
-
-    -- Hook 1: Saat minigame muncul, selesaikan (dengan jeda kecil agar server siap)
-    if FishingMinigameChanged then
-        local conn = FishingMinigameChanged.OnClientEvent:Connect(function()
-            if not fishingSimulatorEnabled then return end
-            task.wait(0.03)  -- jeda 30ms agar server siap menerima catch
-            forceCatch()
-        end)
-        table.insert(fishingSimulatorConnections, conn)
-    end
-
-    -- Hook 2: Setelah ikan tertangkap, langsung lempar lagi
-    local catchEvent = REFishGot or REFishCaught or REFishingCompleted
-    if catchEvent then
-        local conn = catchEvent.OnClientEvent:Connect(function()
-            if not fishingSimulatorEnabled then return end
-            startCasting()
-        end)
-        table.insert(fishingSimulatorConnections, conn)
-    end
-
-    -- Mulai casting pertama
-    startCasting()
-    print("[Fishing Simulator] Activated – improved")
-end
-
-local function disableFishingSimulator()
-    fishingSimulatorEnabled = false
-    cleanupFishingSimulator()
-    print("[Fishing Simulator] Deactivated")
-end
-
-MainTab:CreateToggle({
-    Name = "Fishing Simulator",
-    SubText = "Event-driven instant catch (fixed)",
-    Default = false,
-    Callback = function(state)
-        if state then
-            enableFishingSimulator()
-            Window:Notify({ Title = "Fishing Simulator", Content = "Activated", Duration = 2 })
-        else
-            disableFishingSimulator()
-            Window:Notify({ Title = "Fishing Simulator", Content = "Stopped", Duration = 2 })
-        end
-    end
-})
 
 -- =================
 -- Instant Bobber UI
