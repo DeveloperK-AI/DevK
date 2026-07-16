@@ -3227,120 +3227,74 @@ MainTab:CreateToggle({
     end,
 })
 
-MainTab:CreateSection({ Name = "Event-Based Fishing" })
+MainTab:CreateSection({ Name = "Multi Catch" })
 
--- ============================================
--- [SECURITY] State lokal untuk Event‑Based Fishing
--- ============================================
-local eventBasedEnabled = false
-local eventBasedMode = "Fast"  -- "Fast" atau "Turbo"
-local eventBasedConnections = {}
+-- State lokal
+local multiCatchEnabled = false
+local multiCatchCount = 10  -- jumlah ikan per tarikan
+local multiCatchConnection = nil
 
--- Fungsi untuk memulai casting (sama seperti di Instant V2)
-local function eventBasedCast()
-    pcall(function()
-        local t = workspace:GetServerTimeNow()
-        ChargeRod:InvokeServer(nil, nil, t, nil)
-        StartMini:InvokeServer(0, 0.5, t)   -- power default 0.5
-    end)
-end
+-- Fungsi untuk mengirim banyak catch
+local function performMultiCatch()
+    local catchRemote = REFishDoneRE or REFishDone
+    if not catchRemote then return end
 
--- Fungsi untuk menyelesaikan minigame (disesuaikan dengan mode)
-local function eventBasedCatch()
-    if eventBasedMode == "Turbo" then
-        -- Langsung panggil catch (tidak perlu menunggu event selesai, karena eventBasedCast sudah menunggu minigame)
-        pcall(function() (REFishDoneRE or REFishDone):FireServer() end)
-    else
-        -- Mode Fast: beri sedikit jeda agar server siap, lalu catch
-        task.wait(0.05)
-        pcall(function() (REFishDoneRE or REFishDone):FireServer() end)
+    for i = 1, multiCatchCount do
+        pcall(function()
+            catchRemote:FireServer()
+        end)
+        -- Jeda sangat kecil antar catch (agar server memproses semua)
+        task.wait(0.01)
     end
 end
 
--- Hook untuk minigame (selesaikan minigame)
-local function connectMinigameHook()
-    if not FishingMinigameChanged then return false end
-    local conn = FishingMinigameChanged.OnClientEvent:Connect(function()
-        if not eventBasedEnabled then return end
-        eventBasedCatch()
-    end)
-    table.insert(eventBasedConnections, conn)
-    return true
-end
-
--- Hook untuk catch completed (mulai casting lagi)
-local function connectCatchHook()
-    -- Coba beberapa event yang mungkin dipakai game
-    local catchEvent = REFishGot or REFishCaught or REFishingCompleted
-    if not catchEvent then return false end
-    local conn = catchEvent.OnClientEvent:Connect(function()
-        if not eventBasedEnabled then return end
-        eventBasedCast()
-    end)
-    table.insert(eventBasedConnections, conn)
-    return true
-end
-
--- Bersihkan semua koneksi
-local function cleanupEventBased()
-    for _, conn in ipairs(eventBasedConnections) do
-        pcall(function() conn:Disconnect() end)
-    end
-    eventBasedConnections = {}
-end
-
--- Aktifkan fitur
-local function enableEventBased()
-    if eventBasedEnabled then return end
-    eventBasedEnabled = true
-    cleanupEventBased()
-
-    local minigameOk = connectMinigameHook()
-    local catchOk = connectCatchHook()
-    if not minigameOk or not catchOk then
-        Window:Notify({ Title = "Event‑Based", Content = "Some hooks failed. Check remote definitions.", Duration = 5 })
+-- Pasang hook ke event minigame
+local function enableMultiCatch()
+    if multiCatchConnection then return end
+    if not FishingMinigameChanged then
+        Window:Notify({ Title = "Error", Content = "FishingMinigameChanged not found", Duration = 3 })
+        return
     end
 
-    -- Mulai casting pertama
-    eventBasedCast()
-    print("[Event‑Based] Activated in mode:", eventBasedMode)
+    multiCatchConnection = FishingMinigameChanged.OnClientEvent:Connect(function()
+        if not multiCatchEnabled then return end
+        task.spawn(performMultiCatch)
+    end)
 end
 
--- Nonaktifkan fitur
-local function disableEventBased()
-    eventBasedEnabled = false
-    cleanupEventBased()
-    print("[Event‑Based] Deactivated")
+local function disableMultiCatch()
+    if multiCatchConnection then
+        multiCatchConnection:Disconnect()
+        multiCatchConnection = nil
+    end
 end
 
--- Dropdown mode
-MainTab:CreateDropdown({
-    Name = "Event‑Based Mode",
-    Items = { "Fast", "Turbo" },
-    Default = "Fast",
-    Callback = function(v)
-        eventBasedMode = v
-        if eventBasedEnabled then
-            -- Jika sedang berjalan, restart dengan mode baru
-            disableEventBased()
-            task.wait(0.1)
-            enableEventBased()
+-- Input untuk jumlah ikan
+MainTab:CreateInput({
+    Name = "Fish Count per Cast",
+    Placeholder = "10",
+    Default = "10",
+    Callback = function(value)
+        local num = tonumber(value)
+        if num and num > 0 and num <= 100 then
+            multiCatchCount = num
         end
     end
 })
 
--- Toggle
+-- Toggle Multi Catch
 MainTab:CreateToggle({
-    Name = "Event‑Based Fishing",
-    SubText = "No loop – pure event‑driven auto‑fishing",
+    Name = "Multi Catch (God Mode)",
+    SubText = "Catch multiple fish in one pull",
     Default = false,
     Callback = function(state)
+        multiCatchEnabled = state
         if state then
-            enableEventBased()
-            Window:Notify({ Title = "Event‑Based", Content = "Activated", Duration = 2 })
+            enableMultiCatch()
+            Window:Notify({ Title = "Multi Catch", Content = "Will catch " .. multiCatchCount .. " fish per pull", Duration = 3 })
         else
-            disableEventBased()
-            Window:Notify({ Title = "Event‑Based", Content = "Stopped", Duration = 2 })
+            disableMultiCatch()
+            Window:Notify({ Title = "Multi Catch", Content = "Disabled", Duration = 2 })
         end
     end
 })
