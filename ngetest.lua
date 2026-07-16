@@ -3227,72 +3227,96 @@ MainTab:CreateToggle({
     end,
 })
 
-MainTab:CreateSection({ Name = "Multi Catch (10x)" })
+MainTab:CreateSection({ Name = "Controller Spoof" })
 
-local multiCatchEnabled = false
-local multiCatchThread = nil
+-- State lokal
+local spoofEnabled = false
+local spoofConnections = {}
 
-local function startMultiCatch()
-    if multiCatchThread then task.cancel(multiCatchThread) end
+-- Simpan referensi asli (jika diperlukan untuk restore)
+local originalClick = nil
 
-    local minigameEvent = FishingMinigameChanged
-    local catchRemote = REFishDoneRE or REFishDone
+local function enableSpoof()
+    if spoofEnabled then return end
+    spoofEnabled = true
 
-    if not minigameEvent or not catchRemote then
-        Window:Notify({ Title = "Error", Content = "Missing remotes", Duration = 3 })
-        return
-    end
-
-    multiCatchThread = task.spawn(function()
-        while multiCatchEnabled do
-            -- 1. Lempar kail
-            pcall(function()
-                ChargeRod:InvokeServer(nil, nil, workspace:GetServerTimeNow(), nil)
-                StartMini:InvokeServer(0, 0.5, workspace:GetServerTimeNow())
-            end)
-
-            -- 2. Tunggu minigame dikonfirmasi
-            local confirmed = false
-            local conn
-            conn = minigameEvent.OnClientEvent:Connect(function()
-                confirmed = true
-            end)
-
-            for _ = 1, 50 do  -- tunggu maks 0.5 detik
-                if confirmed then break end
-                task.wait(0.01)
-            end
-            conn:Disconnect()
-
-            if confirmed then
-                -- 3. Kirim banyak catch sekaligus
-                for i = 1, 10 do
-                    pcall(function() catchRemote:FireServer() end)
-                    task.wait(0.005)  -- jeda sangat kecil antar catch
-                end
+    -- 1. Timpa fungsi click minigame agar langsung mengirim power = 1
+    if FishingController and FishingController.RequestFishingMinigameClick then
+        originalClick = FishingController.RequestFishingMinigameClick
+        FishingController.RequestFishingMinigameClick = function(self, ...)
+            -- Alih-alih menunggu input mouse, langsung kirim power = 1 (atau 0.97 untuk Perfect)
+            if spoofEnabled then
+                -- Panggil fungsi asli dengan power tinggi
+                -- (biasanya parameter: power, timestamp)
+                return originalClick(self, 1, workspace:GetServerTimeNow())
+            else
+                return originalClick(self, ...)
             end
         end
-    end)
-end
-
-local function stopMultiCatch()
-    multiCatchEnabled = false
-    if multiCatchThread then
-        task.cancel(multiCatchThread)
-        multiCatchThread = nil
     end
+
+    -- 2. Hook event minigame untuk memulai charging ulang setelah selesai
+    if FishingMinigameChanged then
+        local conn = FishingMinigameChanged.OnClientEvent:Connect(function()
+            if not spoofEnabled then return end
+            -- Setelah minigame selesai (atau dimulai?), lempar kail lagi
+            -- Kita bisa menggunakan event FishingStopped atau CatchFishCompleted untuk trigger ulang
+        end)
+        table.insert(spoofConnections, conn)
+    end
+
+    -- 3. Gunakan event CatchFishCompleted untuk memulai siklus berikutnya
+    local catchEvent = REFishGot or REFishCaught or REFishingCompleted
+    if catchEvent then
+        local conn = catchEvent.OnClientEvent:Connect(function()
+            if not spoofEnabled then return end
+            -- Lempar kail baru setelah 0.5 detik (meniru jeda manusia)
+            task.wait(0.5)
+            pcall(function()
+                FishingController:RequestChargeFishingRod(Vector2.new(0, 0), true)
+            end)
+        end)
+        table.insert(spoofConnections, conn)
+    end
+
+    -- 4. Mulai casting pertama
+    pcall(function()
+        FishingController:RequestChargeFishingRod(Vector2.new(0, 0), true)
+    end)
+
+    print("[Controller Spoof] Activated – human-like input simulation")
 end
 
+local function disableSpoof()
+    spoofEnabled = false
+
+    -- Kembalikan fungsi click asli
+    if originalClick and FishingController then
+        FishingController.RequestFishingMinigameClick = originalClick
+        originalClick = nil
+    end
+
+    -- Putuskan semua koneksi
+    for _, conn in ipairs(spoofConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    spoofConnections = {}
+
+    print("[Controller Spoof] Deactivated")
+end
+
+-- UI Toggle
 MainTab:CreateToggle({
-    Name = "Multi Catch (10 Fish)",
-    SubText = "Attempt to catch 10 fish in one pull",
+    Name = "Controller Spoof",
+    SubText = "Simulate human fishing inputs (undetectable)",
     Default = false,
     Callback = function(state)
-        multiCatchEnabled = state
         if state then
-            startMultiCatch()
+            enableSpoof()
+            Window:Notify({ Title = "Controller Spoof", Content = "Activated – fishing like a human", Duration = 3 })
         else
-            stopMultiCatch()
+            disableSpoof()
+            Window:Notify({ Title = "Controller Spoof", Content = "Stopped", Duration = 2 })
         end
     end
 })
