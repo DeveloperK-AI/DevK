@@ -4915,99 +4915,95 @@ function BlatantSkipCycle(session)
     end
 end
 
-MainTab:CreateSection({ Name = "Multi Catch (Blatant Style)" })
+MainTab:CreateSection({ Name = "Lag-Switch Fishing" })
 
 -- State lokal
-local multiCatchEnabled = false
-local multiCatchThread = nil
-local multiCatchCycles = 5      -- default 5 siklus per tarikan
-local multiCatchDelay = 0.02    -- default 0.02 detik antar siklus
+local lagSwitchEnabled = false
+local lagSwitchThread = nil
+local burstCount = 5        -- jumlah permintaan minigame yang ditumpuk
+local burstDelay = 0.3      -- jeda sebelum catch (detik)
 
--- Fungsi untuk memulai multi catch
-local function startMultiCatch()
-    if multiCatchThread then task.cancel(multiCatchThread) end
+local function startLagSwitch()
+    if lagSwitchThread then task.cancel(lagSwitchThread) end
 
     -- Pastikan stub FishingController aktif (seperti Blatant V1)
     applyUltraBlatant3NFishingControllerStub(true)
 
-    -- Remote lokal (pastikan sudah ada)
     local chargeRemote = ChargeRod
     local minigameRemote = StartMini
     local catchRemote = REFishDoneRE or REFishDone
 
-    multiCatchThread = task.spawn(function()
-        while multiCatchEnabled do
-            -- Lakukan sejumlah siklus berturut‑turut dalam satu tarikan
-            for i = 1, multiCatchCycles do
-                if not multiCatchEnabled then break end
-                pcall(function()
-                    local t = workspace:GetServerTimeNow()
-                    chargeRemote:InvokeServer(nil, nil, t, nil)
+    lagSwitchThread = task.spawn(function()
+        while lagSwitchEnabled do
+            pcall(function()
+                local t = workspace:GetServerTimeNow()
+                -- Satu kali charge
+                chargeRemote:InvokeServer(nil, nil, t, nil)
+                -- Kirim banyak permintaan minigame sekaligus
+                for _ = 1, burstCount do
                     minigameRemote:InvokeServer(-1, 1, t)
-                    -- Gunakan jeda yang bisa diatur
-                    task.wait(multiCatchDelay)
-                    catchRemote:FireServer()
-                end)
-                -- Jeda mikro setelah setiap catch agar server tidak menolak
-                task.wait(0.005)
-            end
-            -- Jeda setelah satu tarikan sebelum mengulang (bisa diatur juga nanti)
+                    task.wait(0.005)  -- jeda sangat kecil antar permintaan
+                end
+                -- Tunggu sebentar agar semua minigame terproses di server
+                task.wait(burstDelay)
+                -- Satu kali catch untuk menyelesaikan semua minigame
+                catchRemote:FireServer()
+            end)
+            -- Jeda sebelum siklus berikutnya (bisa diatur)
             task.wait(0.5)
         end
     end)
 end
 
--- Fungsi untuk menghentikan
-local function stopMultiCatch()
-    multiCatchEnabled = false
-    if multiCatchThread then
-        task.cancel(multiCatchThread)
-        multiCatchThread = nil
+local function stopLagSwitch()
+    lagSwitchEnabled = false
+    if lagSwitchThread then
+        task.cancel(lagSwitchThread)
+        lagSwitchThread = nil
     end
     applyUltraBlatant3NFishingControllerStub(false)
 end
 
--- UI Toggle
 MainTab:CreateToggle({
-    Name = "Multi Catch (3-7 Fish)",
-    SubText = "Blatant-style multi catch with adjustable settings",
+    Name = "Lag-Switch Fishing",
+    SubText = "Burst minigames then catch all at once",
     Default = false,
     Callback = function(state)
-        multiCatchEnabled = state
+        lagSwitchEnabled = state
         if state then
-            startMultiCatch()
-            Window:Notify({ Title = "Multi Catch", Content = "Activated", Duration = 2 })
+            startLagSwitch()
+            Window:Notify({ Title = "Lag-Switch", Content = "Activated", Duration = 2 })
         else
-            stopMultiCatch()
-            Window:Notify({ Title = "Multi Catch", Content = "Stopped", Duration = 2 })
+            stopLagSwitch()
+            Window:Notify({ Title = "Lag-Switch", Content = "Stopped", Duration = 2 })
         end
     end
 })
 
--- Input untuk jumlah siklus (fish per pull)
+-- Input untuk jumlah burst
 MainTab:CreateInput({
-    Name = "Cycles per Pull",
+    Name = "Burst Count",
     SideLabel = "5",
     Placeholder = "e.g., 5",
     Default = "5",
     Callback = function(value)
         local num = tonumber(value)
         if num and num >= 1 and num <= 20 then
-            multiCatchCycles = num
+            burstCount = num
         end
     end
 })
 
--- Input untuk jeda antar siklus (detik)
+-- Input untuk jeda sebelum catch
 MainTab:CreateInput({
-    Name = "Cycle Delay (seconds)",
-    SideLabel = "0.02",
-    Placeholder = "e.g., 0.02",
-    Default = "0.02",
+    Name = "Burst Delay (seconds)",
+    SideLabel = "0.3",
+    Placeholder = "e.g., 0.3",
+    Default = "0.3",
     Callback = function(value)
         local num = tonumber(value)
-        if num and num >= 0.001 and num <= 1 then
-            multiCatchDelay = num
+        if num and num >= 0.01 and num <= 2 then
+            burstDelay = num
         end
     end
 })
