@@ -668,7 +668,7 @@ local state = {
     completeDelay = 1,
     castDelay = 0.2,
     notifDelay = 1.6,
-    notifDuration = ,
+    notifDuration = 2,
 }
 
 local loopTask = nil
@@ -3130,7 +3130,7 @@ MainTab:CreateToggle({
                             task.wait(delayfishing)
                             CallFishDone(REFishDone, 1)
                         end)
-                        task.wait(0.4 + math.random() * 0.3)
+                        task.wait(0.3 + math.random() * 0.3)
                     end
                 end)
             end
@@ -3170,67 +3170,92 @@ MainTab:CreateInput({
 
 MainTab:CreateSection({ Name = "Instant Fast Reel" })
 
--- ============================================
--- [SECURITY] State lokal untuk Instant Fast Reel
--- ============================================
+-- State lokal
 local instantFastReelEnabled = false
-local minigameConnection = nil
+local instantFastReelThread = nil
 
--- Fungsi untuk memulai hook
+-- Fungsi untuk memulai loop
 local function startInstantFastReel()
-    if not FishingMinigameChanged then
-        Window:Notify({ Title = "Error", Content = "Remote FishingMinigameChanged not found.", Duration = 3 })
-        return
+    if instantFastReelThread then
+        task.cancel(instantFastReelThread)
     end
 
-    -- Hook event minigame: begitu minigame muncul, langsung catch
-    minigameConnection = FishingMinigameChanged.OnClientEvent:Connect(function()
-        if not instantFastReelEnabled then return end
-        -- Panggil catch secepatnya (tanpa delay)
-        task.spawn(function()
+    instantFastReelThread = task.spawn(function()
+        -- Siapkan remote (pastikan sudah lokal di file utama)
+        local chargeRodRemote = ChargeRod          -- RF("ChargeFishingRod")
+        local minigameRemote = StartMini           -- RF("RequestFishingMinigameStarted")
+        local catchRemote = REFishDoneRE or REFishDone  -- RE("CatchFishCompleted")
+        local minigameChangedEvent = FishingMinigameChanged  -- RE("FishingMinigameChanged")
+
+        if not minigameChangedEvent then
+            warn("[Instant Fast Reel] FishingMinigameChanged not found!")
+            return
+        end
+
+        while instantFastReelEnabled do
+            -- Step 1: Mulai charge (tanpa power, langsung)
             pcall(function()
-                REFishDoneRE:FireServer()
+                chargeRodRemote:InvokeServer(nil, nil, workspace:GetServerTimeNow(), nil)
             end)
-        end)
+
+            -- Step 2: Minta minigame dimulai
+            pcall(function()
+                minigameRemote:InvokeServer(0, 1, workspace:GetServerTimeNow())
+            end)
+
+            -- Step 3: Tunggu server mengkonfirmasi minigame sudah dimulai
+            local minigameStarted = false
+            local connection
+            connection = minigameChangedEvent.OnClientEvent:Connect(function()
+                minigameStarted = true
+            end)
+
+            -- Tunggu maksimal 1 detik
+            local waited = 1
+            while not minigameStarted and waited < 1 do
+                task.wait(0.01)
+                waited = waited + 0.01
+            end
+            connection:Disconnect()
+
+            if minigameStarted then
+                -- Step 4: Segera selesaikan minigame
+                pcall(function()
+                    catchRemote:FireServer()
+                end)
+            end
+
+            -- Jeda minimal sebelum siklus berikutnya (agar tidak di-spam server)
+            task.wait(0.2)
+        end
     end)
-
-    -- Aktifkan auto-cast (Instant Fishing V2 harus menyala)
-    Instant.SetCastMode("Fast")
-    Instant.SetCompleteDelay(1)   -- tidak perlu delay karena minigame akan langsung dipotong
-    Instant.SetCastDelay(0.2)    -- jeda minimal antar cast
-    Instant.Start()
-
-    print("[Instant Fast Reel] Hook installed – catching as soon as minigame appears.")
 end
 
--- Fungsi untuk menghentikan hook
+-- Fungsi untuk menghentikan
 local function stopInstantFastReel()
-    Instant.Stop()
-    if minigameConnection then
-        minigameConnection:Disconnect()
-        minigameConnection = nil
+    instantFastReelEnabled = false
+    if instantFastReelThread then
+        task.cancel(instantFastReelThread)
+        instantFastReelThread = nil
     end
-    print("[Instant Fast Reel] Hook removed.")
 end
 
--- Toggle di UI
+-- UI Toggle
 MainTab:CreateToggle({
     Name = "Instant Fast Reel",
-    SubText = "Catch fish instantly without waiting for minigame",
+    SubText = "Catch fish immediately after minigame starts",
     Default = false,
     Callback = function(state)
         instantFastReelEnabled = state
         if state then
             startInstantFastReel()
-            Window:Notify({ Title = "Instant Fast", Content = "Instant Fast Reel activated", Duration = 2 })
+            Window:Notify({ Title = "Instant Fast Reel", Content = "Activated", Duration = 2 })
         else
             stopInstantFastReel()
-            Window:Notify({ Title = "Instant Fast", Content = "Stopped", Duration = 2 })
+            Window:Notify({ Title = "Instant Fast Reel", Content = "Stopped", Duration = 2 })
         end
     end
 })
-
-
 
 MainTab:CreateSection({ Name = "Instant Fishing V2" })
 
@@ -3290,8 +3315,6 @@ MainTab:CreateToggle({
         end
     end,
 })
-
-
 
 -- =================
 -- Instant Bobber UI
@@ -4978,131 +5001,6 @@ function BlatantSkipCycle(session)
         task.wait(loopDelay)
     end
 end
-
-
-MainTab:CreateSection({ Name = "Blatant V2 (Stable)" })
-
--- State lokal
-local blatantV2Enabled = false
-local blatantV2Thread = nil
-local blatantV2Speed = 0.15        -- jeda setelah Charge sebelum Minigame (default 0.15 detik)
-local blatantV2LoopDelay = 0.3     -- jeda antar siklus (default 0.3 detik)
-local blatantV2RetryOnFail = true  -- apakah akan retry jika catch gagal?
-
--- Fungsi untuk memulai Blatant V2
-local function startBlatantV2()
-    if blatantV2Thread then task.cancel(blatantV2Thread) end
-
-    -- Aktifkan stub FishingController (sama seperti V1)
-    applyUltraBlatant3NFishingControllerStub(true)
-
-    local chargeRemote = ChargeRod
-    local minigameRemote = StartMini
-    local catchRemote = REFishDoneRE or REFishDone
-
-    blatantV2Thread = task.spawn(function()
-        while blatantV2Enabled do
-            local success = false
-            local attempts = 0
-
-            -- Coba hingga berhasil atau sampai 3 kali percobaan
-            while not success and attempts < 3 and blatantV2Enabled do
-                attempts = attempts + 1
-                local ok = pcall(function()
-                    local t = workspace:GetServerTimeNow()
-                    -- Step 1: Charge
-                    chargeRemote:InvokeServer(nil, nil, t, nil)
-                    task.wait(blatantV2Speed)
-                    -- Step 2: Minigame
-                    minigameRemote:InvokeServer(-1, 1, t)
-                    task.wait(blatantV2Speed)
-                    -- Step 3: Catch
-                    catchRemote:FireServer()
-                end)
-
-                if ok then
-                    -- Tandai sementara sebagai sukses (kita tidak bisa verifikasi real-time)
-                    success = true
-                else
-                    warn("[Blatant V2] Cycle failed, retrying...")
-                    task.wait(0.1)
-                end
-            end
-
-            -- Jeda antar siklus
-            for _ = 1, math.floor(blatantV2LoopDelay * 10) do
-                if not blatantV2Enabled then break end
-                task.wait(0.1)
-            end
-        end
-    end)
-end
-
--- Fungsi untuk menghentikan
-local function stopBlatantV2()
-    blatantV2Enabled = false
-    if blatantV2Thread then
-        task.cancel(blatantV2Thread)
-        blatantV2Thread = nil
-    end
-    applyUltraBlatant3NFishingControllerStub(false)
-end
-
--- UI Toggle
-MainTab:CreateToggle({
-    Name = "Blatant V2 (Stable)",
-    SubText = "Reliable auto-fish with retry on failure",
-    Default = false,
-    Callback = function(state)
-        blatantV2Enabled = state
-        if state then
-            startBlatantV2()
-            Window:Notify({ Title = "Blatant V2", Content = "Activated", Duration = 2 })
-        else
-            stopBlatantV2()
-            Window:Notify({ Title = "Blatant V2", Content = "Stopped", Duration = 2 })
-        end
-    end
-})
-
--- Input untuk Speed
-MainTab:CreateInput({
-    Name = "Speed",
-    SideLabel = "0.15",
-    Placeholder = "e.g., 0.15",
-    Default = "0.15",
-    Callback = function(value)
-        local num = tonumber(value)
-        if num and num >= 0.05 and num <= 1 then
-            blatantV2Speed = num
-        end
-    end
-})
-
--- Input untuk Loop Delay
-MainTab:CreateInput({
-    Name = "Loop Delay",
-    SideLabel = "0.3",
-    Placeholder = "e.g., 0.3",
-    Default = "0.3",
-    Callback = function(value)
-        local num = tonumber(value)
-        if num and num >= 0.1 and num <= 2 then
-            blatantV2LoopDelay = num
-        end
-    end
-})
-
--- Toggle retry on fail
-MainTab:CreateToggle({
-    Name = "Retry on Fail",
-    Default = true,
-    Callback = function(state)
-        blatantV2RetryOnFail = state
-    end
-})
-
-
 
 AmblatantTab:CreateSection({ Name = "AMBLATANT OR FAST FISHING" })
 
