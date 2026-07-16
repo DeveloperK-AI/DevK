@@ -4978,6 +4978,129 @@ function BlatantSkipCycle(session)
 end
 
 
+MainTab:CreateSection({ Name = "Blatant V2 (Stable)" })
+
+-- State lokal
+local blatantV2Enabled = false
+local blatantV2Thread = nil
+local blatantV2Speed = 0.15        -- jeda setelah Charge sebelum Minigame (default 0.15 detik)
+local blatantV2LoopDelay = 0.3     -- jeda antar siklus (default 0.3 detik)
+local blatantV2RetryOnFail = true  -- apakah akan retry jika catch gagal?
+
+-- Fungsi untuk memulai Blatant V2
+local function startBlatantV2()
+    if blatantV2Thread then task.cancel(blatantV2Thread) end
+
+    -- Aktifkan stub FishingController (sama seperti V1)
+    applyUltraBlatant3NFishingControllerStub(true)
+
+    local chargeRemote = ChargeRod
+    local minigameRemote = StartMini
+    local catchRemote = REFishDoneRE or REFishDone
+
+    blatantV2Thread = task.spawn(function()
+        while blatantV2Enabled do
+            local success = false
+            local attempts = 0
+
+            -- Coba hingga berhasil atau sampai 3 kali percobaan
+            while not success and attempts < 3 and blatantV2Enabled do
+                attempts = attempts + 1
+                local ok = pcall(function()
+                    local t = workspace:GetServerTimeNow()
+                    -- Step 1: Charge
+                    chargeRemote:InvokeServer(nil, nil, t, nil)
+                    task.wait(blatantV2Speed)
+                    -- Step 2: Minigame
+                    minigameRemote:InvokeServer(-1, 1, t)
+                    task.wait(blatantV2Speed)
+                    -- Step 3: Catch
+                    catchRemote:FireServer()
+                end)
+
+                if ok then
+                    -- Tandai sementara sebagai sukses (kita tidak bisa verifikasi real-time)
+                    success = true
+                else
+                    warn("[Blatant V2] Cycle failed, retrying...")
+                    task.wait(0.1)
+                end
+            end
+
+            -- Jeda antar siklus
+            for _ = 1, math.floor(blatantV2LoopDelay * 10) do
+                if not blatantV2Enabled then break end
+                task.wait(0.1)
+            end
+        end
+    end)
+end
+
+-- Fungsi untuk menghentikan
+local function stopBlatantV2()
+    blatantV2Enabled = false
+    if blatantV2Thread then
+        task.cancel(blatantV2Thread)
+        blatantV2Thread = nil
+    end
+    applyUltraBlatant3NFishingControllerStub(false)
+end
+
+-- UI Toggle
+MainTab:CreateToggle({
+    Name = "Blatant V2 (Stable)",
+    SubText = "Reliable auto-fish with retry on failure",
+    Default = false,
+    Callback = function(state)
+        blatantV2Enabled = state
+        if state then
+            startBlatantV2()
+            Window:Notify({ Title = "Blatant V2", Content = "Activated", Duration = 2 })
+        else
+            stopBlatantV2()
+            Window:Notify({ Title = "Blatant V2", Content = "Stopped", Duration = 2 })
+        end
+    end
+})
+
+-- Input untuk Speed
+MainTab:CreateInput({
+    Name = "Speed",
+    SideLabel = "0.15",
+    Placeholder = "e.g., 0.15",
+    Default = "0.15",
+    Callback = function(value)
+        local num = tonumber(value)
+        if num and num >= 0.05 and num <= 1 then
+            blatantV2Speed = num
+        end
+    end
+})
+
+-- Input untuk Loop Delay
+MainTab:CreateInput({
+    Name = "Loop Delay",
+    SideLabel = "0.3",
+    Placeholder = "e.g., 0.3",
+    Default = "0.3",
+    Callback = function(value)
+        local num = tonumber(value)
+        if num and num >= 0.1 and num <= 2 then
+            blatantV2LoopDelay = num
+        end
+    end
+})
+
+-- Toggle retry on fail
+MainTab:CreateToggle({
+    Name = "Retry on Fail",
+    Default = true,
+    Callback = function(state)
+        blatantV2RetryOnFail = state
+    end
+})
+
+
 
 AmblatantTab:CreateSection({ Name = "AMBLATANT OR FAST FISHING" })
 
