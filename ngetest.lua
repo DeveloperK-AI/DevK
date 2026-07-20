@@ -4975,6 +4975,101 @@ function BlatantSkipCycle(session)
     end
 end
 
+MainTab:CreateSection({ Name = "Blatant V2 (Stable)" })
+
+-- State lokal
+local blatantV2Enabled = false
+local blatantV2Thread = nil
+local blatantV2CastDelay = 0.15      -- jeda setelah Charge sebelum Minigame
+local blatantV2CompleteDelay = 0.15  -- jeda setelah Minigame sebelum Catch
+local blatantV2RetryOnFail = true
+
+-- Fungsi untuk memulai Blatant V2
+local function startBlatantV2()
+    if blatantV2Thread then task.cancel(blatantV2Thread) end
+
+    applyUltraBlatant3NFishingControllerStub(true)
+
+    local chargeRemote = ChargeRod
+
+    blatantV2Thread = task.spawn(function()
+        while blatantV2Enabled do
+            pcall(function()
+                local t = workspace:GetServerTimeNow()
+                chargeRemote:InvokeServer(nil, nil, t, nil)
+                -- Spam sekencang mungkin tanpa task.wait()
+                -- Kalau mau agak pelan, kasih task.wait() kecil seperti 0.001
+            end)
+            task.yield() -- biar thread gak nge-freeze UI
+        end
+    end)
+end
+
+-- Fungsi untuk menghentikan
+local function stopBlatantV2()
+    blatantV2Enabled = false
+    if blatantV2Thread then
+        task.cancel(blatantV2Thread)
+        blatantV2Thread = nil
+    end
+    applyUltraBlatant3NFishingControllerStub(false)
+end
+
+-- UI Toggle
+MainTab:CreateToggle({
+    Name = "Blatant V2 (Stable)",
+    SubText = "Reliable auto-fish with customizable delays",
+    Default = false,
+    Callback = function(state)
+        blatantV2Enabled = state
+        if state then
+            startBlatantV2()
+            Window:Notify({ Title = "Blatant V2", Content = "Activated", Duration = 2 })
+        else
+            stopBlatantV2()
+            Window:Notify({ Title = "Blatant V2", Content = "Stopped", Duration = 2 })
+        end
+    end
+})
+
+-- Input untuk Cast Delay
+MainTab:CreateInput({
+    Name = "Cast Delay",
+    SideLabel = "Cast Delay",
+    Placeholder = "e.g., 0.15",
+    Default = "0.15",
+    Callback = function(value)
+        local num = tonumber(value)
+        if num and num >= 0.005 and num <= 2 then
+            blatantV2CastDelay = num
+        end
+    end
+})
+
+-- Input untuk Complete Delay
+MainTab:CreateInput({
+    Name = "Complete Delay",
+    SideLabel = "Complete Delay",
+    Placeholder = "e.g., 0.15",
+    Default = "0.15",
+    Callback = function(value)
+        local num = tonumber(value)
+        if num and num >= 0.005 and num <= 2 then
+            blatantV2CompleteDelay = num
+        end
+    end
+})
+
+-- Toggle retry on fail
+MainTab:CreateToggle({
+    Name = "Retry on Fail",
+    Default = true,
+    Callback = function(state)
+        blatantV2RetryOnFail = state
+    end
+})
+
+
 AmblatantTab:CreateSection({ Name = "AMBLATANT OR FAST FISHING" })
 
 AmblatantTab:CreateToggle({
