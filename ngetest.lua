@@ -4991,20 +4991,48 @@ local function startBlatantV2()
     applyUltraBlatant3NFishingControllerStub(true)
 
     local chargeRemote = ChargeRod
+    local minigameRemote = StartMini
+    local catchRemote = REFishDoneRE or REFishDone
 
     blatantV2Thread = task.spawn(function()
         while blatantV2Enabled do
-            pcall(function()
-                local t = workspace:GetServerTimeNow()
-                chargeRemote:InvokeServer(nil, nil, t, nil)
-                -- Spam sekencang mungkin tanpa task.wait()
-                -- Kalau mau agak pelan, kasih task.wait() kecil seperti 0.001
-            end)
-            task.yield() -- biar thread gak nge-freeze UI
+            local success = false
+            local attempts = 0
+
+            while not success and attempts < 3 and blatantV2Enabled do
+                attempts = attempts + 1
+                local ok = pcall(function()
+                    local t = workspace:GetServerTimeNow()
+                    
+                    -- Step 1: Charge
+                    chargeRemote:InvokeServer(nil, nil, t, nil)
+                    
+                    -- JEDA SUPER KECIL (0.001) biar server tidak nge-drop request
+                    task.wait(0.001) 
+                    
+                    -- Step 2: Minigame
+                    minigameRemote:InvokeServer(-1, 1, t)
+                    
+                    -- JEDA SUPER KECIL sebelum Catch
+                    task.wait(0.001)
+                    
+                    -- Step 3: Catch
+                    catchRemote:FireServer()
+                end)
+                
+                if ok then
+                    success = true
+                else
+                    warn("[Blatant V2] Cycle failed, retrying...")
+                    task.wait(0.05) -- jeda dikurangi jadi 0.05
+                end
+            end
+
+            -- Jeda antar siklus sangat kecil
+            task.wait(0.01)
         end
     end)
 end
-
 -- Fungsi untuk menghentikan
 local function stopBlatantV2()
     blatantV2Enabled = false
