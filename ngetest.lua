@@ -3197,7 +3197,7 @@ local function startInstantFastReel()
     -- Aktifkan auto-cast (Instant Fishing V2 harus menyala)
     Instant.SetCastMode("Fast")
     Instant.SetCompleteDelay(1)   -- tidak perlu delay karena minigame akan langsung dipotong
-    Instant.SetCastDelay(0.01)    -- jeda minimal antar cast
+    Instant.SetCastDelay(0.2)    -- jeda minimal antar cast
     Instant.Start()
 
     print("[Instant Fast Reel] Hook installed – catching as soon as minigame appears.")
