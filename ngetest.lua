@@ -5008,13 +5008,13 @@ local function startBlatantV2()
                     chargeRemote:InvokeServer(nil, nil, t, nil)
                     
                     -- JEDA SUPER KECIL (0.001) biar server tidak nge-drop request
-                    task.wait(0.001) 
+                    task.wait(0.3) 
                     
                     -- Step 2: Minigame
                     minigameRemote:InvokeServer(-1, 1, t)
                     
                     -- JEDA SUPER KECIL sebelum Catch
-                    task.wait(0.001)
+                    task.wait(0.3)
                     
                     -- Step 3: Catch
                     catchRemote:FireServer()
@@ -5024,7 +5024,7 @@ local function startBlatantV2()
                     success = true
                 else
                     warn("[Blatant V2] Cycle failed, retrying...")
-                    task.wait(0.05) -- jeda dikurangi jadi 0.05
+                    task.wait(0.5) -- jeda dikurangi jadi 0.05
                 end
             end
 
