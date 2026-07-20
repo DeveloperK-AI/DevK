@@ -5004,19 +5004,15 @@ local function startBlatantV2()
                 local ok = pcall(function()
                     local t = workspace:GetServerTimeNow()
                     
-                    -- Step 1: Charge
+                    -- Step 1: Charge (LANGSUNG)
                     chargeRemote:InvokeServer(nil, nil, t, nil)
+                    -- task.wait(blatantV2CastDelay)  <-- DIHAPUS (True Spam)
                     
-                    -- JEDA SUPER KECIL (0.001) biar server tidak nge-drop request
-                    task.wait(0.1) 
-                    
-                    -- Step 2: Minigame
+                    -- Step 2: Minigame (LANGSUNG)
                     minigameRemote:InvokeServer(-1, 1, t)
+                    -- task.wait(blatantV2CompleteDelay) <-- DIHAPUS
                     
-                    -- JEDA SUPER KECIL sebelum Catch
-                    task.wait(0.1)
-                    
-                    -- Step 3: Catch
+                    -- Step 3: Catch (LANGSUNG)
                     catchRemote:FireServer()
                 end)
                 
@@ -5024,12 +5020,13 @@ local function startBlatantV2()
                     success = true
                 else
                     warn("[Blatant V2] Cycle failed, retrying...")
-                    task.wait(0.5) -- jeda dikurangi jadi 0.05
+                    task.wait(0.1)
                 end
             end
 
-            -- Jeda antar siklus sangat kecil
-            task.wait(0.01)
+            -- ⚠️ PERHATIAN: Ini masih ada jeda 0.05 detik antar siklus
+            -- Kalau mau True Spam TOTAL, ubah angka 0.05 ini jadi 0 atau 0.001
+            task.wait(0.05)
         end
     end)
 end
