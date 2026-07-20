@@ -5004,15 +5004,25 @@ local function startBlatantV2()
                 local ok = pcall(function()
                     local t = workspace:GetServerTimeNow()
                     
-                    -- Step 1: Charge (LANGSUNG)
-                    chargeRemote:InvokeServer(nil, nil, t, nil)
-                    -- task.wait(blatantV2CastDelay)  <-- DIHAPUS (True Spam)
+                    -- ==========================================
+                    -- [SPAM CHARGE] Dipanggil berkali-kali
+                    -- ==========================================
+                    for i = 1, blatantV2SpamCount do
+                        chargeRemote:InvokeServer(nil, nil, t, nil)
+                        -- Jeda 5ms agar thread tidak hang dan server tidak langsung nge-drop
+                        task.wait(0.005) 
+                    end
                     
-                    -- Step 2: Minigame (LANGSUNG)
+                    -- Jeda utama Cast Delay (bisa diisi 0.001 - 0.05)
+                    task.wait(blatantV2CastDelay)
+                    
+                    -- Step 3: Minigame (cukup 1x)
                     minigameRemote:InvokeServer(-1, 1, t)
-                    -- task.wait(blatantV2CompleteDelay) <-- DIHAPUS
                     
-                    -- Step 3: Catch (LANGSUNG)
+                    -- Step 4: Complete Delay
+                    task.wait(blatantV2CompleteDelay)
+                    
+                    -- Step 5: Catch (cukup 1x, untuk mengumpulkan semua hasil)
                     catchRemote:FireServer()
                 end)
                 
@@ -5020,13 +5030,11 @@ local function startBlatantV2()
                     success = true
                 else
                     warn("[Blatant V2] Cycle failed, retrying...")
-                    task.wait(0.1)
+                    task.wait(0.05)
                 end
             end
 
-            -- ⚠️ PERHATIAN: Ini masih ada jeda 0.05 detik antar siklus
-            -- Kalau mau True Spam TOTAL, ubah angka 0.05 ini jadi 0 atau 0.001
-            task.wait(0.05)
+            task.wait(0.01)
         end
     end)
 end
