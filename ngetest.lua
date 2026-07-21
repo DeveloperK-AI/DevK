@@ -4980,6 +4980,7 @@ MainTab:CreateSection({ Name = "Blatant V2 (Stable)" })
 -- State lokal
 local blatantV2Enabled = false
 local blatantV2Thread = nil
+local blatantV2SpamCount = 1   -- default 1 (tidak spam)
 local blatantV2CastDelay = 0.15      -- jeda setelah Charge sebelum Minigame
 local blatantV2CompleteDelay = 0.15  -- jeda setelah Minigame sebelum Catch
 local blatantV2RetryOnFail = true
@@ -5075,6 +5076,19 @@ MainTab:CreateInput({
         local num = tonumber(value)
         if num and num >= 0.005 and num <= 2 then
             blatantV2CastDelay = num
+        end
+    end
+})
+
+MainTab:CreateInput({
+    Name = "Spam Count",
+    SideLabel = "Spam Count",
+    Placeholder = "e.g., 3",
+    Default = "1",
+    Callback = function(value)
+        local num = tonumber(value)
+        if num and num >= 1 and num <= 20 then
+            blatantV2SpamCount = num
         end
     end
 })
