@@ -5120,24 +5120,30 @@ MainTab:CreateToggle({
     end
 })
 
--- Toggle Keep Animation
+-- Letakkan di section Blatant V2 (Stable), di bawah input-input yang sudah ada
 MainTab:CreateToggle({
-    Name = "Keep Animation",
-    Default = true,
+    Name = "Instant Mode (No Delay)",
+    SubText = "Set all delays to 0 for instant fishing",
+    Default = false,
     Callback = function(state)
-        blatantV2KeepAnimation = state
-        -- Jika animasi dimatikan saat V2 sedang berjalan, restart loop
-        if blatantV2Enabled then
-            stopBlatantV2()
-            blatantV2Enabled = true
-            if state then
-                -- Pastikan stub tidak aktif
-                applyUltraBlatant3NFishingControllerStub(false)
-            else
-                -- Aktifkan stub agar animasi hilang (opsional)
-                applyUltraBlatant3NFishingControllerStub(true)
+        if state then
+            -- Set semua delay ke 0
+            blatantV2SpamCount = 1
+            blatantV2CastDelay = 0
+            blatantV2CompleteDelay = 0
+            -- Nyalakan Blatant V2
+            if not blatantV2Enabled then
+                blatantV2Enabled = true
+                startBlatantV2()
             end
-            startBlatantV2()
+            Window:Notify({ Title = "Instant Mode", Content = "Activated", Duration = 2 })
+        else
+            -- Matikan Blatant V2
+            if blatantV2Enabled then
+                stopBlatantV2()
+                blatantV2Enabled = false
+            end
+            Window:Notify({ Title = "Instant Mode", Content = "Stopped", Duration = 2 })
         end
     end
 })
