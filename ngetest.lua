@@ -5140,15 +5140,18 @@ MainTab:CreateToggle({
     end
 })
 
-MainTab:CreateSection({ Name = "Silent Catch (No Cast)" })
+MainTab:CreateSection({ Name = "Silent Lag‑Switch" })
 
 -- State lokal
-local silentCatchEnabled = false
-local silentCatchThread = nil
-local silentCatchDelay = 0.001   -- delay antar langkah (hampir nol)
+local silentLagEnabled = false
+local silentLagThread = nil
+local silentLagBurstCount = 5       -- jumlah minigame yang ditumpuk
+local silentLagBurstDelay = 0.3     -- jeda sebelum catch (detik)
+local silentLagStepDelay = 0.005    -- delay mikro antar langkah
 
-local function startSilentCatch()
-    if silentCatchThread then task.cancel(silentCatchThread) end
+-- Fungsi untuk memulai
+local function startSilentLag()
+    if silentLagThread then task.cancel(silentLagThread) end
 
     -- Pastikan stub aktif agar animasi tidak muncul
     applyUltraBlatant3NFishingControllerStub(true)
@@ -5157,66 +5160,102 @@ local function startSilentCatch()
     local minigameRemote = StartMini
     local catchRemote = REFishDoneRE or REFishDone
 
-    silentCatchThread = task.spawn(function()
-        while silentCatchEnabled do
+    silentLagThread = task.spawn(function()
+        while silentLagEnabled do
             pcall(function()
                 local t = workspace:GetServerTimeNow()
-                -- Langkah 1: Charge (delay mikro)
+                
+                -- Step 1: Charge (sekali saja)
                 chargeRemote:InvokeServer(nil, nil, t, nil)
-                task.wait(silentCatchDelay)
-                -- Langkah 2: Minigame (delay mikro)
-                minigameRemote:InvokeServer(-1, 1, t)
-                task.wait(silentCatchDelay)
-                -- Langkah 3: Catch (langsung)
+                task.wait(silentLagStepDelay)
+                
+                -- Step 2: Kirim banyak permintaan minigame sekaligus
+                for _ = 1, silentLagBurstCount do
+                    minigameRemote:InvokeServer(-1, 1, t)
+                    task.wait(silentLagStepDelay)
+                end
+                
+                -- Step 3: Tunggu sebentar agar server memproses semua minigame
+                task.wait(silentLagBurstDelay)
+                
+                -- Step 4: Satu kali catch untuk menyelesaikan semua minigame
                 catchRemote:FireServer()
             end)
+            
             -- Jeda minimal sebelum siklus berikutnya
-            task.wait(0.01)
+            task.wait(0.09)
         end
     end)
 end
 
-local function stopSilentCatch()
-    silentCatchEnabled = false
-    if silentCatchThread then
-        task.cancel(silentCatchThread)
-        silentCatchThread = nil
+-- Fungsi untuk menghentikan
+local function stopSilentLag()
+    silentLagEnabled = false
+    if silentLagThread then
+        task.cancel(silentLagThread)
+        silentLagThread = nil
     end
-    -- Kembalikan fungsi asli
     applyUltraBlatant3NFishingControllerStub(false)
 end
 
 -- UI Toggle
 MainTab:CreateToggle({
-    Name = "Silent Catch (No Cast)",
-    SubText = "Catch fish instantly without casting animation",
+    Name = "Silent Lag‑Switch",
+    SubText = "No animation + burst minigames",
     Default = false,
     Callback = function(state)
-        silentCatchEnabled = state
+        silentLagEnabled = state
         if state then
-            startSilentCatch()
-            Window:Notify({ Title = "Silent Catch", Content = "Activated", Duration = 2 })
+            startSilentLag()
+            Window:Notify({ Title = "Silent Lag‑Switch", Content = "Activated", Duration = 2 })
         else
-            stopSilentCatch()
-            Window:Notify({ Title = "Silent Catch", Content = "Stopped", Duration = 2 })
+            stopSilentLag()
+            Window:Notify({ Title = "Silent Lag‑Switch", Content = "Stopped", Duration = 2 })
         end
     end
 })
 
--- Input untuk delay mikro (opsional, biasanya tidak perlu diubah)
+-- Input untuk Burst Count
 MainTab:CreateInput({
-    Name = "Silent Delay",
-    SideLabel = "Silent Delay",
+    Name = "Burst Count",
+    SideLabel = "Burst Count",
+    Placeholder = "e.g., 5",
+    Default = "5",
+    Callback = function(value)
+        local num = tonumber(value)
+        if num and num >= 1 and num <= 20 then
+            silentLagBurstCount = num
+        end
+    end
+})
+
+-- Input untuk Burst Delay
+MainTab:CreateInput({
+    Name = "Burst Delay (s)",
+    SideLabel = "Burst Delay (s)",
+    Placeholder = "e.g., 0.3",
+    Default = "0.3",
+    Callback = function(value)
+        local num = tonumber(value)
+        if num and num >= 0.01 and num <= 2 then
+            silentLagBurstDelay = num
+        end
+    end
+})
+
+-- Input untuk Step Delay (mikro)
+MainTab:CreateInput({
+    Name = "Step Delay",
+    SideLabel = "Step Delay",
     Placeholder = "e.g., 0.001",
     Default = "0.001",
     Callback = function(value)
         local num = tonumber(value)
         if num and num >= 0.001 and num <= 0.1 then
-            silentCatchDelay = num
+            silentLagStepDelay = num
         end
     end
 })
-
 
 AmblatantTab:CreateSection({ Name = "AMBLATANT OR FAST FISHING" })
 
