@@ -4980,16 +4980,18 @@ MainTab:CreateSection({ Name = "Blatant V2 (Stable)" })
 -- State lokal
 local blatantV2Enabled = false
 local blatantV2Thread = nil
-local blatantV2SpamCount = 1   -- default 1 (tidak spam)
-local blatantV2CastDelay = 0.15      -- jeda setelah Charge sebelum Minigame
-local blatantV2CompleteDelay = 0.15  -- jeda setelah Minigame sebelum Catch
+local blatantV2CastDelay = 0.15
+local blatantV2CompleteDelay = 0.15
+local blatantV2SpamCount = 1
 local blatantV2RetryOnFail = true
+local blatantV2KeepAnimation = true   -- default: animasi tetap hidup
 
 -- Fungsi untuk memulai Blatant V2
 local function startBlatantV2()
     if blatantV2Thread then task.cancel(blatantV2Thread) end
 
-    applyUltraBlatant3NFishingControllerStub(true)
+    -- JANGAN panggil applyUltraBlatant3NFishingControllerStub(true)
+    -- agar animasi tetap muncul
 
     local chargeRemote = ChargeRod
     local minigameRemote = StartMini
@@ -5005,25 +5007,22 @@ local function startBlatantV2()
                 local ok = pcall(function()
                     local t = workspace:GetServerTimeNow()
                     
-                    -- ==========================================
-                    -- [SPAM CHARGE] Dipanggil berkali-kali
-                    -- ==========================================
+                    -- Spam charge (jika SpamCount > 1)
                     for i = 1, blatantV2SpamCount do
                         chargeRemote:InvokeServer(nil, nil, t, nil)
-                        -- Jeda 5ms agar thread tidak hang dan server tidak langsung nge-drop
-                        task.wait(0.005) 
+                        task.wait(0.005)
                     end
                     
-                    -- Jeda utama Cast Delay (bisa diisi 0.001 - 0.05)
+                    -- Cast Delay
                     task.wait(blatantV2CastDelay)
                     
-                    -- Step 3: Minigame (cukup 1x)
+                    -- Minigame
                     minigameRemote:InvokeServer(-1, 1, t)
                     
-                    -- Step 4: Complete Delay
+                    -- Complete Delay
                     task.wait(blatantV2CompleteDelay)
                     
-                    -- Step 5: Catch (cukup 1x, untuk mengumpulkan semua hasil)
+                    -- Catch
                     catchRemote:FireServer()
                 end)
                 
@@ -5039,6 +5038,7 @@ local function startBlatantV2()
         end
     end)
 end
+
 -- Fungsi untuk menghentikan
 local function stopBlatantV2()
     blatantV2Enabled = false
@@ -5046,7 +5046,8 @@ local function stopBlatantV2()
         task.cancel(blatantV2Thread)
         blatantV2Thread = nil
     end
-    applyUltraBlatant3NFishingControllerStub(false)
+    -- JANGAN panggil applyUltraBlatant3NFishingControllerStub(false)
+    -- Biarkan fungsi asli tetap normal
 end
 
 -- UI Toggle
@@ -5066,20 +5067,7 @@ MainTab:CreateToggle({
     end
 })
 
--- Input untuk Cast Delay
-MainTab:CreateInput({
-    Name = "Cast Delay",
-    SideLabel = "Cast Delay",
-    Placeholder = "e.g., 0.15",
-    Default = "0.15",
-    Callback = function(value)
-        local num = tonumber(value)
-        if num and num >= 0.005 and num <= 2 then
-            blatantV2CastDelay = num
-        end
-    end
-})
-
+-- Input untuk Spam Count
 MainTab:CreateInput({
     Name = "Spam Count",
     SideLabel = "Spam Count",
@@ -5093,6 +5081,20 @@ MainTab:CreateInput({
     end
 })
 
+-- Input untuk Cast Delay
+MainTab:CreateInput({
+    Name = "Cast Delay",
+    SideLabel = "0.15",
+    Placeholder = "e.g., 0.15",
+    Default = "0.15",
+    Callback = function(value)
+        local num = tonumber(value)
+        if num and num >= 0.095 and num <= 2 then
+            blatantV2CastDelay = num
+        end
+    end
+})
+
 -- Input untuk Complete Delay
 MainTab:CreateInput({
     Name = "Complete Delay",
@@ -5101,18 +5103,40 @@ MainTab:CreateInput({
     Default = "0.15",
     Callback = function(value)
         local num = tonumber(value)
-        if num and num >= 0.005 and num <= 2 then
+        if num and num >= 0.095 and num <= 2 then
             blatantV2CompleteDelay = num
         end
     end
 })
 
--- Toggle retry on fail
+-- Toggle Retry on Fail
 MainTab:CreateToggle({
     Name = "Retry on Fail",
     Default = true,
     Callback = function(state)
         blatantV2RetryOnFail = state
+    end
+})
+
+-- Toggle Keep Animation
+MainTab:CreateToggle({
+    Name = "Keep Animation",
+    Default = true,
+    Callback = function(state)
+        blatantV2KeepAnimation = state
+        -- Jika animasi dimatikan saat V2 sedang berjalan, restart loop
+        if blatantV2Enabled then
+            stopBlatantV2()
+            blatantV2Enabled = true
+            if state then
+                -- Pastikan stub tidak aktif
+                applyUltraBlatant3NFishingControllerStub(false)
+            else
+                -- Aktifkan stub agar animasi hilang (opsional)
+                applyUltraBlatant3NFishingControllerStub(true)
+            end
+            startBlatantV2()
+        end
     end
 })
 
