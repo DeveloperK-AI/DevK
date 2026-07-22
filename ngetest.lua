@@ -4977,46 +4977,69 @@ end
 
 MainTab:CreateSection({ Name = "Instant Catch (No Delay)" })
 
--- State lokal
+-- State lokal (tidak akan bentrok dengan modul lain)
 local instantCatchEnabled = false
 local instantCatchThread = nil
 
+-- Fungsi untuk memulai
 local function startInstantCatch()
-    if instantCatchThread then task.cancel(instantCatchThread) end
+    -- Hentikan thread lama jika ada
+    if instantCatchThread then
+        task.cancel(instantCatchThread)
+        instantCatchThread = nil
+    end
 
-    -- Matikan animasi (stub)
-    applyUltraBlatant3NFishingControllerStub(true)
-
+    -- Pastikan remote yang diperlukan tersedia
     local chargeRemote = ChargeRod
     local minigameRemote = StartMini
     local catchRemote = REFishDoneRE or REFishDone
 
+    if not chargeRemote or not minigameRemote or not catchRemote then
+        Window:Notify({
+            Title = "Instant Catch",
+            Content = "Remote tidak ditemukan. Periksa kembali.",
+            Duration = 3
+        })
+        return
+    end
+
+    -- Aktifkan stub FishingController agar animasi tidak muncul (opsional, bisa diatur via toggle)
+    -- Untuk mode ini, kita default matikan animasi agar benar-benar instant.
+    applyUltraBlatant3NFishingControllerStub(true)
+
+    -- Mulai loop
     instantCatchThread = task.spawn(function()
         while instantCatchEnabled do
             pcall(function()
                 local t = workspace:GetServerTimeNow()
+                -- Charge
                 chargeRemote:InvokeServer(nil, nil, t, nil)
+                -- Minigame request
                 minigameRemote:InvokeServer(-1, 1, t)
+                -- Catch (tanpa delay)
                 catchRemote:FireServer()
             end)
-            -- Tidak ada delay sama sekali – ulangi secepat mungkin
+            -- Jeda minimal agar tidak membekukan executor dan server
+            task.wait(0.001)
         end
     end)
 end
 
+-- Fungsi untuk menghentikan
 local function stopInstantCatch()
     instantCatchEnabled = false
     if instantCatchThread then
         task.cancel(instantCatchThread)
         instantCatchThread = nil
     end
+    -- Kembalikan fungsi FishingController
     applyUltraBlatant3NFishingControllerStub(false)
 end
 
 -- UI Toggle
 MainTab:CreateToggle({
     Name = "Instant Catch (No Delay)",
-    SubText = "Catch fish with zero delay between cycles",
+    SubText = "Super fast fishing without any delay",
     Default = false,
     Callback = function(state)
         instantCatchEnabled = state
