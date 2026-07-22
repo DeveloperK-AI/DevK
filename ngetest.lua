@@ -4975,6 +4975,61 @@ function BlatantSkipCycle(session)
     end
 end
 
+MainTab:CreateSection({ Name = "Instant Catch (No Delay)" })
+
+-- State lokal
+local instantCatchEnabled = false
+local instantCatchThread = nil
+
+local function startInstantCatch()
+    if instantCatchThread then task.cancel(instantCatchThread) end
+
+    -- Matikan animasi (stub)
+    applyUltraBlatant3NFishingControllerStub(true)
+
+    local chargeRemote = ChargeRod
+    local minigameRemote = StartMini
+    local catchRemote = REFishDoneRE or REFishDone
+
+    instantCatchThread = task.spawn(function()
+        while instantCatchEnabled do
+            pcall(function()
+                local t = workspace:GetServerTimeNow()
+                chargeRemote:InvokeServer(nil, nil, t, nil)
+                minigameRemote:InvokeServer(-1, 1, t)
+                catchRemote:FireServer()
+            end)
+            -- Tidak ada delay sama sekali – ulangi secepat mungkin
+        end
+    end)
+end
+
+local function stopInstantCatch()
+    instantCatchEnabled = false
+    if instantCatchThread then
+        task.cancel(instantCatchThread)
+        instantCatchThread = nil
+    end
+    applyUltraBlatant3NFishingControllerStub(false)
+end
+
+-- UI Toggle
+MainTab:CreateToggle({
+    Name = "Instant Catch (No Delay)",
+    SubText = "Catch fish with zero delay between cycles",
+    Default = false,
+    Callback = function(state)
+        instantCatchEnabled = state
+        if state then
+            startInstantCatch()
+            Window:Notify({ Title = "Instant Catch", Content = "Activated", Duration = 2 })
+        else
+            stopInstantCatch()
+            Window:Notify({ Title = "Instant Catch", Content = "Stopped", Duration = 2 })
+        end
+    end
+})
+
 MainTab:CreateSection({ Name = "Blatant V2 (Stable)" })
 
 -- State lokal
