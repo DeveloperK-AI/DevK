@@ -5259,7 +5259,7 @@ MainTab:CreateInput({
     end
 })
 
-MainTab:CreateSection({ Name = "Instant Catch (No Delay)" })
+MainTab:CreateSection({ Name = "Catch (No Delay)" })
 
 -- State lokal (tidak akan bentrok dengan modul lain)
 local instantCatchEnabled = false
