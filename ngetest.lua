@@ -5084,7 +5084,7 @@ MainTab:CreateInput({
 -- Input untuk Cast Delay
 MainTab:CreateInput({
     Name = "Cast Delay",
-    SideLabel = "0.15",
+    SideLabel = "Cast Delay",
     Placeholder = "e.g., 0.15",
     Default = "0.15",
     Callback = function(value)
@@ -5136,6 +5136,83 @@ MainTab:CreateToggle({
                 applyUltraBlatant3NFishingControllerStub(true)
             end
             startBlatantV2()
+        end
+    end
+})
+
+MainTab:CreateSection({ Name = "Silent Catch (No Cast)" })
+
+-- State lokal
+local silentCatchEnabled = false
+local silentCatchThread = nil
+local silentCatchDelay = 0.001   -- delay antar langkah (hampir nol)
+
+local function startSilentCatch()
+    if silentCatchThread then task.cancel(silentCatchThread) end
+
+    -- Pastikan stub aktif agar animasi tidak muncul
+    applyUltraBlatant3NFishingControllerStub(true)
+
+    local chargeRemote = ChargeRod
+    local minigameRemote = StartMini
+    local catchRemote = REFishDoneRE or REFishDone
+
+    silentCatchThread = task.spawn(function()
+        while silentCatchEnabled do
+            pcall(function()
+                local t = workspace:GetServerTimeNow()
+                -- Langkah 1: Charge (delay mikro)
+                chargeRemote:InvokeServer(nil, nil, t, nil)
+                task.wait(silentCatchDelay)
+                -- Langkah 2: Minigame (delay mikro)
+                minigameRemote:InvokeServer(-1, 1, t)
+                task.wait(silentCatchDelay)
+                -- Langkah 3: Catch (langsung)
+                catchRemote:FireServer()
+            end)
+            -- Jeda minimal sebelum siklus berikutnya
+            task.wait(0.01)
+        end
+    end)
+end
+
+local function stopSilentCatch()
+    silentCatchEnabled = false
+    if silentCatchThread then
+        task.cancel(silentCatchThread)
+        silentCatchThread = nil
+    end
+    -- Kembalikan fungsi asli
+    applyUltraBlatant3NFishingControllerStub(false)
+end
+
+-- UI Toggle
+MainTab:CreateToggle({
+    Name = "Silent Catch (No Cast)",
+    SubText = "Catch fish instantly without casting animation",
+    Default = false,
+    Callback = function(state)
+        silentCatchEnabled = state
+        if state then
+            startSilentCatch()
+            Window:Notify({ Title = "Silent Catch", Content = "Activated", Duration = 2 })
+        else
+            stopSilentCatch()
+            Window:Notify({ Title = "Silent Catch", Content = "Stopped", Duration = 2 })
+        end
+    end
+})
+
+-- Input untuk delay mikro (opsional, biasanya tidak perlu diubah)
+MainTab:CreateInput({
+    Name = "Silent Delay",
+    SideLabel = "Silent Delay",
+    Placeholder = "e.g., 0.001",
+    Default = "0.001",
+    Callback = function(value)
+        local num = tonumber(value)
+        if num and num >= 0.001 and num <= 0.1 then
+            silentCatchDelay = num
         end
     end
 })
