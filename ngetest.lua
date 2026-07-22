@@ -5147,7 +5147,7 @@ local silentLagEnabled = false
 local silentLagThread = nil
 local silentLagBurstCount = 5       -- jumlah minigame yang ditumpuk
 local silentLagBurstDelay = 0.3     -- jeda sebelum catch (detik)
-local silentLagStepDelay = 0.005    -- delay mikro antar langkah
+local silentLagStepDelay = 0.001    -- delay mikro antar langkah
 
 -- Fungsi untuk memulai
 local function startSilentLag()
@@ -5183,7 +5183,7 @@ local function startSilentLag()
             end)
             
             -- Jeda minimal sebelum siklus berikutnya
-            task.wait(0.09)
+            task.wait(0.01)
         end
     end)
 end
