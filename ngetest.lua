@@ -4982,7 +4982,7 @@ MainTab:CreateSection({ Name = "Silent Lag‑Switch" })
 local silentLagEnabled = false
 local silentLagThread = nil
 local burstCount = 5
-local burstDelay = 0.05          -- mulai dari 0.05 (lebih kecil dari sebelumnya)
+local burstDelay = 0.01          -- mulai dari 0.05 (lebih kecil dari sebelumnya)
 local burstRetryOnFail = true
 
 local function startSilentLag()
@@ -5019,12 +5019,12 @@ local function startSilentLag()
                     success = true
                 else
                     warn("[Silent Lag] Cycle failed, retrying...")
-                    task.wait(0.1)
+                    task.wait(0.01)
                 end
             end
 
             -- Jeda antar siklus
-            task.wait(0.3)
+            task.wait(0.2)
         end
     end)
 end
@@ -5047,10 +5047,10 @@ MainTab:CreateToggle({
         silentLagEnabled = state
         if state then
             startSilentLag()
-            Window:Notify({ Title = "Silent Lag", Content = "Activated", Duration = 2 })
+            Window:Notify({ Title = "Silent Lag", Content = "Activated", Duration = 1 })
         else
             stopSilentLag()
-            Window:Notify({ Title = "Silent Lag", Content = "Stopped", Duration = 2 })
+            Window:Notify({ Title = "Silent Lag", Content = "Stopped", Duration = 1 })
         end
     end
 })
@@ -5060,7 +5060,7 @@ MainTab:CreateInput({
     Name = "Burst Count",
     SideLabel = "Burst Count",
     Placeholder = "e.g., 5",
-    Default = "5",
+    Default = burstCount,
     Callback = function(value)
         local num = tonumber(value)
         if num and num >= 1 and num <= 15 then
@@ -5074,7 +5074,7 @@ MainTab:CreateInput({
     Name = "Burst Delay",
     SideLabel = "Burst Delay",
     Placeholder = "e.g., 0.05",
-    Default = "0.05",
+    Default = burstDelay,
     Callback = function(value)
         local num = tonumber(value)
         if num and num >= 0.01 and num <= 1 then
