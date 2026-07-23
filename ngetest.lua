@@ -3215,32 +3215,32 @@ end
 
 -- Input untuk Burst Count
 MainTab:CreateInput({
-    Name = "Complete Delay",
-    SideLabel = "Complete Delay",
-    Placeholder = "e.g., 5",
-    Default = Instant.SetCompleteDelay,
+    Name = "Delay Bait (CompleteDelay)",
+    SideLabel = "Delay Reel",
+    Placeholder = tostring(Instant.SetCompleteDelay),
+    Default = tostring(Instant.SetCompleteDelay),
     Callback = function(value)
-        local num = tonumber(value)
-        if num and num >= 1 and num <= 15 then
-            Instant.SetCompleteDelay = num
+        local n = tonumber(value)
+        if n and n > 0 then
+            Config.UB.Settings.CompleteDelay = n
+            Instant.SetCompleteDelay(n)
         end
-    end
+    end,
 })
 
--- Input untuk Burst Delay
 MainTab:CreateInput({
     Name = "Cast Delay",
-    SideLabel = "Cast Delay",
-    Placeholder = "e.g., 0.05",
-    Default = Instant.SetCastDelay,
+    SideLabel = "Delay Cast",
+    Placeholder = tostring(Instant.SetCastDelay),
+    Default = tostring(Instant.SetCastDelay),
     Callback = function(value)
-        local num = tonumber(value)
-        if num and num >= 0.01 and num <= 1 then
-            Instant.SetCastDelay = num
+        local n = tonumber(value)
+        if n and n >= 0 then
+            Config.UB.Settings.CancelDelay = n
+            Instant.SetCastDelay(n)
         end
-    end
+    end,
 })
-
 -- Toggle di UI
 MainTab:CreateToggle({
     Name = "Instant Fast Reel",
