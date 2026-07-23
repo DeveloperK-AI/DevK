@@ -3213,6 +3213,34 @@ local function stopInstantFastReel()
     print("[Instant Fast Reel] Hook removed.")
 end
 
+-- Input untuk Burst Count
+MainTab:CreateInput({
+    Name = "Complete Delay",
+    SideLabel = "Complete Delay",
+    Placeholder = "e.g., 5",
+    Default = Instant.SetCompleteDelay,
+    Callback = function(value)
+        local num = tonumber(value)
+        if num and num >= 1 and num <= 15 then
+            Instant.SetCompleteDelay = num
+        end
+    end
+})
+
+-- Input untuk Burst Delay
+MainTab:CreateInput({
+    Name = "Cast Delay",
+    SideLabel = "Cast Delay",
+    Placeholder = "e.g., 0.05",
+    Default = Instant.SetCastDelay,
+    Callback = function(value)
+        local num = tonumber(value)
+        if num and num >= 0.01 and num <= 1 then
+            Instant.SetCastDelay = num
+        end
+    end
+})
+
 -- Toggle di UI
 MainTab:CreateToggle({
     Name = "Instant Fast Reel",
@@ -3222,10 +3250,10 @@ MainTab:CreateToggle({
         instantFastReelEnabled = state
         if state then
             startInstantFastReel()
-            Window:Notify({ Title = "Instant Fast", Content = "Instant Fast Reel activated", Duration = 2 })
+            Window:Notify({ Title = "Instant Fast", Content = "Instant Fast Reel activated", Duration = 0.5 })
         else
             stopInstantFastReel()
-            Window:Notify({ Title = "Instant Fast", Content = "Stopped", Duration = 2 })
+            Window:Notify({ Title = "Instant Fast", Content = "Stopped", Duration = 0.5 })
         end
     end
 })
