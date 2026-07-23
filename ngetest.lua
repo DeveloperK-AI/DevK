@@ -3170,90 +3170,124 @@ MainTab:CreateInput({
 
 MainTab:CreateSection({ Name = "Instant Fast Reel" })
 
--- ============================================
--- [SECURITY] State lokal untuk Instant Fast Reel
--- ============================================
+-- State lokal (independen)
 local instantFastReelEnabled = false
-local minigameConnection = nil
+local instantFastReelThread = nil
+local fastReelCastDelay = 0.01    -- jeda setelah catch sebelum cast berikutnya
+local fastReelReelDelay = 0.05    -- jeda setelah minigame muncul sebelum catch
 
--- Fungsi untuk memulai hook
 local function startInstantFastReel()
-    if not FishingMinigameChanged then
-        Window:Notify({ Title = "Error", Content = "Remote FishingMinigameChanged not found.", Duration = 3 })
+    -- Hentikan thread lama jika ada
+    if instantFastReelThread then
+        task.cancel(instantFastReelThread)
+        instantFastReelThread = nil
+    end
+
+    local chargeRemote = ChargeRod
+    local minigameRemote = StartMini
+    local catchRemote = REFishDoneRE or REFishDone
+    local minigameEvent = FishingMinigameChanged
+
+    if not minigameEvent then
+        Window:Notify({ Title = "Error", Content = "FishingMinigameChanged not found.", Duration = 3 })
         return
     end
 
-    -- Hook event minigame: begitu minigame muncul, langsung catch
-    minigameConnection = FishingMinigameChanged.OnClientEvent:Connect(function()
-        if not instantFastReelEnabled then return end
-        -- Panggil catch secepatnya (tanpa delay)
-        task.spawn(function()
-            pcall(function()
-                REFishDoneRE:FireServer()
+    -- Thread utama
+    instantFastReelThread = task.spawn(function()
+        while instantFastReelEnabled do
+            local ok = pcall(function()
+                local t = workspace:GetServerTimeNow()
+                -- 1. Charge & Minigame request
+                chargeRemote:InvokeServer(nil, nil, t, nil)
+                minigameRemote:InvokeServer(0, 0.5, t)  -- power rendah, tidak perlu nunggu
+
+                -- 2. Tunggu event minigame (dengan timeout)
+                local minigameStarted = false
+                local conn
+                conn = minigameEvent.OnClientEvent:Connect(function()
+                    minigameStarted = true
+                end)
+
+                -- Tunggu maksimal 0.5 detik
+                for _ = 1, 25 do  -- 25 * 0.02 = 0.5 detik
+                    if minigameStarted then break end
+                    task.wait(0.02)
+                end
+                conn:Disconnect()
+
+                -- 3. Jika minigame muncul, tangkap setelah reel delay
+                if minigameStarted then
+                    task.wait(fastReelReelDelay)   -- jeda agar animasi reel sempat terlihat (opsional)
+                    catchRemote:FireServer()
+                else
+                    -- Jika tidak muncul, tetap coba catch
+                    catchRemote:FireServer()
+                end
             end)
-        end)
-    end)
 
-    -- Aktifkan auto-cast (Instant Fishing V2 harus menyala)
-    Instant.SetCastMode("Fast")
-    Instant.SetCompleteDelay(1)   -- tidak perlu delay karena minigame akan langsung dipotong
-    Instant.SetCastDelay(0.2)    -- jeda minimal antar cast
-    Instant.Start()
+            if not ok then
+                warn("[Instant Fast Reel] Cycle error, retrying...")
+            end
 
-    print("[Instant Fast Reel] Hook installed – catching as soon as minigame appears.")
-end
-
--- Fungsi untuk menghentikan hook
-local function stopInstantFastReel()
-    Instant.Stop()
-    if minigameConnection then
-        minigameConnection:Disconnect()
-        minigameConnection = nil
-    end
-    print("[Instant Fast Reel] Hook removed.")
-end
-
--- Input untuk Burst Count
-MainTab:CreateInput({
-    Name = "Delay Bait (CompleteDelay)",
-    SideLabel = "Delay Reel",
-    Placeholder = tostring(Instant.SetCompleteDelay),
-    Default = tostring(Instant.SetCompleteDelay),
-    Callback = function(value)
-        local n = tonumber(value)
-        if n and n > 0 then
-            Config.UB.Settings.CompleteDelay = n
-            Instant.SetCompleteDelay(n)
+            -- Jeda sebelum cast berikutnya
+            for _ = 1, math.floor(fastReelCastDelay * 50) do
+                if not instantFastReelEnabled then break end
+                task.wait(0.02)
+            end
         end
-    end,
-})
+    end)
+end
 
+local function stopInstantFastReel()
+    instantFastReelEnabled = false
+    if instantFastReelThread then
+        task.cancel(instantFastReelThread)
+        instantFastReelThread = nil
+    end
+end
+
+-- Input Cast Delay
 MainTab:CreateInput({
     Name = "Cast Delay",
-    SideLabel = "Delay Cast",
-    Placeholder = tostring(Instant.SetCastDelay),
-    Default = tostring(Instant.SetCastDelay),
+    SideLabel = "Cast Delay",
+    Placeholder = "e.g., 0.01",
+    Default = "0.01",
     Callback = function(value)
         local n = tonumber(value)
-        if n and n >= 0 then
-            Config.UB.Settings.CancelDelay = n
-            Instant.SetCastDelay(n)
+        if n and n >= 0.001 and n <= 2 then
+            fastReelCastDelay = n
         end
-    end,
+    end
 })
--- Toggle di UI
+
+-- Input Reel Delay
+MainTab:CreateInput({
+    Name = "Reel Delay",
+    SideLabel = "Reel Delay",
+    Placeholder = "e.g., 0.05",
+    Default = "0.05",
+    Callback = function(value)
+        local n = tonumber(value)
+        if n and n >= 0 and n <= 1 then
+            fastReelReelDelay = n
+        end
+    end
+})
+
+-- Toggle
 MainTab:CreateToggle({
     Name = "Instant Fast Reel",
-    SubText = "Catch fish instantly without waiting for minigame",
+    SubText = "Catch fish instantly with independent loop",
     Default = false,
     Callback = function(state)
         instantFastReelEnabled = state
         if state then
             startInstantFastReel()
-            Window:Notify({ Title = "Instant Fast", Content = "Instant Fast Reel activated", Duration = 0.5 })
+            Window:Notify({ Title = "Instant Fast Reel", Content = "Activated", Duration = 2 })
         else
             stopInstantFastReel()
-            Window:Notify({ Title = "Instant Fast", Content = "Stopped", Duration = 0.5 })
+            Window:Notify({ Title = "Instant Fast Reel", Content = "Stopped", Duration = 2 })
         end
     end
 })
