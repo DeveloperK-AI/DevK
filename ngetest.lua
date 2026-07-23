@@ -5035,7 +5035,7 @@ local function startSilentLag()
                     -- Tumpuk minigame dengan jeda mikro
                     for _ = 1, burstCount do
                         minigameRemote:InvokeServer(-1, 1, t)
-                        task.wait(0.005)  -- jeda 5ms antar minigame
+                        task.wait(0.001)  -- jeda 5ms antar minigame
                     end
                     -- Tunggu dengan burstDelay
                     task.wait(burstDelay)
@@ -5052,7 +5052,7 @@ local function startSilentLag()
             end
 
             -- Jeda antar siklus
-            task.wait(0.2)
+            task.wait(0.05)
         end
     end)
 end
