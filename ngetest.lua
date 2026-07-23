@@ -3177,7 +3177,6 @@ local fastReelCastDelay = 0.01    -- jeda setelah catch sebelum cast berikutnya
 local fastReelReelDelay = 0.05    -- jeda setelah minigame muncul sebelum catch
 
 local function startInstantFastReel()
-    -- Hentikan thread lama jika ada
     if instantFastReelThread then
         task.cancel(instantFastReelThread)
         instantFastReelThread = nil
@@ -3193,47 +3192,41 @@ local function startInstantFastReel()
         return
     end
 
-    -- Thread utama
     instantFastReelThread = task.spawn(function()
         while instantFastReelEnabled do
             local ok = pcall(function()
                 local t = workspace:GetServerTimeNow()
                 -- 1. Charge & Minigame request
                 chargeRemote:InvokeServer(nil, nil, t, nil)
-                minigameRemote:InvokeServer(0, 0.5, t)  -- power rendah, tidak perlu nunggu
+                minigameRemote:InvokeServer(0, 0.5, t)
 
-                -- 2. Tunggu event minigame (dengan timeout)
+                -- 2. Tunggu event minigame dengan timeout pendek
                 local minigameStarted = false
                 local conn
                 conn = minigameEvent.OnClientEvent:Connect(function()
                     minigameStarted = true
                 end)
 
-                -- Tunggu maksimal 0.5 detik
-                for _ = 1, 25 do  -- 25 * 0.02 = 0.5 detik
-                    if minigameStarted then break end
-                    task.wait(0.02)
+                local waited = 0
+                while not minigameStarted and waited < 0.5 do
+                    task.wait(0.01)
+                    waited = waited + 0.01
                 end
                 conn:Disconnect()
 
                 -- 3. Jika minigame muncul, tangkap setelah reel delay
                 if minigameStarted then
-                    task.wait(fastReelReelDelay)   -- jeda agar animasi reel sempat terlihat (opsional)
-                    catchRemote:FireServer()
-                else
-                    -- Jika tidak muncul, tetap coba catch
-                    catchRemote:FireServer()
+                    task.wait(fastReelReelDelay)
                 end
+                catchRemote:FireServer()
+
+                -- 4. Jeda setelah catch sebelum siklus berikutnya
+                task.wait(fastReelCastDelay)
             end)
 
             if not ok then
                 warn("[Instant Fast Reel] Cycle error, retrying...")
-            end
-
-            -- Jeda sebelum cast berikutnya
-            for _ = 1, math.floor(fastReelCastDelay * 50) do
-                if not instantFastReelEnabled then break end
-                task.wait(0.02)
+                task.wait(0.1) -- jeda tambahan jika error
             end
         end
     end)
