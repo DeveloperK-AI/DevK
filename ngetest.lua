@@ -3170,11 +3170,12 @@ MainTab:CreateInput({
 
 MainTab:CreateSection({ Name = "Instant Fast Reel" })
 
--- State lokal (independen)
+-- State lokal
 local instantFastReelEnabled = false
 local instantFastReelThread = nil
-local fastReelCastDelay = 0.01    -- jeda setelah catch sebelum cast berikutnya
-local fastReelReelDelay = 0.05    -- jeda setelah minigame muncul sebelum catch
+local fastReelCastDelay = 0.01
+local fastReelReelDelay = 0.05
+local useStub = true   -- default: stub aktif agar state tidak macet
 
 local function startInstantFastReel()
     if instantFastReelThread then
@@ -3185,6 +3186,7 @@ local function startInstantFastReel()
     local chargeRemote = ChargeRod
     local minigameRemote = StartMini
     local catchRemote = REFishDoneRE or REFishDone
+    local cancelRemote = Cancel
     local minigameEvent = FishingMinigameChanged
 
     if not minigameEvent then
@@ -3192,21 +3194,25 @@ local function startInstantFastReel()
         return
     end
 
+    -- Aktifkan stub jika diinginkan (mencegah animasi + state macet)
+    if useStub and applyUltraBlatant3NFishingControllerStub then
+        pcall(applyUltraBlatant3NFishingControllerStub, true)
+    end
+
     instantFastReelThread = task.spawn(function()
         while instantFastReelEnabled do
             local ok = pcall(function()
                 local t = workspace:GetServerTimeNow()
-                -- 1. Charge & Minigame request
+                -- 1. Charge & Minigame
                 chargeRemote:InvokeServer(nil, nil, t, nil)
                 minigameRemote:InvokeServer(0, 0.5, t)
 
-                -- 2. Tunggu event minigame dengan timeout pendek
+                -- 2. Tunggu event minigame (timeout 0.5 detik)
                 local minigameStarted = false
                 local conn
                 conn = minigameEvent.OnClientEvent:Connect(function()
                     minigameStarted = true
                 end)
-
                 local waited = 0
                 while not minigameStarted and waited < 0.5 do
                     task.wait(0.01)
@@ -3214,20 +3220,33 @@ local function startInstantFastReel()
                 end
                 conn:Disconnect()
 
-                -- 3. Jika minigame muncul, tangkap setelah reel delay
+                -- 3. Jika minigame muncul, tunggu reel delay lalu catch
                 if minigameStarted then
                     task.wait(fastReelReelDelay)
                 end
                 catchRemote:FireServer()
 
-                -- 4. Jeda setelah catch sebelum siklus berikutnya
-                task.wait(fastReelCastDelay)
+                -- 4. Tunggu sebentar untuk memastikan hasil
+                task.wait(0.1)
+
+                -- 5. Jika catch gagal (state masih fishing), paksa cancel untuk reset
+                --    Caranya: panggil Cancel untuk membersihkan state
+                if cancelRemote then
+                    pcall(function() cancelRemote:InvokeServer() end)
+                end
             end)
 
             if not ok then
                 warn("[Instant Fast Reel] Cycle error, retrying...")
-                task.wait(0.1) -- jeda tambahan jika error
+                -- Jika error, coba cancel juga
+                pcall(function()
+                    if cancelRemote then cancelRemote:InvokeServer() end
+                end)
+                task.wait(0.2)
             end
+
+            -- Jeda sebelum cast berikutnya
+            task.wait(fastReelCastDelay)
         end
     end)
 end
@@ -3237,6 +3256,9 @@ local function stopInstantFastReel()
     if instantFastReelThread then
         task.cancel(instantFastReelThread)
         instantFastReelThread = nil
+    end
+    if useStub and applyUltraBlatant3NFishingControllerStub then
+        pcall(applyUltraBlatant3NFishingControllerStub, false)
     end
 end
 
@@ -3268,10 +3290,25 @@ MainTab:CreateInput({
     end
 })
 
--- Toggle
+-- Toggle Use Stub
+MainTab:CreateToggle({
+    Name = "Use Stub (No Animation)",
+    Default = false,
+    Callback = function(state)
+        useStub = state
+        -- Jika berubah saat loop aktif, restart
+        if instantFastReelEnabled then
+            stopInstantFastReel()
+            instantFastReelEnabled = true
+            startInstantFastReel()
+        end
+    end
+})
+
+-- Toggle Utama
 MainTab:CreateToggle({
     Name = "Instant Fast Reel",
-    SubText = "Catch fish instantly with independent loop",
+    SubText = "Catch fish instantly with auto-recovery",
     Default = false,
     Callback = function(state)
         instantFastReelEnabled = state
