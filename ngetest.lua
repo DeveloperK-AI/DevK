@@ -5168,7 +5168,7 @@ local function startSilentLag()
                         burstOk = false
                         break
                     end
-                    task.wait()
+                    task.wait()   -- 1 frame antar burst
                 end
 
                 if not burstOk then
@@ -5196,8 +5196,8 @@ local function startSilentLag()
                 if not cycleSuccess and not burstRetryOnFail then break end
             end
 
-            -- Tanpa jeda, langsung ulang siklus
-            -- (tidak ada task.wait di sini)
+            -- Jeda antar siklus (minimal: 1 frame)
+            task.wait()
         end
     end)
 end
