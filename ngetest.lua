@@ -5115,19 +5115,18 @@ function BlatantSkipCycle(session)
 end
 
 
-MainTab:CreateSection({ Name = "Silent Lag‑Switch" })
+MainTab:CreateSection({ Name = "Silent Lag‑Switch (Burst Instan)" })
 
 -- State lokal
 local silentLagEnabled = false
 local silentLagThread: thread? = nil
 local burstCount = 5
-local burstDelay = 0.015        -- minimal 1 frame
+local burstDelay = 0.015          -- jeda SEBELUM catch (bisa diatur sangat kecil)
 local burstRetryOnFail = true
 
 local function startSilentLag()
     if silentLagThread then task.cancel(silentLagThread) end
 
-    -- Validasi remote
     local chargeRemote = ChargeRod
     local minigameRemote = StartMini
     local catchRemote = REFishDoneRE or REFishDone
@@ -5157,7 +5156,7 @@ local function startSilentLag()
                     if burstRetryOnFail then task.wait() continue else break end
                 end
 
-                -- 2. Burst minigame
+                -- 2. Burst minigame TANPA JEDA
                 burstOk = true
                 for _ = 1, burstCount do
                     if not silentLagEnabled then break end
@@ -5168,14 +5167,14 @@ local function startSilentLag()
                         burstOk = false
                         break
                     end
-                    task.wait()  -- 1 frame antar burst
+                    -- TIDAK ADA task.wait() di sini!
                 end
                 if not burstOk then
                     warn("[Silent Lag] Minigame burst failed")
                     if burstRetryOnFail then task.wait() continue else break end
                 end
 
-                -- 3. Delay sebelum catch
+                -- 3. Delay sebelum catch (bisa sangat kecil)
                 if burstDelay > 0 then
                     task.wait(burstDelay)
                 end
@@ -5193,7 +5192,7 @@ local function startSilentLag()
                 if not cycleSuccess and not burstRetryOnFail then break end
             end
 
-            -- Jeda antar siklus: hanya 1 frame
+            -- HANYA 1 FRAME setelah catch, sebelum mengulang
             task.wait()
         end
     end)
@@ -5210,7 +5209,7 @@ end
 -- UI Toggle
 MainTab:CreateToggle({
     Name = "Silent Lag‑Switch",
-    SubText = "Burst minigames + delayed catch (stable)",
+    SubText = "Burst instant + stable cycle",
     Default = false,
     Callback = function(state)
         silentLagEnabled = state
@@ -5238,15 +5237,15 @@ MainTab:CreateInput({
     end
 })
 
--- Input Burst Delay
+-- Input Burst Delay (sebelum catch)
 MainTab:CreateInput({
     Name = "Burst Delay",
-    SideLabel = "Delay (s)",
+    SideLabel = "Delay before catch",
     Placeholder = "0.015",
     Default = burstDelay,
     Callback = function(value)
         local num = tonumber(value)
-        if num and num >= 0.015 and num <= 1 then
+        if num and num >= 0 and num <= 1 then   -- bisa 0
             burstDelay = num
         end
     end
