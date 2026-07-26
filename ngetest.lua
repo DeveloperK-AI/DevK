@@ -5127,77 +5127,43 @@ local burstRetryOnFail = true
 local function startSilentLag()
     if silentLagThread then task.cancel(silentLagThread) end
 
+    -- TANPA STUB – biarkan animasi muncul agar server memproses normal
     local chargeRemote = ChargeRod
     local minigameRemote = StartMini
     local catchRemote = REFishDoneRE or REFishDone
-    if not chargeRemote or not minigameRemote or not catchRemote then
-        warn("[Silent Lag] Remote tidak tersedia!")
-        silentLagEnabled = false
-        return
-    end
 
     silentLagThread = task.spawn(function()
         while silentLagEnabled do
-            local cycleSuccess = false
+            local success = false
             local attempts = 0
 
-            while not cycleSuccess and attempts < 3 and silentLagEnabled do
-                attempts += 1
-                local chargeOk = false
-                local catchOk = false
-
-                -- 1. Charge
-                chargeOk = pcall(function()
+            while not success and attempts < 3 and silentLagEnabled do
+                attempts = attempts + 1
+                local ok = pcall(function()
                     local t = workspace:GetServerTimeNow()
+                    -- Charge
                     chargeRemote:InvokeServer(nil, nil, t, nil)
-                end)
-
-                if not chargeOk then
-                    warn("[Silent Lag] Charge failed")
-                    if burstRetryOnFail then task.wait(0.05) continue else break end
-                end
-
-                -- 2. Burst minigame
-                local burstOk = true
-                for _ = 1, burstCount do
-                    if not silentLagEnabled then break end
-                    local ok = pcall(function()
-                        minigameRemote:InvokeServer(-1, 1, workspace:GetServerTimeNow())
-                    end)
-                    if not ok then
-                        burstOk = false
-                        break
+                    -- Tumpuk minigame dengan jeda mikro
+                    for _ = 1, burstCount do
+                        minigameRemote:InvokeServer(-1, 1, t)
+                        task.wait()  -- jeda 5ms antar minigame
                     end
-                    task.wait()
-                end
-
-                if not burstOk then
-                    warn("[Silent Lag] Minigame burst failed")
-                    if burstRetryOnFail then task.wait(0.05) continue else break end
-                end
-
-                -- 3. Delay sebelum catch
-                if burstDelay > 0 then
+                    -- Tunggu dengan burstDelay
                     task.wait(burstDelay)
-                end
-
-                -- 4. Catch
-                catchOk = pcall(function()
+                    -- Catch
                     catchRemote:FireServer()
                 end)
 
-                if catchOk then
-                    cycleSuccess = true
+                if ok then
+                    success = true
                 else
-                    warn("[Silent Lag] Catch failed")
-                    if burstRetryOnFail then task.wait(0.05) continue else break end
+                    warn("[Silent Lag] Cycle failed, retrying...")
+                    task.wait(0.01)
                 end
-
-                if not cycleSuccess and not burstRetryOnFail then break end
             end
 
-            -- Tanpa jeda, langsung ulang siklus
-            -- (tidak ada task.wait di sini)
+            -- Jeda antar siklus
+            task.wait(0.01)
         end
     end)
 end
@@ -5256,14 +5222,6 @@ MainTab:CreateInput({
     end
 })
 
--- Toggle Retry on Fail
-MainTab:CreateToggle({
-    Name = "Retry on Fail",
-    Default = true,
-    Callback = function(state)
-        burstRetryOnFail = state
-    end
-})
 
 AmblatantTab:CreateSection({ Name = "AMBLATANT OR FAST FISHING" })
 
