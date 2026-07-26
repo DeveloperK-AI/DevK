@@ -5163,7 +5163,7 @@ local function startSilentLag()
             end
 
             -- Jeda antar siklus
-            task.wait(0.05)
+            task.wait(0.01)
         end
     end)
 end
