@@ -5119,14 +5119,15 @@ MainTab:CreateSection({ Name = "Silent Lag‑Switch" })
 
 -- State lokal
 local silentLagEnabled = false
-local silentLagThread = nil
+local silentLagThread: thread? = nil
 local burstCount = 5
-local burstDelay = 0.01          -- mulai dari 0.05 (lebih kecil dari sebelumnya)
+local burstDelay = 0.05          -- lebih realistis (min 0.015)
 local burstRetryOnFail = true
 
 local function startSilentLag()
     if silentLagThread then task.cancel(silentLagThread) end
 
+    -- Validasi remote
     local chargeRemote = ChargeRod
     local minigameRemote = StartMini
     local catchRemote = REFishDoneRE or REFishDone
@@ -5144,6 +5145,7 @@ local function startSilentLag()
             while not cycleSuccess and attempts < 3 and silentLagEnabled do
                 attempts += 1
                 local chargeOk = false
+                local minigameOk = false
                 local catchOk = false
 
                 -- 1. Charge
@@ -5168,7 +5170,7 @@ local function startSilentLag()
                         burstOk = false
                         break
                     end
-                    task.wait()   -- 1 frame antar burst
+                    task.wait()   -- 1 frame jeda (lebih jujur dari 0.001)
                 end
 
                 if not burstOk then
@@ -5193,11 +5195,12 @@ local function startSilentLag()
                     if burstRetryOnFail then task.wait(0.05) continue else break end
                 end
 
+                -- Jika salah satu gagal dan tidak retry, keluar dari loop percobaan
                 if not cycleSuccess and not burstRetryOnFail then break end
             end
 
-            -- Jeda antar siklus (minimal: 1 frame)
-            task.wait()
+            -- Jeda antar siklus penuh
+            task.wait(0.05)
         end
     end)
 end
@@ -5208,13 +5211,12 @@ local function stopSilentLag()
         task.cancel(silentLagThread)
         silentLagThread = nil
     end
-    -- Tidak perlu restore stub
 end
 
 -- UI Toggle
 MainTab:CreateToggle({
     Name = "Silent Lag‑Switch",
-    SubText = "Burst minigames + delayed catch (improved)",
+    SubText = "Burst minigames + delayed catch (optimized)",
     Default = false,
     Callback = function(state)
         silentLagEnabled = state
@@ -5228,11 +5230,11 @@ MainTab:CreateToggle({
     end
 })
 
--- Input untuk Burst Count
+-- Input Burst Count
 MainTab:CreateInput({
     Name = "Burst Count",
-    SideLabel = "Burst Count",
-    Placeholder = "e.g., 5",
+    SideLabel = "Count",
+    Placeholder = "1-15",
     Default = burstCount,
     Callback = function(value)
         local num = tonumber(value)
@@ -5242,15 +5244,15 @@ MainTab:CreateInput({
     end
 })
 
--- Input untuk Burst Delay
+-- Input Burst Delay (dengan nilai minimum realistis)
 MainTab:CreateInput({
     Name = "Burst Delay",
-    SideLabel = "Burst Delay",
-    Placeholder = "e.g., 0.05",
+    SideLabel = "Delay (s)",
+    Placeholder = "0.05",
     Default = burstDelay,
     Callback = function(value)
         local num = tonumber(value)
-        if num and num >= 0.01 and num <= 1 then
+        if num and num >= 0.015 and num <= 1 then
             burstDelay = num
         end
     end
@@ -5259,7 +5261,7 @@ MainTab:CreateInput({
 -- Toggle Retry on Fail
 MainTab:CreateToggle({
     Name = "Retry on Fail",
-    Default = true,
+    Default = burstRetryOnFail,
     Callback = function(state)
         burstRetryOnFail = state
     end
