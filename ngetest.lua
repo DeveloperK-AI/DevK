@@ -648,14 +648,14 @@ end
 local delayfishing = 1
 
 ----------------------------------------------------------------
--- INSTANT FISH MODULE
+-- INSTANT FISH MODULE (PERFECT PERFECTION + NO GLOBALS)
 ----------------------------------------------------------------
 local Instant = {}
 local PI = math.pi
 local CAST_MODE_LIST = { "Perfect", "Fast", "Random" }
 
 ----------------------------------------------------------------
--- REMOTES
+-- REMOTES (pastikan sudah lokal di file utama)
 ----------------------------------------------------------------
 local RF_ChargeFishingRod = ChargeRod
 local RE_CatchFishCompleted = REFishDoneRE or REFishDone
@@ -672,8 +672,14 @@ local state = {
 }
 
 local loopTask = nil
+local InstantTasks = {}                -- pengganti _G._NEXTHUB.tasks
 local notifHooked = false
+local notifOriginalDeliver = nil
+local notifOriginalTween = nil
 
+-- ============================================
+-- Power helper (akurat)
+-- ============================================
 function getPowerAtTime(chargeTime, elapsed)
     local speed = Random.new(chargeTime):NextInteger(4, 10)
     local angle = PI / 2 + elapsed * speed
@@ -688,53 +694,72 @@ function waitForPower(chargeTime, threshold)
         if power >= threshold then
             return elapsed, power
         end
-        task.wait(0.001)
+        task.wait(0.001)   -- polling 1 ms
     end
+    -- Fallback: anggap power maksimum
     local elapsed = workspace:GetServerTimeNow() - chargeTime
     return elapsed, getPowerAtTime(chargeTime, elapsed)
 end
 
+-- ============================================
+-- Notification hook (dengan restore)
+-- ============================================
 function hookNotificationDelay()
     if notifHooked then return end
 
     local ok, controller = pcall(function()
         return require(ReplicatedStorage.Controllers.TextNotificationController)
     end)
+    if not ok or not controller then return end
 
-    if not ok or not controller then
-        return
-    end
+    notifOriginalDeliver = controller.DeliverNotification
+    notifOriginalTween = controller.Tween
 
-    if not controller.DeliverNotification then
-        return
-    end
-
-    local originalDeliver = controller.DeliverNotification
-    controller.DeliverNotification = function(self, p24)
-        if state.enabled and state.notifDelay > 0 then
-            task.spawn(function()
-                task.wait(state.notifDelay)
-                originalDeliver(self, p24)
-            end)
-        else
-            originalDeliver(self, p24)
+    if notifOriginalDeliver then
+        controller.DeliverNotification = function(self, p24)
+            if state.enabled and state.notifDelay > 0 then
+                task.spawn(function()
+                    task.wait(state.notifDelay)
+                    if notifOriginalDeliver then notifOriginalDeliver(self, p24) end
+                end)
+            else
+                if notifOriginalDeliver then notifOriginalDeliver(self, p24) end
+            end
         end
     end
 
-    if controller.Tween then
-        local originalTween = controller.Tween
+    if notifOriginalTween then
         controller.Tween = function(self, tile, duration, options)
             local finalDuration = duration
             if state.enabled and state.notifDuration > 0 then
                 finalDuration = duration + state.notifDuration
             end
-            return originalTween(self, tile, finalDuration, options)
+            if notifOriginalTween then
+                return notifOriginalTween(self, tile, finalDuration, options)
+            end
         end
     end
 
     notifHooked = true
 end
 
+function unhookNotificationDelay()
+    if not notifHooked then return end
+    pcall(function()
+        local controller = ReplicatedStorage.Controllers:FindFirstChild("TextNotificationController")
+        if controller then
+            if notifOriginalDeliver then controller.DeliverNotification = notifOriginalDeliver end
+            if notifOriginalTween then controller.Tween = notifOriginalTween end
+        end
+    end)
+    notifOriginalDeliver = nil
+    notifOriginalTween = nil
+    notifHooked = false
+end
+
+-- ============================================
+-- Safe remote calls
+-- ============================================
 function safeInvoke(remote, ...)
     if not remote then return end
     local args = { ... }
@@ -754,23 +779,33 @@ function safeFire(remote, ...)
     end)
 end
 
+-- ============================================
+-- Cast logic (dengan fallback Perfect)
+-- ============================================
 function handleCastMode(t0)
     local mode = state.castMode
 
     if mode == "Perfect" then
         local _, power = waitForPower(t0, 0.97)
+        -- **FALLBACK**: jika karena sesuatu power < 0.97, paksa jadi 1
+        if power < 0.97 then
+            power = 1
+        end
         return power
     elseif mode == "Random" then
         local randomElapsed = math.random(0, 100) / 100 * (PI / 4)
         task.wait(randomElapsed)
         local elapsed = workspace:GetServerTimeNow() - t0
         return getPowerAtTime(t0, elapsed)
-    else
+    else -- Fast
         local elapsed = workspace:GetServerTimeNow() - t0
         return getPowerAtTime(t0, elapsed)
     end
 end
 
+-- ============================================
+-- Main loop
+-- ============================================
 function startLoop()
     if state.running then return end
     state.running = true
@@ -789,6 +824,9 @@ function startLoop()
     state.running = false
 end
 
+-- ============================================
+-- Public API
+-- ============================================
 function Instant.SetCastMode(mode)
     if table.find(CAST_MODE_LIST, mode) then
         state.castMode = mode
@@ -814,25 +852,34 @@ function Instant.Start()
     state.enabled = true
     hookNotificationDelay()
     loopTask = task.spawn(startLoop)
-    if _G._NEXTHUB and _G._NEXTHUB.tasks then
-        table.insert(_G._NEXTHUB.tasks, loopTask)
-    end
+    -- Simpan task secara lokal (bukan _G)
+    table.insert(InstantTasks, loopTask)
 end
 
 function Instant.Stop()
     state.enabled = false
     if loopTask then
         pcall(task.cancel, loopTask)
+        -- Bersihkan dari daftar lokal
+        for i, t in ipairs(InstantTasks) do
+            if t == loopTask then
+                table.remove(InstantTasks, i)
+                break
+            end
+        end
         loopTask = nil
     end
     state.running = false
+    unhookNotificationDelay()   -- pulihkan notifikasi asli
 end
 
 function Instant.IsActive()
     return state.enabled
 end
 
--- Compatibility wrappers for existing UI flow
+-- ============================================
+-- Compatibility functions
+-- ============================================
 function CallFishDone(remote, ...)
     if not remote then return end
     local ok = pcall(function() remote:InvokeServer() end)
