@@ -5119,88 +5119,51 @@ MainTab:CreateSection({ Name = "Silent Lag‑Switch" })
 
 -- State lokal
 local silentLagEnabled = false
-local silentLagThread: thread? = nil
+local silentLagThread = nil
 local burstCount = 5
-local burstDelay = 0.05          -- lebih realistis (min 0.015)
+local burstDelay = 0.01          -- mulai dari 0.05 (lebih kecil dari sebelumnya)
 local burstRetryOnFail = true
 
 local function startSilentLag()
     if silentLagThread then task.cancel(silentLagThread) end
 
-    -- Validasi remote
+    -- TANPA STUB – biarkan animasi muncul agar server memproses normal
     local chargeRemote = ChargeRod
     local minigameRemote = StartMini
     local catchRemote = REFishDoneRE or REFishDone
-    if not chargeRemote or not minigameRemote or not catchRemote then
-        warn("[Silent Lag] Remote tidak tersedia!")
-        silentLagEnabled = false
-        return
-    end
 
     silentLagThread = task.spawn(function()
         while silentLagEnabled do
-            local cycleSuccess = false
+            local success = false
             local attempts = 0
 
-            while not cycleSuccess and attempts < 3 and silentLagEnabled do
-                attempts += 1
-                local chargeOk = false
-                local minigameOk = false
-                local catchOk = false
-
-                -- 1. Charge
-                chargeOk = pcall(function()
+            while not success and attempts < 3 and silentLagEnabled do
+                attempts = attempts + 1
+                local ok = pcall(function()
                     local t = workspace:GetServerTimeNow()
+                    -- Charge
                     chargeRemote:InvokeServer(nil, nil, t, nil)
-                end)
-
-                if not chargeOk then
-                    warn("[Silent Lag] Charge failed")
-                    if burstRetryOnFail then task.wait(0.05) continue else break end
-                end
-
-                -- 2. Burst minigame
-                local burstOk = true
-                for _ = 1, burstCount do
-                    if not silentLagEnabled then break end
-                    local ok = pcall(function()
-                        minigameRemote:InvokeServer(-1, 1, workspace:GetServerTimeNow())
-                    end)
-                    if not ok then
-                        burstOk = false
-                        break
+                    -- Tumpuk minigame dengan jeda mikro
+                    for _ = 1, burstCount do
+                        minigameRemote:InvokeServer(-1, 1, t)
+                        task.wait(0.001)  -- jeda 5ms antar minigame
                     end
-                    task.wait()   -- 1 frame jeda (lebih jujur dari 0.001)
-                end
-
-                if not burstOk then
-                    warn("[Silent Lag] Minigame burst failed")
-                    if burstRetryOnFail then task.wait(0.05) continue else break end
-                end
-
-                -- 3. Delay sebelum catch
-                if burstDelay > 0 then
+                    -- Tunggu dengan burstDelay
                     task.wait(burstDelay)
-                end
-
-                -- 4. Catch
-                catchOk = pcall(function()
+                    -- Catch
                     catchRemote:FireServer()
                 end)
 
-                if catchOk then
-                    cycleSuccess = true
+                if ok then
+                    success = true
                 else
-                    warn("[Silent Lag] Catch failed")
-                    if burstRetryOnFail then task.wait(0.05) continue else break end
+                    warn("[Silent Lag] Cycle failed, retrying...")
+                    task.wait(0.01)
                 end
-
-                -- Jika salah satu gagal dan tidak retry, keluar dari loop percobaan
-                if not cycleSuccess and not burstRetryOnFail then break end
             end
 
-            -- Jeda antar siklus penuh
-            task.wait(0.05)
+            -- Jeda antar siklus
+            task.wait(0.01)
         end
     end)
 end
@@ -5211,12 +5174,13 @@ local function stopSilentLag()
         task.cancel(silentLagThread)
         silentLagThread = nil
     end
+    -- Tidak perlu restore stub
 end
 
 -- UI Toggle
 MainTab:CreateToggle({
     Name = "Silent Lag‑Switch",
-    SubText = "Burst minigames + delayed catch (optimized)",
+    SubText = "Burst minigames + delayed catch (improved)",
     Default = false,
     Callback = function(state)
         silentLagEnabled = state
@@ -5230,11 +5194,11 @@ MainTab:CreateToggle({
     end
 })
 
--- Input Burst Count
+-- Input untuk Burst Count
 MainTab:CreateInput({
     Name = "Burst Count",
-    SideLabel = "Count",
-    Placeholder = "1-15",
+    SideLabel = "Burst Count",
+    Placeholder = "e.g., 5",
     Default = burstCount,
     Callback = function(value)
         local num = tonumber(value)
@@ -5244,15 +5208,15 @@ MainTab:CreateInput({
     end
 })
 
--- Input Burst Delay (dengan nilai minimum realistis)
+-- Input untuk Burst Delay
 MainTab:CreateInput({
     Name = "Burst Delay",
-    SideLabel = "Delay (s)",
-    Placeholder = "0.05",
+    SideLabel = "Burst Delay",
+    Placeholder = "e.g., 0.05",
     Default = burstDelay,
     Callback = function(value)
         local num = tonumber(value)
-        if num and num >= 0.015 and num <= 1 then
+        if num and num >= 0.01 and num <= 1 then
             burstDelay = num
         end
     end
@@ -5261,7 +5225,7 @@ MainTab:CreateInput({
 -- Toggle Retry on Fail
 MainTab:CreateToggle({
     Name = "Retry on Fail",
-    Default = burstRetryOnFail,
+    Default = true,
     Callback = function(state)
         burstRetryOnFail = state
     end
