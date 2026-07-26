@@ -5115,18 +5115,19 @@ function BlatantSkipCycle(session)
 end
 
 
-MainTab:CreateSection({ Name = "Silent Lag‑Switch (No Delay)" })
+MainTab:CreateSection({ Name = "Silent Lag‑Switch" })
 
 -- State lokal
 local silentLagEnabled = false
 local silentLagThread: thread? = nil
 local burstCount = 5
-local burstDelay = 0.015
+local burstDelay = 0.015        -- minimal 1 frame
 local burstRetryOnFail = true
 
 local function startSilentLag()
     if silentLagThread then task.cancel(silentLagThread) end
 
+    -- Validasi remote
     local chargeRemote = ChargeRod
     local minigameRemote = StartMini
     local catchRemote = REFishDoneRE or REFishDone
@@ -5153,10 +5154,10 @@ local function startSilentLag()
                 end)
                 if not chargeOk then
                     warn("[Silent Lag] Charge failed")
-                    if burstRetryOnFail then continue else break end
+                    if burstRetryOnFail then task.wait() continue else break end
                 end
 
-                -- 2. Burst minigame (tanpa jeda)
+                -- 2. Burst minigame
                 burstOk = true
                 for _ = 1, burstCount do
                     if not silentLagEnabled then break end
@@ -5167,14 +5168,14 @@ local function startSilentLag()
                         burstOk = false
                         break
                     end
-                    -- TANPA task.wait() antar burst
+                    task.wait()  -- 1 frame antar burst
                 end
                 if not burstOk then
                     warn("[Silent Lag] Minigame burst failed")
-                    if burstRetryOnFail then continue else break end
+                    if burstRetryOnFail then task.wait() continue else break end
                 end
 
-                -- 3. Delay sebelum catch (minimal)
+                -- 3. Delay sebelum catch
                 if burstDelay > 0 then
                     task.wait(burstDelay)
                 end
@@ -5185,14 +5186,15 @@ local function startSilentLag()
                 end)
                 if not catchOk then
                     warn("[Silent Lag] Catch failed")
-                    if burstRetryOnFail then continue else break end
+                    if burstRetryOnFail then task.wait() continue else break end
                 end
 
                 cycleSuccess = chargeOk and burstOk and catchOk
                 if not cycleSuccess and not burstRetryOnFail then break end
             end
 
-            -- TANPA JEDA: langsung ulang
+            -- Jeda antar siklus: hanya 1 frame
+            task.wait()
         end
     end)
 end
@@ -5207,14 +5209,14 @@ end
 
 -- UI Toggle
 MainTab:CreateToggle({
-    Name = "Silent Lag‑Switch (No Delay)",
-    SubText = "Burst minigames + instant catch (risky)",
+    Name = "Silent Lag‑Switch",
+    SubText = "Burst minigames + delayed catch (stable)",
     Default = false,
     Callback = function(state)
         silentLagEnabled = state
         if state then
             startSilentLag()
-            Window:Notify({ Title = "Silent Lag", Content = "Activated (No Delay)", Duration = 1 })
+            Window:Notify({ Title = "Silent Lag", Content = "Activated", Duration = 1 })
         else
             stopSilentLag()
             Window:Notify({ Title = "Silent Lag", Content = "Stopped", Duration = 1 })
