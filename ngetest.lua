@@ -3262,7 +3262,7 @@ local function startInstantFastReel()
                 end)
                 local waited = 0
                 while not minigameStarted and waited < 0.5 do
-                    task.wait(0.01)
+                    task.wait()
                     waited = waited + 0.01
                 end
                 conn:Disconnect()
@@ -3274,7 +3274,7 @@ local function startInstantFastReel()
                 catchRemote:FireServer()
 
                 -- 4. Tunggu sebentar untuk memastikan hasil
-                task.wait(0.1)
+                task.wait(0.01)
 
                 -- 5. Jika catch gagal (state masih fishing), paksa cancel untuk reset
                 --    Caranya: panggil Cancel untuk membersihkan state
@@ -3289,7 +3289,7 @@ local function startInstantFastReel()
                 pcall(function()
                     if cancelRemote then cancelRemote:InvokeServer() end
                 end)
-                task.wait(0.2)
+                task.wait(0.05)
             end
 
             -- Jeda sebelum cast berikutnya
