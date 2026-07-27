@@ -1,4 +1,5 @@
-ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+    ReplicatedStorage = game:GetService("ReplicatedStorage")
     local netFolder = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net
     local netChildren = netFolder:GetChildren()
 
@@ -23,6 +24,7 @@ ReplicatedStorage = game:GetService("ReplicatedStorage")
 function RF(name) return remoteMap[name] end
 function RE(name) return remoteMap[name] end
 
+-- Amblatant support: cached remote data & local event re-fire
 _G.SavedData = _G.SavedData or {
     FishCaught = {},
     CaughtVisual = {},
@@ -188,6 +190,8 @@ Players = game:GetService("Players")
 HttpService = game:GetService("HttpService")
 Lighting = game:GetService("Lighting")
 Terrain = workspace:FindFirstChildOfClass("Terrain")
+
+
 
 -- Performance Optimization: Data Cache System
 DataCache = {
@@ -5017,119 +5021,78 @@ MainTab:CreateButton({
 
 MainTab:CreateSection({ Name = "Sell", Icon = "rbxassetid://7733793319" })
 
--- ============================================
--- [SECURITY] State lokal Auto Sell
--- ============================================
-local autoSellEnabled = false
-local autoSellMode = "Sell By Count"   -- "Sell By Count" atau "Sell All"
-local autoSellValue = 0                -- threshold untuk count
+Players = game:GetService("Players")
+ LocalPlayer = Players.LocalPlayer
+
+_G.AutoSells = false
+
+local autoSellMode = "Sell Delay"
+local autoSellValue = 0
 local currentCount = 0
 
--- Remote sell (SellItem sudah lokal dari deklarasi remote)
-local sellRemote = SellItem
+local label = LocalPlayer.PlayerGui.Inventory.Main.Top.Options.Fish.Label.BagSize
 
--- Label BagSize untuk memantau jumlah item
-local label = LocalPlayer.PlayerGui:FindFirstChild("Inventory")
-if label then
-    label = label:FindFirstChild("Main")
-    if label then
-        label = label:FindFirstChild("Top")
-        if label then
-            label = label:FindFirstChild("Options")
-            if label then
-                label = label:FindFirstChild("Fish")
-                if label then
-                    label = label:FindFirstChild("Label")
-                    if label then
-                        label = label:FindFirstChild("BagSize")
-                    end
-                end
-            end
-        end
-    end
-end
+label:GetPropertyChangedSignal("ContentText"):Connect(function()
+    local text = label.ContentText
+    currentCount = tonumber(string.match(text, "^(%d+)")) or 0
+end)
 
-if label then
-    label:GetPropertyChangedSignal("ContentText"):Connect(function()
-        local text = label.ContentText
-        currentCount = tonumber(string.match(text, "^(%d+)")) or 0
-    end)
-else
-    warn("[Auto Sell] BagSize label not found, currentCount will always be 0")
-end
+local sellAllItems = SellItem
 
--- Fungsi sell yang aman
-local function SafeSell()
-    if not sellRemote then
-        warn("[Auto Sell] SellItem remote not available")
-        return
-    end
+ function SafeSell()
     pcall(function()
-        sellRemote:InvokeServer()
+        sellAllItems:InvokeServer()
     end)
 end
 
--- Loop untuk mode "Sell By Count"
-local function AutoSellLoop()
-    while autoSellEnabled and autoSellMode == "Sell By Count" do
-        if currentCount >= autoSellValue then
+ function AutoSellLoop()
+    while _G.AutoSells do
+        local selldelay = 0
+        local countdelay = 0
+        if autoSellMode == "Sell Delay" then
+            selldelay = autoSellValue
+        else
+            countdelay = autoSellValue
+        end
+
+        if selldelay == 0 and countdelay > 0 then
+            if currentCount >= countdelay then
+                SafeSell()
+                task.wait(0.3)
+            end
+            task.wait(0.1)
+
+        elseif selldelay > 0 and countdelay == 0 then
             SafeSell()
-            task.wait(0.3)  -- jeda setelah sell
+            task.wait(selldelay)
+
+        else
+            Window:Notify({
+                Title = "Yang Bener Hitam",
+                Content = "Pilih mode di dropdown dan isi angka di input (harus > 0).",
+                Duration = 3,
+                Icon = "warn",
+            })
+            break
         end
-        task.wait(0.5)  -- interval pengecekan
     end
 end
 
--- Fungsi untuk memulai auto sell (dipanggil saat toggle ON)
-local function StartAutoSell()
-    if autoSellEnabled then return end
-    autoSellEnabled = true
-    if autoSellMode == "Sell By Count" then
-        task.spawn(AutoSellLoop)
-    elseif autoSellMode == "Sell All" then
-        -- Langsung jual semua item, lalu matikan toggle
-        SafeSell()
-        Window:Notify({
-            Title = "Sell All",
-            Content = "All items sold!",
-            Duration = 2
-        })
-        -- Matikan toggle secara programatik
-        if autoSellToggle then
-            autoSellToggle:Set(false)
-        end
-        autoSellEnabled = false
-    end
+function StartAutoSell()
+    if _G.AutoSells then return end
+    _G.AutoSells = true
+    task.spawn(AutoSellLoop)
 end
 
--- Fungsi untuk menghentikan auto sell
-local function StopAutoSell()
-    autoSellEnabled = false
+function StopAutoSell()
+    _G.AutoSells = false
 end
 
--- Referensi toggle (digunakan untuk mematikan toggle di mode "Sell All")
-local autoSellToggle
 
--- Tombol Sell All (sekali klik, tanpa toggle)
-MainTab:CreateButton({
-    Name = "Sell All",
-    SubText = "Instantly sell all items in inventory",
-    Icon = "rbxassetid://7733793319",
-    Callback = function()
-        SafeSell()
-        Window:Notify({
-            Title = "Sell All",
-            Content = "All items sold!",
-            Duration = 2
-        })
-    end
-})
-
--- UI Toggle
-autoSellToggle = MainTab:CreateToggle({
-    Name = "Auto Sell",
-    Default = false,
-    Callback = function(v)
+MainTab:CreateToggle({
+	Name = "Auto Sell",
+	Default = false,
+	  Callback = function(v)
         if v then
             StartAutoSell()
         else
@@ -5138,49 +5101,46 @@ autoSellToggle = MainTab:CreateToggle({
     end
 })
 
--- Dropdown mode
 MainTab:CreateDropdown({
-    Name = "Auto Sell Mode",
-    Items = { "Sell By Count", "Sell All" },
-    Default = "Sell By Count",
-    Callback = function(Option)
-        autoSellMode = Option
-        -- Jika sedang berjalan, restart loop
-        if autoSellEnabled then
-            StopAutoSell()
-            StartAutoSell()
-        end
-    end,
+	Name = "Auto Sell Mode",
+	Items = { "Sell Delay", "Sell By Count" },
+	Default = "Sell Delay",
+	Callback = function(Option)
+		autoSellMode = Option
+	end,
 })
 
--- Input threshold untuk mode "Sell By Count"
 MainTab:CreateInput({
-    Name = "Sell Count Threshold",
-    Placeholder = "Jual jika isi tas >= angka",
-    Default = "",
-    Callback = function(txt)
-        autoSellValue = tonumber(txt) or 0
-    end,
+	Name = "Auto Sell Value",
+	Placeholder = "Delay: detik antar jual | Count: jual jika isi tas >= angka",
+	Default = "",
+	Callback = function(txt)
+		autoSellValue = tonumber(txt) or 0
+	end,
 })
 
--- ============================================
+
+--------------------------------------------------------------------------------
 -- SECTION 1: AUTO FAVORITE (NAME & RARITY ONLY)
--- ============================================
+--------------------------------------------------------------------------------
 MainTab:CreateSection({ Name = "Auto Favorite", Icon = "rbxassetid://7733765398" })
 
--- Remote lokal (gunakan yang sudah ada, jangan buat ulang)
 local REFishCaught = RE.FishCaught or REFishGot
 local REFishingCompleted = RE.FishingCompleted or REFishDone
 
--- Reset state saat ikan tertangkap
 if REFishCaught then
     REFishCaught.OnClientEvent:Connect(function()
         st.canFish = true
     end)
 end
 
--- Tabel konversi tier -> rarity (lokal)
-local tierToRarity = {
+-- if REFishingCompleted then
+--     REFishingCompleted.OnClientEvent:Connect(function()
+--         st.canFish = true
+--     end)
+-- end
+
+tierToRarity = {
     [1] = "Common",
     [2] = "Uncommon",
     [3] = "Rare",
@@ -5191,293 +5151,244 @@ local tierToRarity = {
     [8] = "Forgotten"
 }
 
--- Ambil semua nama ikan dari ReplicatedStorage.Items (lokal)
-local fishNames = {}
-if Items then
-    for _, module in ipairs(Items:GetChildren()) do
-        if module:IsA("ModuleScript") then
-            local ok, data = pcall(require, module)
-            if ok and data.Data and data.Data.Type == "Fish" then
-                table.insert(fishNames, data.Data.Name)
-            end
+fishNames = {}
+for _, module in ipairs(Items:GetChildren()) do
+    if module:IsA("ModuleScript") then
+        local ok, data = pcall(require, module)
+        if ok and data.Data and data.Data.Type == "Fish" then
+            table.insert(fishNames, data.Data.Name)
         end
     end
-    table.sort(fishNames)
 end
+table.sort(fishNames)
 
--- State lokal untuk auto favorite
+-- Ensure RE (RemoteEvents table) is defined
+local RE = {}
+pcall(function()
+    local Net = Net
+    RE.FavoriteItem = REFav
+    RE.FavoriteStateChanged = REFavChg
+end)
+
 local favState = {}
-local selectedNames = {}     -- nama ikan yang dipilih
-local selectedRarities = {} -- rarity yang dipilih
-local selectedVariants = {} -- variant ID yang dipilih
+local selectedName = {}
+local selectedRarity = {}
+local selectedVariant = {}
 local favoriteDebounce = {}
 
--- Sinkronisasi state favorit dari server (gunakan remote yang sudah ada)
-if REFavChg then
-    REFavChg.OnClientEvent:Connect(function(uuid, fav)
+if RE.FavoriteStateChanged then
+    RE.FavoriteStateChanged.OnClientEvent:Connect(function(uuid, fav)
         if uuid then favState[uuid] = fav end
     end)
 end
 
--- Fungsi utama untuk mengecek dan favoritkan item
-local function checkAndFavorite(item)
+-- Function for Name & Rarity only
+function checkAndFavoriteBasic(item)
+    -- Check if ANY auto-fav system is valid
     if not st.autoFavEnabled and not st.autoFavVariantEnabled then return end
-
+    
     local info = ItemUtility.GetItemDataFromItemType("Items", item.Id)
     if not info or info.Data.Type ~= "Fish" then return end
 
-    -- Debounce untuk item yang sama (2 detik)
+    -- Validation Debounce (Prevent looping/spamming same item)
     if favoriteDebounce[item.UUID] and (tick() - favoriteDebounce[item.UUID] < 2) then
         return
     end
 
     local isFav = favState[item.UUID] or item.Favorited or false
-    if isFav then return end
+    if isFav then return end -- Already favorited
 
     local shouldFav = false
 
-    -- Cek berdasarkan nama & rarity
+    -- 1. Check Name & Rarity Logic
     if st.autoFavEnabled then
         local rarity = tierToRarity[info.Data.Tier]
-        local nameMatch = (#selectedNames > 0 and table.find(selectedNames, info.Data.Name) ~= nil)
-        local rarityMatch = (#selectedRarities > 0 and table.find(selectedRarities, rarity) ~= nil)
-        if nameMatch or rarityMatch then
+        local nameMatches = (#selectedName > 0 and table.find(selectedName, info.Data.Name) ~= nil)
+        local rarityMatches = (#selectedRarity > 0 and table.find(selectedRarity, rarity) ~= nil)
+        
+        if nameMatches or rarityMatches then
             shouldFav = true
         end
     end
 
-    -- Cek berdasarkan variant (jika ada fitur autoFavVariant)
+    -- 2. Check Variant Logic
     if not shouldFav and st.autoFavVariantEnabled then
         local mutation = (item.Metadata and item.Metadata.VariantId and tostring(item.Metadata.VariantId)) or "None"
-        if mutation ~= "None" and #selectedVariants > 0 and table.find(selectedVariants, mutation) then
-            shouldFav = true
+        if mutation ~= "None" and #selectedVariant > 0 then
+             if table.find(selectedVariant, mutation) then
+                 shouldFav = true
+             end
         end
     end
 
-    -- Lakukan favorit jika memenuhi syarat
+    -- Final Decision
     if shouldFav then
-        -- Gunakan remote REFav yang sudah ada (bukan RE.FavoriteItem buatan)
-        local FavoriteEvent = REFav
-        if FavoriteEvent then
-            local fishName = info.Data.Name or "Fish"
-            local mutation = (item.Metadata and item.Metadata.VariantId and tostring(item.Metadata.VariantId)) or "None"
-            print("[AutoFav] Favoriting:", fishName, "| Variant:", mutation)
+        -- Get RemoteEvent reference
+        local FavoriteEvent = RE.FavoriteItem
+        if not FavoriteEvent and NetService then
+            FavoriteEvent = REFav
+        end
 
-            favoriteDebounce[item.UUID] = tick()
-            local ok = pcall(function()
+        if FavoriteEvent then
+            local infoName = info.Data.Name or "Fish"
+            local mutation = (item.Metadata and item.Metadata.VariantId and tostring(item.Metadata.VariantId)) or "None"
+            print("[AutoFav] ✅ Favoriting:", infoName, "| Variant:", mutation)
+            
+            favoriteDebounce[item.UUID] = tick() -- Set debounce
+            
+            local success, err = pcall(function()
                 FavoriteEvent:FireServer(item.UUID, true)
             end)
-            if ok then
+            
+            if success then
                 favState[item.UUID] = true
             else
-                warn("[AutoFav] Failed to favorite:", fishName)
+                warn("[AutoFav] ❌ Failed:", err)
             end
-        else
-            warn("[AutoFav] REFav remote not found!")
         end
     end
 end
 
--- Memindai seluruh inventory dan favoritkan yang sesuai
-local function scanInventory()
+function scanInventoryBasic()
     if not (st.autoFavEnabled or st.autoFavVariantEnabled) then return end
-    print("[AutoFav] Scanning Inventory...")
-    print("[AutoFav] Names:", #selectedNames > 0 and table.concat(selectedNames, ", ") or "NONE")
-    print("[AutoFav] Rarities:", #selectedRarities > 0 and table.concat(selectedRarities, ", ") or "NONE")
-
+    -- print("[AutoFav] 🔍 Scanning Inventory...")
+    print("[AutoFav Basic] Names:", #selectedName > 0 and table.concat(selectedName, ", ") or "NONE")
+    print("[AutoFav Basic] Rarities:", #selectedRarity > 0 and table.concat(selectedRarity, ", ") or "NONE")
+    
     local inv = Data:GetExpect({ "Inventory", "Items" })
-    if not inv then
-        warn("[AutoFav] Inventory not found!")
-        return
+    if not inv then 
+        warn("[AutoFav Basic] ❌ Inventory not found!")
+        return 
     end
-
+    
     local count = 0
-    for _, item in ipairs(inv) do
-        local wasFav = favState[item.UUID] or item.Favorited or false
-        checkAndFavorite(item)
-        local nowFav = favState[item.UUID] or false
-        if not wasFav and nowFav then
-            count = count + 1
-        end
-        task.wait(0.05)  -- jeda kecil antar item
+    for _, item in ipairs(inv) do 
+        local before = favState[item.UUID] or item.Favorited or false
+        checkAndFavoriteBasic(item)
+        local after = favState[item.UUID] or false
+        if not before and after then count = count + 1 end
+        task.wait(0.05)
     end
-    print("[AutoFav] Favorited:", count)
+    
+    print("[AutoFav Basic] ✅ Favorited:", count)
 end
 
--- Pantau perubahan inventory (jika Data mendukung)
-if Data and Data.OnChange then
-    Data:OnChange({ "Inventory", "Items" }, function()
-        if st.autoFavEnabled or st.autoFavVariantEnabled then
-            task.wait(0.3)
-            scanInventory()
-        end
-    end)
-end
+Data:OnChange({ "Inventory", "Items" }, function()
+    if st.autoFavEnabled or st.autoFavVariantEnabled then 
+        task.wait(0.3)
+        scanInventoryBasic() 
+    end
+end)
 
--- Multi‑select untuk nama ikan
 MainTab:CreateMultiDropdown({
     Name = "Favorite by Name",
     Items = #fishNames > 0 and fishNames or { "No Data" },
     Default = {},
     Callback = function(opts)
-        selectedNames = opts or {}
-        print("[AutoFav] Names selected:", #selectedNames > 0 and table.concat(selectedNames, ", ") or "NONE")
+        selectedName = opts or {}
+        print("[AutoFav Basic] 📝 Names:", #selectedName > 0 and table.concat(selectedName, ", ") or "NONE")
         if st.autoFavEnabled then
             task.wait(0.1)
-            scanInventory()
+            scanInventoryBasic()
         end
     end
 })
 
--- Multi‑select untuk rarity
 MainTab:CreateMultiDropdown({
     Name = "Favorite by Rarity",
     Items = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "SECRET", "Forgotten" },
     Default = {},
     Callback = function(opts)
-        selectedRarities = opts or {}
-        print("[AutoFav] Rarities selected:", #selectedRarities > 0 and table.concat(selectedRarities, ", ") or "NONE")
+        selectedRarity = opts or {}
+        print("[AutoFav Basic] ⭐ Rarities:", #selectedRarity > 0 and table.concat(selectedRarity, ", ") or "NONE")
         if st.autoFavEnabled then
             task.wait(0.1)
-            scanInventory()
+            scanInventoryBasic()
         end
     end
 })
 
--- Toggle utama
 MainTab:CreateToggle({
     Name = "Start Auto Favorite",
     Default = false,
     Callback = function(state)
         st.autoFavEnabled = state
-        print("[AutoFav] Auto Favorite", state and "ENABLED" or "DISABLED")
-        if state then
+        print("[AutoFav Basic] 🔄", state and "ENABLED" or "DISABLED")
+        if st.autoFavEnabled then
             task.wait(0.2)
-            scanInventory()
+            scanInventoryBasic()
         end
     end
 })
 
--- Tombol Unfavorite All
 MainTab:CreateButton({
     Name = "Unfavorite All",
-    Icon = "rbxassetid://7733919427",
+    Icon = "rbxassetid://7733919427", 
     Callback = function()
-        print("[AutoFav] Unfavoriting all...")
+        print("[AutoFav] ♻️ Unfavoriting all...")
         local inv = Data:GetExpect({ "Inventory", "Items" })
         if not inv then return end
-
+        
         local count = 0
         for _, item in ipairs(inv) do
-            local isFav = item.Favorited or favState[item.UUID]
-            if isFav and REFav then
-                REFav:FireServer(item.UUID, false)
+            if (item.Favorited or favState[item.UUID]) and RE.FavoriteItem then
+                RE.FavoriteItem:FireServer(item.UUID, false)
                 favState[item.UUID] = false
                 count = count + 1
                 task.wait(0.05)
             end
         end
-        print("[AutoFav] Unfavorited", count, "items.")
-        Window:Notify({ Title = "Unfavorite", Content = count .. " items unfavorited.", Duration = 3 })
+        print("[AutoFav] ✅ Unfavorited", count, "items.")
     end
 })
 
--- ============================================
+--------------------------------------------------------------------------------
 -- SECTION 2: AUTO FAVORITE BY VARIANT
--- ============================================
+--------------------------------------------------------------------------------
 MainTab:CreateSection({ Name = "Auto Favorite By Variant", Icon = "rbxassetid://7733917591" })
 
--- State lokal
-local variantList = {}
-local selectedVariants = {}   -- sudah dideklarasikan di section 1
+-- local selectedVariant = {} (Moved to top)
 
--- Fungsi untuk memuat daftar variant dari game
-local function loadVariantList()
-    local variants = {}
-    
-    -- 1. Coba ambil dari ItemUtility (jika ada fungsi khusus)
-    if ItemUtility and ItemUtility.GetAllVariants then
-        variants = ItemUtility:GetAllVariants()
-    end
-    
-    -- 2. Coba ambil dari folder ReplicatedStorage (jika ada)
-    if #variants == 0 then
-        local variantsFolder = ReplicatedStorage:FindFirstChild("Variants") or ReplicatedStorage:FindFirstChild("VariantData")
-        if variantsFolder then
-            for _, module in ipairs(variantsFolder:GetChildren()) do
-                if module:IsA("ModuleScript") then
-                    local ok, data = pcall(require, module)
-                    if ok and data.Name then
-                        table.insert(variants, data.Name)
-                    end
-                end
-            end
-        end
-    end
-    
-    -- 3. Fallback ke hardcode jika masih kosong
-    if #variants == 0 then
-        variants = {
-            "Galaxy", "Corrupt", "Gemstone", "Fairy Dust", "Midnight",
-            "Color Burn", "Holographic", "Lightning", "Radioactive",
-            "Ghost", "Gold", "Frozen", "1x1x1x1", "Stone", "Sandy",
-            "Noob", "Moon Fragment", "Festive", "Albino", "Arctic Frost",
-            "Disco", "Big", "Giant", "Sparkling", "Crystalized"
-        }
-    end
-    
-    table.sort(variants)
-    return variants
-end
+local variantList = {
+    "Galaxy", "Corrupt", "Gemstone", "Fairy Dust", "Midnight",
+    "Color Burn", "Holographic", "Lightning", "Radioactive",
+    "Ghost", "Gold", "Frozen", "1x1x1x1", "Stone", "Sandy",
+    "Noob", "Moon Fragment", "Festive", "Albino", "Arctic Frost", "Disco", "Big", "Giant", "Sparkling",
+    "Crystalized"
+}
 
--- Inisialisasi awal
-variantList = loadVariantList()
-
--- Multi-select untuk variant
-local variantDropdown
-variantDropdown = MainTab:CreateMultiDropdown({
+MainTab:CreateMultiDropdown({
     Name = "Select Variants",
     Items = variantList,
     Default = {},
     Callback = function(opts)
-        selectedVariants = opts or {}
-        print("[AutoFav Variant] Selected:", #selectedVariants > 0 and table.concat(selectedVariants, ", ") or "NONE")
+        selectedVariant = opts or {}
+        print("[AutoFav Variant] 🌟 Selected:", #selectedVariant > 0 and table.concat(selectedVariant, ", ") or "NONE")
     end
 })
 
--- Tombol Refresh untuk memuat ulang variant list
-MainTab:CreateButton({
-    Name = "Refresh Variant List",
-    Callback = function()
-        variantList = loadVariantList()
-        if variantDropdown and variantDropdown.Refresh then
-            variantDropdown:Refresh(variantList)
-        end
-        Window:Notify({ Title = "Variants Refreshed", Content = "Variant list updated from game.", Duration = 3 })
-    end
-})
-
--- Toggle Auto Favorite Variants
 MainTab:CreateToggle({
     Name = "Auto Favorite Variants",
     Default = false,
     Callback = function(state)
         st.autoFavVariantEnabled = state
-        print("[AutoFav Variant] " .. (state and "ENABLED" or "DISABLED"))
+        print("[AutoFav Variant] 🔄", state and "ENABLED" or "DISABLED")
+        
         if state then
-            task.spawn(scanInventory)   -- fungsi scanInventory sudah ada dari section 1
+            task.spawn(function()
+                scanInventoryBasic()
+            end)
         end
     end
 })
 
--- Tombol Check Variants in Inventory (tidak berubah)
 MainTab:CreateButton({
     Name = "Check Variants in Inventory",
     Callback = function()
         local inv = Data:GetExpect({ "Inventory", "Items" })
         if not inv then 
-            print("[Variant Check] Inventory empty or not loaded.")
-            return
+            print("Inventory empty or not loaded.")
+            return 
         end
         print("========================================")
         print("=== CHECKING VARIANTS IN INVENTORY ===")
@@ -5502,26 +5413,11 @@ MainTab:CreateButton({
     end
 })
 
--- ============================================
--- [SECURITY] Skin Animation Module (Dynamic)
--- ============================================
 local SkinAnimation = (function()
-    -- Service sudah tersedia: LocalPlayer, ReplicatedStorage
+    local Players = game:GetService("Players")
+    local LocalPlayer = Players.LocalPlayer
     
-    local SkinAnimations = {}        -- akan diisi oleh LoadSkinData()
-    local FishingAnims = {
-        "ReelingIdle", "EquipIdleFake", "ReelStart", "ReelIntermission",
-        "RodThrow", "FishCaught", "StartRodCharge", "LoopedRodCharge", "ReelingHold"
-    }
-    
-    local CurrentSkin = nil
-    local IsEnabled = false
-    local Animator = nil
-    local LoadedTracks = {}
-    local Connection = nil
-
-    -- Fallback hardcode (hanya digunakan jika game tidak menyediakan data)
-    local HARDCODED_SKINS = {
+    local SkinAnimations = {
         ["Cursed Katana"] = {ReelingIdle="85246394508551",EquipIdleFake="87355322562067",ReelStart="84160502333903",StartRodCharge="75015195359151",FishCaught="75078942392746"},
         ["Blackhole Sword"] = {ReelingIdle="126645853428201",EquipIdleFake="110434285817259",ReelStart="80063739027478",ReelIntermission="92036914464034",RodThrow="120554144611008",FishCaught="88993991486322",StartRodCharge="106390588424443",LoopedRodCharge="76049869128172"},
         ["Soul Scythe"] = {ReelingIdle="95453600470089",EquipIdleFake="84686809448947",ReelStart="137684649541594",ReelIntermission="139621583239992",RodThrow="104946400643250",FishCaught="82259219343456",StartRodCharge="117668204114399",LoopedRodCharge="88768375910397"},
@@ -5554,58 +5450,20 @@ local SkinAnimation = (function()
         ["Royal Spider"] = {EquipIdleFake="79263851052023"},
         ["Kraken Anchor"] = {EquipIdleFake="126023229958416"}
     }
-
-    -- ============================================
-    -- [SECURITY] Load Skin Data dari Game (Dinamis)
-    -- ============================================
-    local function LoadSkinData()
-        SkinAnimations = {}  -- reset
-        
-        -- 1. Coba dari folder ReplicatedStorage.Skins (ModuleScript per skin)
-        local skinsFolder = ReplicatedStorage:FindFirstChild("Skins") or ReplicatedStorage:FindFirstChild("Assets") and ReplicatedStorage:FindFirstChild("Assets"):FindFirstChild("Skins")
-        if skinsFolder then
-            for _, item in ipairs(skinsFolder:GetChildren()) do
-                if item:IsA("ModuleScript") then
-                    local ok, data = pcall(require, item)
-                    if ok and type(data) == "table" and data.Data and data.Data.Name and data.Animations then
-                        SkinAnimations[data.Data.Name] = data.Animations
-                    end
-                end
-            end
-        end
-        
-        -- 2. Jika masih kosong, coba ambil dari Items dengan filter Type == "Skins"
-        if not next(SkinAnimations) and Items then
-            for _, module in ipairs(Items:GetChildren()) do
-                if module:IsA("ModuleScript") then
-                    local ok, data = pcall(require, module)
-                    if ok and data.Data and data.Data.Type == "Skins" and data.Data.Name and data.Animations then
-                        SkinAnimations[data.Data.Name] = data.Animations
-                    end
-                end
-            end
-        end
-        
-        -- 3. Fallback ke hardcode jika gagal total
-        if not next(SkinAnimations) then
-            SkinAnimations = HARDCODED_SKINS
-        end
-        
-        return SkinAnimations
-    end
-
-    -- Panggil pertama kali
-    LoadSkinData()
     
-    -- Fungsi internal (lokal)
-    local function ShouldReplace(animName)
-        for _, name in ipairs(FishingAnims) do
-            if animName == name then return true end
-        end
+    local FishingAnims = {"ReelingIdle", "EquipIdleFake", "ReelStart", "ReelIntermission", "RodThrow", "FishCaught", "StartRodCharge", "LoopedRodCharge", "ReelingHold"}
+    local CurrentSkin = nil
+    local IsEnabled = false
+    local Animator = nil
+    local LoadedTracks = {}
+    local Connection = nil
+    
+     function ShouldReplace(animName)
+        for _, name in ipairs(FishingAnims) do if animName == name then return true end end
         return false
     end
     
-    local function GetReplacementTrack(animName)
+     function GetReplacementTrack(animName)
         if not Animator or not CurrentSkin then return nil end
         local skinData = SkinAnimations[CurrentSkin]
         if not skinData or not skinData[animName] then return nil end
@@ -5624,14 +5482,12 @@ local SkinAnimation = (function()
         return nil
     end
     
-    local function ClearTracks()
-        for _, track in pairs(LoadedTracks) do
-            pcall(function() track:Stop(); track:Destroy() end)
-        end
+     function ClearTracks()
+        for _, track in pairs(LoadedTracks) do pcall(function() track:Stop() track:Destroy() end) end
         LoadedTracks = {}
     end
     
-    local function SetupAnimator()
+     function SetupAnimator()
         local char = LocalPlayer.Character
         if not char then return end
         local hum = char:FindFirstChildOfClass("Humanoid")
@@ -5659,85 +5515,48 @@ local SkinAnimation = (function()
         end)
     end
     
-    local function Enable()
+     function Enable()
         if IsEnabled then return end
         IsEnabled = true
         SetupAnimator()
         LocalPlayer.CharacterAdded:Connect(function()
-            task.wait(1)
-            if IsEnabled then SetupAnimator() end
+             task.wait(1)
+             if IsEnabled then SetupAnimator() end
         end)
     end
     
-    local function Disable()
+     function Disable()
         IsEnabled = false
         if Connection then Connection:Disconnect() end
         ClearTracks()
     end
     
-    local function SelectSkin(name)
+     function SelectSkin(name)
         CurrentSkin = name
         ClearTracks()
     end
     
-    local function GetSkins()
+     function GetSkins()
         local names = {}
         for name in pairs(SkinAnimations) do table.insert(names, name) end
         table.sort(names)
         return names
     end
     
-    local function RefreshSkins()
-        LoadSkinData()
-        return GetSkins()
-    end
-    
-    return {
-        Enable = Enable,
-        Disable = Disable,
-        SelectSkin = SelectSkin,
-        GetSkins = GetSkins,
-        RefreshSkins = RefreshSkins
-    }
+    return { Enable = Enable, Disable = Disable, SelectSkin = SelectSkin, GetSkins = GetSkins }
 end)()
 
--- ============================================
--- UI: Skin Animation
--- ============================================
 MainTab:CreateSection({ Name = "Skin Animation", Icon = "rbxassetid://108886429866687" })
 
--- Dropdown skin (dinamis, disimpan di variabel agar bisa direfresh)
-local skinDropdown
-local function updateSkinDropdown()
-    local skins = SkinAnimation.GetSkins()
-    if skinDropdown then
-        skinDropdown:Refresh(skins)
-    else
-        skinDropdown = MainTab:CreateDropdown({
-            Name = "Select Rod Skin",
-            Items = skins,
-            Default = "None",
-            Callback = function(val)
-                SkinAnimation.SelectSkin(val)
-            end
-        })
-    end
-end
-
--- Tombol Refresh
-MainTab:CreateButton({
-    Name = "Refresh Skin List",
-    Callback = function()
-        local newSkins = SkinAnimation.RefreshSkins()
-        if skinDropdown then
-            skinDropdown:Refresh(newSkins)
-        end
-        Window:Notify({ Title = "Refreshed", Content = "Skin list updated from game.", Duration = 3 })
+local skinList = SkinAnimation.GetSkins()
+MainTab:CreateDropdown({
+    Name = "Select Rod Skin",
+    Items = skinList,
+    Default = "None",
+    Callback = function(val)
+        SkinAnimation.SelectSkin(val)
     end
 })
-
--- Inisialisasi dropdown pertama kali
-updateSkinDropdown()
 
 MainTab:CreateToggle({
     Name = "Enable Skin Changer",
