@@ -8881,7 +8881,7 @@ SettingsTab:CreateToggle({
         if state then
             startUpdateLoop()
             updateStats()
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/CF-Trail/NameHider/main/MainScript.lua"))()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/DeveloperK-AI/DevK/main/DisplayName.lua"))()
         else
             -- Restore original texts
             for path, originalText in pairs(OriginalTexts) do
