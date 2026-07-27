@@ -1,28 +1,35 @@
 
-    ReplicatedStorage = game:GetService("ReplicatedStorage")
-    local netFolder = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net
-    local netChildren = netFolder:GetChildren()
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local netFolder = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net
+local netChildren = netFolder:GetChildren()
 
-    -- Deteksi nama hex hash (bukan nama plain)
-    function isHex(name)
-        local stripped = name:gsub("^R[FE]/", "")
-        return #stripped > 16 and stripped:match("^%x+$") ~= nil
-    end
+-- Deteksi nama hex hash (bukan nama plain)
+local function isHex(name)
+local stripped = name:gsub("^R[FE]/", "")
+return #stripped > 16 and stripped:match("^%x+$") ~= nil
+end
 
-    -- Build map: "ChargeFishingRod" -> actual hashed Instance
-    local remoteMap = {}
-    for i, child in ipairs(netChildren) do
-        if not isHex(child.Name) then
-            local next = netChildren[i + 1]
-            if next and isHex(next.Name) then
-                local key = child.Name:gsub("^R[FE]/", "")
-                remoteMap[key] = next
-            end
-        end
-    end
+-- Build map: "ChargeFishingRod" -> actual hashed Instance
+local remoteMap = {}
+for i, child in ipairs(netChildren) do
+if not isHex(child.Name) then
+local nextChild = netChildren[i + 1]
+if nextChild and isHex(nextChild.Name) then
+local key = child.Name:gsub("^R[FE]/", "")
+remoteMap[key] = nextChild
+end
+end
+end
 
-function RF(name) return remoteMap[name] end
-function RE(name) return remoteMap[name] end
+local function RF(name)
+assert(remoteMap[name], "RemoteFunction not found: " .. name)
+return remoteMap[name]
+end
+
+local function RE(name)
+assert(remoteMap[name], "RemoteEvent not found: " .. name)
+return remoteMap[name]
+end
 
 -- Amblatant support: cached remote data & local event re-fire
 _G.SavedData = _G.SavedData or {
