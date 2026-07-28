@@ -229,7 +229,8 @@ RunServiceBypass.Stepped:Connect(function()
 end)
 
 
-    ReplicatedStorage = game:GetService("ReplicatedStorage")
+	
+	ReplicatedStorage = game:GetService("ReplicatedStorage")
     local netFolder = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net
     local netChildren = netFolder:GetChildren()
 
@@ -452,10 +453,10 @@ function DataCache:Invalidate()
     self.enchantStones = nil
 end
 
-local DevLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/DeveloperK-AI/DevK/main/lib.lua"))()
+local VoraLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/juansyahrz17-prog/vorahub/refs/heads/main/lib.lua"))()
 
- Window = DevLib:CreateWindow({
-	Name = "DeveloperK",
+ Window = VoraLib:CreateWindow({
+	Name = "Vora Hub",
 	Intro = true
 })
 
@@ -475,7 +476,7 @@ InfoTab:CreateButton({
 	SubText = "click to copy link",
 	Icon = "rbxassetid://7733919427",
 	Callback = function()
-		setclipboard("https://discord.gg/Devhub")
+		setclipboard("https://discord.gg/vorahub")
 		Window:Notify({
 			Title = "Discord",
 			Content = "Link copied to clipboard!",
@@ -527,86 +528,49 @@ InfoTab:CreateParagraph({
 
 ShopTab:CreateSection({ Name = "Charms Shop" })
 
--- State lokal
-local SelectedCharm = nil
-local CharmIDs = {}       -- map nama charm -> ID
-local PurchaseQuantity = 1
+ SelectedCharm = "Bone Charm"
+ CharmIDs = {}
 
--- Fungsi untuk memuat daftar charm dari game
-local function loadCharms()
-    local charmNames = {}
-    CharmIDs = {}
-
-    local success, charmsModule = pcall(function()
+ local function loadCharms()
+    local success, charms_module = pcall(function()
         return require(game:GetService("ReplicatedStorage"):WaitForChild("Charms", 5))
     end)
-
-    if success and type(charmsModule) == "table" then
-        for _, charm in pairs(charmsModule) do
+    
+    local charm_names = {}
+    if success and type(charms_module) == "table" then
+        for _, charm in pairs(charms_module) do
             if charm.Data and charm.Data.Name and charm.Data.Id then
-                local name = tostring(charm.Data.Name)
-                local id = tonumber(charm.Data.Id)
-                if name and id then
-                    CharmIDs[name] = id
-                    table.insert(charmNames, name)
-                end
+                CharmIDs[charm.Data.Name] = charm.Data.Id
+                table.insert(charm_names, charm.Data.Name)
             end
         end
-        table.sort(charmNames)
-    else
-        -- Fallback ke data hardcode jika gagal
-        local hardcoded = {
-            ["Bone Charm"] = 1,
-            ["Algae Charm"] = 2,
-            ["Magma Charm"] = 3,
-            ["Clover Charm"] = 4,
-            ["Heart Charm"] = 14,
-        }
-        CharmIDs = hardcoded
-        for name in pairs(hardcoded) do
-            table.insert(charmNames, name)
-        end
-        table.sort(charmNames)
-        Window:Notify({ Title = "Charms", Content = "Using fallback charm data. Press Refresh to retry.", Duration = 5 })
     end
+    table.sort(charm_names)
+    return charm_names
+ end
 
-    return charmNames
-end
+ local charmItems = loadCharms()
+ if #charmItems == 0 then
+    charmItems = {"Bone Charm", "Algae Charm", "Magma Charm", "Clover Charm", "Heart Charm"}
+    CharmIDs = {
+        ["Bone Charm"] = 1,
+        ["Algae Charm"] = 2,
+        ["Magma Charm"] = 3,
+        ["Clover Charm"] = 4,
+        ["Heart Charm"] = 14,
+    }
+ end
 
--- Dropdown charm (disimpan di variabel agar bisa di-refresh)
-local charmDropdown
-local function updateCharmDropdown()
-    local items = loadCharms()
-    if charmDropdown then
-        charmDropdown:Refresh(items)
-    else
-        charmDropdown = ShopTab:CreateDropdown({
-            Name = "Select Charm",
-            Items = items,
-            Default = items[1] or "",
-            Callback = function(val)
-                SelectedCharm = val
-            end
-        })
-    end
-    if not SelectedCharm or not CharmIDs[SelectedCharm] then
-        SelectedCharm = items[1]
-    end
-end
-
--- Tombol Refresh
-ShopTab:CreateButton({
-    Name = "Refresh Charm List",
-    Callback = function()
-        updateCharmDropdown()
-        Window:Notify({ Title = "Refreshed", Content = "Charm list updated from game.", Duration = 3 })
+ local charmDropdown = ShopTab:CreateDropdown({
+    Name = "Select Charm",
+    Items = charmItems,
+    Default = charmItems[1] or "Bone Charm",
+    Callback = function(val)
+        SelectedCharm = val
     end
 })
 
--- Inisialisasi pertama kali
-updateCharmDropdown()
-
--- Input quantity
+ PurchaseQuantity = 1
 ShopTab:CreateInput({
     Name = "Quantity",
     PlaceholderText = "1",
@@ -617,22 +581,25 @@ ShopTab:CreateInput({
     end
 })
 
--- Tombol Purchase
 ShopTab:CreateButton({
     Name = "Purchase Charm",
     Callback = function()
-        if not SelectedCharm then
-            Window:Notify({ Title = "Error", Content = "No charm selected.", Duration = 3 })
-            return
-        end
         local id = CharmIDs[SelectedCharm]
-        if not id then
-            Window:Notify({ Title = "Error", Content = "Charm ID not found.", Duration = 3 })
-            return
+        if not id then 
+            Window:Notify({
+                Title = "Error",
+                Content = "Charm ID not found for " .. tostring(SelectedCharm),
+                Duration = 3
+            })
+            return 
         end
-
-        Window:Notify({ Title = "Purchase", Content = "Buying " .. PurchaseQuantity .. " " .. SelectedCharm .. "...", Duration = 2 })
-
+        
+        Window:Notify({
+            Title = "Purchase",
+            Content = "Buying " .. PurchaseQuantity .. " " .. SelectedCharm .. "...",
+            Duration = 2
+        })
+        
         task.spawn(function()
             for i = 1, PurchaseQuantity do
                 pcall(function()
@@ -640,29 +607,43 @@ ShopTab:CreateButton({
                 end)
                 task.wait(0.1)
             end
-            Window:Notify({ Title = "Done", Content = "Finished buying " .. SelectedCharm, Duration = 2 })
+            Window:Notify({
+                Title = "Done",
+                Content = "Finished buying " .. SelectedCharm,
+                Duration = 2
+            })
         end)
     end
 })
 
--- Tombol Equip
 ShopTab:CreateButton({
     Name = "Equip Charm",
     Callback = function()
         if not SelectedCharm then return end
+        
+        -- Try to equip by name first
         pcall(function()
             REEquipCharm:FireServer(SelectedCharm)
         end)
-        Window:Notify({ Title = "Equip", Content = "Equipped " .. SelectedCharm, Duration = 2 })
+        
+        Window:Notify({
+            Title = "Equip",
+            Content = "Equipped " .. SelectedCharm,
+            Duration = 2
+        })
     end
 })
 
--- Tombol Unequip
 ShopTab:CreateButton({
     Name = "Unequip Charm",
     Callback = function()
         REUnequipCharm:FireServer()
-        Window:Notify({ Title = "Unequip", Content = "Unequipped Charm", Duration = 2 })
+        
+        Window:Notify({
+            Title = "Unequip",
+            Content = "Unequipped Charm",
+            Duration = 2
+        })
     end
 })
 
@@ -1132,65 +1113,125 @@ function stopInstantFishingV2()
     UB_stop()
 end
 
--- ============================================
--- INSTANT BOBBER (SERVER‑SIDE, NO VISUAL ONLY)
--- ============================================
-ExclusiveTab:CreateSection({ Name = "Instant Bobber" })
+-- =============================
+-- Instant Bobber (moons.lua: patchInstantBaitOverrideToCastPosition)
+-- =============================
+ InstantBobberState = {
+    instantOverrideActive = false,
+    instantOverrideSetupDone = false,
+    activeBaitsByUserId = nil,
+    cosmeticFolder = nil,
+    baitCastConn = nil,
+    baitDestroyedConn = nil,
+    renderConn = nil,
+}
 
--- State lokal
-local instantBobberEnabled = false
-local instantBobberThread = nil
-
-local function startInstantBobber()
-    if instantBobberThread then task.cancel(instantBobberThread) end
-
-    local chargeRemote = ChargeRod
-    local minigameRemote = StartMini
-
-    if not chargeRemote or not minigameRemote then
-        Window:Notify({ Title = "Error", Content = "Remote tidak ditemukan", Duration = 3 })
+ function patchInstantBaitOverrideToCastPosition(enabled)
+    if not enabled then
+        InstantBobberState.instantOverrideActive = false
+        if InstantBobberState.activeBaitsByUserId then
+            table.clear(InstantBobberState.activeBaitsByUserId)
+        end
         return
     end
 
-    -- Loop yang langsung memanggil Charge -> Minigame tanpa delay
-    instantBobberThread = task.spawn(function()
-        while instantBobberEnabled do
-            pcall(function()
-                local t = workspace:GetServerTimeNow()
-                chargeRemote:InvokeServer(nil, nil, t, nil)
-                -- LANGSUNG mulai minigame, tidak ada jeda untuk bobber
-                minigameRemote:InvokeServer(-1, 1, t)
-            end)
-            -- Jeda minimal agar server tidak overload
-            task.wait(0.01)
+    InstantBobberState.instantOverrideActive = true
+    InstantBobberState.activeBaitsByUserId = InstantBobberState.activeBaitsByUserId or {}
+    table.clear(InstantBobberState.activeBaitsByUserId)
+
+    if InstantBobberState.instantOverrideSetupDone then
+        return
+    end
+    InstantBobberState.instantOverrideSetupDone = true
+
+    local okCosmetic, cosmeticFolder = pcall(function()
+        return workspace:WaitForChild("CosmeticFolder", 5)
+    end)
+    if not okCosmetic or not cosmeticFolder then
+        InstantBobberState.instantOverrideSetupDone = false
+        InstantBobberState.instantOverrideActive = false
+        return
+    end
+    InstantBobberState.cosmeticFolder = cosmeticFolder
+
+    local baitCastVisual = GetServerRemote("RE/BaitCastVisual") or GetServerRemote("BaitCastVisual")
+    local baitDestroyed = BaitDestroyed or GetServerRemote("RE/BaitDestroyed") or GetServerRemote("BaitDestroyed")
+
+    if not baitCastVisual or not baitCastVisual:IsA("RemoteEvent") then
+        InstantBobberState.instantOverrideSetupDone = false
+        InstantBobberState.instantOverrideActive = false
+        return
+    end
+    if not baitDestroyed or not baitDestroyed:IsA("RemoteEvent") then
+        InstantBobberState.instantOverrideSetupDone = false
+        InstantBobberState.instantOverrideActive = false
+        return
+    end
+
+    function safeConnect(signal, callback, label)
+        if not signal then
+            return nil
+        end
+        local ok, conn = pcall(function()
+            return signal:Connect(callback)
+        end)
+        if not ok then
+            return nil
+        end
+        return conn
+    end
+
+    InstantBobberState.baitCastConn = safeConnect(baitCastVisual.OnClientEvent, function(player, data)
+        if not InstantBobberState.instantOverrideActive then
+            return
+        end
+        if not player or not player.UserId then
+            return
+        end
+        if not data or not data.CastPosition or typeof(data.CastPosition) ~= "Vector3" then
+            return
+        end
+
+        InstantBobberState.activeBaitsByUserId[player.UserId] = {
+            pivot = CFrame.new(data.CastPosition),
+            expiresAt = tick() + 1.5,
+        }
+    end, "BaitCastVisual")
+
+    InstantBobberState.baitDestroyedConn = safeConnect(baitDestroyed.OnClientEvent, function(player)
+        if not InstantBobberState.instantOverrideActive then
+            return
+        end
+        if not player or not player.UserId then
+            return
+        end
+        InstantBobberState.activeBaitsByUserId[player.UserId] = nil
+    end, "BaitDestroyed")
+
+    InstantBobberState.renderConn = RunService.RenderStepped:Connect(function()
+        if not InstantBobberState.instantOverrideActive then
+            return
+        end
+
+        local now = tick()
+        local cfolder = InstantBobberState.cosmeticFolder
+        if not cfolder then
+            return
+        end
+
+        for userId, entry in pairs(InstantBobberState.activeBaitsByUserId) do
+            if now > entry.expiresAt then
+                InstantBobberState.activeBaitsByUserId[userId] = nil
+                continue
+            end
+
+            local model = cfolder:FindFirstChild(tostring(userId))
+            if model and model.PivotTo then
+                model:PivotTo(entry.pivot)
+            end
         end
     end)
 end
-
-local function stopInstantBobber()
-    instantBobberEnabled = false
-    if instantBobberThread then
-        task.cancel(instantBobberThread)
-        instantBobberThread = nil
-    end
-end
-
--- UI Toggle
-ExclusiveTab:CreateToggle({
-    Name = "Instant Bobber",
-    SubText = "Bobber langsung sampai tanpa animasi (server-side)",
-    Default = false,
-    Callback = function(state)
-        instantBobberEnabled = state
-        if state then
-            startInstantBobber()
-            Window:Notify({ Title = "Instant Bobber", Content = "Activated", Duration = 2 })
-        else
-            stopInstantBobber()
-            Window:Notify({ Title = "Instant Bobber", Content = "Stopped", Duration = 2 })
-        end
-    end
-})
 
 
 HttpService = game:GetService("HttpService")
@@ -1511,249 +1552,215 @@ ExclusiveTab:CreateToggle({
 ExclusiveTab:CreateSection({ Name = "Auto Buy Totem" })
 
 -- ============================================
--- [SECURITY] State lokal untuk Auto Buy Totem
+-- AUTO BUY TOTEM (MARKET PURCHASE)
 -- ============================================
-local autoBuyTotem = false
-local selectedBuyTotem = nil
-local buyTotemLimit = 10
+
+local TotemMarketIds = {
+	["Luck Totem"] = 5,
+	["Shiny Totem"] = 7,
+	["Mutation Totem"] = 8
+}
+
+local TotemPrices = {
+	["Luck Totem"] = 650000,
+	["Shiny Totem"] = 400000,
+	["Mutation Totem"] = 800000
+}
+
+_G.AutoBuyTotem = false
+_G.SelectedBuyTotem = "Luck Totem"
+_G.BuyTotemLimit = 10
 local purchaseCount = 0
 
--- Data totem (diisi oleh loadTotemData)
-local totemMarketIds = {}   -- nama -> market ID
-local totemPrices = {}      -- nama -> harga
-local totemInventoryIds = {}-- nama -> inventory ID
-
--- Fungsi untuk mengambil data totem dari game
-local function loadTotemData()
-    -- Reset
-    totemMarketIds = {}
-    totemPrices = {}
-    totemInventoryIds = {}
-    local totemNames = {}
-
-    -- 1. Coba ambil dari modul game (ReplicatedStorage.Items.Totems atau ShopItems)
-    local success, itemsFolder = pcall(function()
-        local folder = ReplicatedStorage:FindFirstChild("Items") or ReplicatedStorage:FindFirstChild("ShopItems")
-        if folder then
-            return folder:FindFirstChild("Totems") or folder:FindFirstChild("Totem") or folder
-        end
-        return nil
-    end)
-
-    if itemsFolder then
-        for _, item in ipairs(itemsFolder:GetChildren()) do
-            if item:IsA("ModuleScript") then
-                local ok, mod = pcall(require, item)
-                if ok and mod.Data and mod.Data.Name and mod.Data.Id then
-                    local name = tostring(mod.Data.Name)
-                    local marketId = tonumber(mod.Data.MarketId) or tonumber(mod.Data.Id)
-                    local price = tonumber(mod.Data.Price) or tonumber(mod.Data.Cost) or 0
-                    local inventoryId = tonumber(mod.Data.InventoryId) or tonumber(mod.Data.Id)
-
-                    totemMarketIds[name] = marketId
-                    totemPrices[name] = price
-                    totemInventoryIds[name] = inventoryId
-                    table.insert(totemNames, name)
-                end
-            end
-        end
-    end
-
-    -- 2. Fallback ke hardcode jika gagal
-    if #totemNames == 0 then
-        local hardcoded = {
-            ["Luck Totem"] = { MarketId = 5, Price = 650000, InventoryId = 1 },
-            ["Shiny Totem"] = { MarketId = 7, Price = 400000, InventoryId = 3 },
-            ["Mutation Totem"] = { MarketId = 8, Price = 800000, InventoryId = 2 },
-        }
-        for name, data in pairs(hardcoded) do
-            totemMarketIds[name] = data.MarketId
-            totemPrices[name] = data.Price
-            totemInventoryIds[name] = data.InventoryId
-            table.insert(totemNames, name)
-        end
-    end
-
-    table.sort(totemNames)
-    return totemNames
-end
-
--- Inisialisasi pertama kali
-local totemList = loadTotemData()
-selectedBuyTotem = totemList[1] or "Luck Totem"
-
--- Dropdown untuk pilih totem (dinamis, disimpan agar bisa direfresh)
-local buyTotemDropdown
-buyTotemDropdown = ExclusiveTab:CreateDropdown({
-    Name = "Select Totem to Buy",
-    Items = totemList,
-    Default = selectedBuyTotem,
-    Callback = function(selected)
-        selectedBuyTotem = selected
-        print("[Auto Buy] Selected totem:", selected, "Price:", totemPrices[selected])
-    end
+-- Dropdown untuk pilih totem
+ExclusiveTab:CreateDropdown({
+	Name = "Select Totem to Buy",
+	Items = {"Luck Totem", "Shiny Totem", "Mutation Totem"},
+	Default = "Luck Totem",
+	Callback = function(selected)
+		_G.SelectedBuyTotem = selected
+		print("[Auto Buy] Selected totem:", selected, "Price:", TotemPrices[selected])
+	end
 })
 
--- Tombol Refresh untuk memuat ulang data totem
-ExclusiveTab:CreateButton({
-    Name = "Refresh Totem List",
-    Callback = function()
-        totemList = loadTotemData()
-        if buyTotemDropdown and buyTotemDropdown.Refresh then
-            buyTotemDropdown:Refresh(totemList)
-        end
-        -- Pastikan pilihan masih valid
-        if not selectedBuyTotem or not totemMarketIds[selectedBuyTotem] then
-            selectedBuyTotem = totemList[1]
-        end
-        Window:Notify({ Title = "Refreshed", Content = "Totem list updated from game.", Duration = 3 })
-    end
-})
-
+-- Slider untuk batas pembelian
 -- Input untuk batas pembelian
 ExclusiveTab:CreateInput({
-    Name = "Purchase Limit",
-    PlaceholderText = "10",
-    RemoveTextAfterFocusLost = false,
-    Callback = function(text)
-        local value = tonumber(text)
-        if value then
-            buyTotemLimit = value
-            print("[Auto Buy] Purchase limit set to:", value)
-        end
-    end
+	Name = "Purchase Limit",
+	PlaceholderText = "10",
+	RemoveTextAfterFocusLost = false,
+	Callback = function(text)
+		local value = tonumber(text)
+		if value then
+			_G.BuyTotemLimit = value
+			print("[Auto Buy] Purchase limit set to:", value)
+		else
+			warn("[Auto Buy] Invalid number entered for limit")
+		end
+	end
 })
 
--- Toggle Open Merchant GUI
+-- Button Open Merchant
+-- Toggle Open Merchant
 ExclusiveTab:CreateToggle({
-    Name = "Open Merchant GUI",
-    Default = false,
-    Callback = function(value)
-        local merchantGui = LocalPlayer.PlayerGui:FindFirstChild("Merchant")
-        if merchantGui then
-            merchantGui.Enabled = value
-            if value then
-                Window:Notify({
-                    Title = "Merchant",
-                    Content = "Merchant GUI Opened!",
-                    Icon = "rbxassetid://7733920644",
-                    Duration = 3
-                })
-            end
-        else
-            Window:Notify({
-                Title = "Error",
-                Content = "Merchant GUI not found!",
-                Icon = "rbxassetid://7733658504",
-                Duration = 3
-            })
-        end
-    end
+	Name = "Open Merchant GUI",
+	Default = false,
+	Callback = function(value)
+		local merchantGui = game:GetService("Players").LocalPlayer.PlayerGui:FindFirstChild("Merchant")
+		if merchantGui then
+			merchantGui.Enabled = value
+			if value then
+				Window:Notify({
+					Title = "Merchant",
+					Content = "Merchant GUI Opened!",
+					Icon = "rbxassetid://7733920644",
+					Duration = 3
+				})
+			end
+		else
+			Window:Notify({
+				Title = "Error",
+				Content = "Merchant GUI not found!",
+				Icon = "rbxassetid://7733658504",
+				Duration = 3
+			})
+		end
+	end
 })
 
 -- Toggle Auto Buy Totem
 ExclusiveTab:CreateToggle({
-    Name = "Auto Buy Totem",
-    SubText = "Purchase totem from market",
-    Default = false,
-    Callback = function(value)
-        autoBuyTotem = value
+	Name = "Auto Buy Totem",
+	SubText = "Purchase totem from market",
+	Default = false,
+	Callback = function(value)
+		_G.AutoBuyTotem = value
+		
+		if value then
+			purchaseCount = 0 -- Reset counter
+			
+			Window:Notify({
+				Title = "Auto Buy Totem Enabled",
+				Content = "Buying: " .. _G.SelectedBuyTotem .. " (" .. TotemPrices[_G.SelectedBuyTotem] .. " coins)\nLimit: " .. _G.BuyTotemLimit .. " totems",
+				Icon = "rbxassetid://7733911621",
+				Duration = 3
+			})
+			
+			-- Auto buy loop
+			task.spawn(function()
+				local ReplicatedStorage = game:GetService("ReplicatedStorage")
+				local PurchaseRemote = BuyMarket
+				
+				-- Inventory IDs (different from Market IDs)
+				local TotemInventoryIds = {
+					["Luck Totem"] = 1,
+					["Mutation Totem"] = 2,
+					["Shiny Totem"] = 3
+				}
 
-        if value then
-            purchaseCount = 0
-
-            Window:Notify({
-                Title = "Auto Buy Totem Enabled",
-                Content = "Buying: " .. selectedBuyTotem .. " (" .. (totemPrices[selectedBuyTotem] or "?") .. " coins)\nLimit: " .. buyTotemLimit .. " totems",
-                Icon = "rbxassetid://7733911621",
-                Duration = 3
-            })
-
-            -- Auto buy loop
-            task.spawn(function()
-                local purchaseRemote = BuyMarket
-
-                -- Fungsi untuk mengecek jumlah totem di inventory
-                local function getTotemCount(totemName)
-                    local inventoryId = totemInventoryIds[totemName]
-                    if not inventoryId then return 0 end
-
-                    local ok, result = pcall(function()
-                        local dataStore = Data:GetExpect("Inventory")
-                        if dataStore and dataStore.Totems then
-                            local total = 0
-                            for _, item in ipairs(dataStore.Totems) do
-                                if tonumber(item.Id) == inventoryId then
-                                    total = total + (item.Count or 1)
-                                end
-                            end
-                            return total
-                        end
-                        return 0
-                    end)
-
-                    return ok and result or 0
-                end
-
-                while autoBuyTotem and purchaseCount < buyTotemLimit do
-                    local marketId = totemMarketIds[selectedBuyTotem]
-                    if not marketId then
-                        warn("[Auto Buy] No market ID for " .. selectedBuyTotem)
-                        break
-                    end
-
-                    local beforeCount = getTotemCount(selectedBuyTotem)
-                    local ok, result = pcall(function()
-                        return purchaseRemote:InvokeServer(marketId)
-                    end)
-
-                    if ok then
-                        task.wait(0.5)
-                        local afterCount = getTotemCount(selectedBuyTotem)
-
-                        if afterCount > beforeCount then
-                            purchaseCount = purchaseCount + 1
-                            print("[Auto Buy] ✓ Purchased:", selectedBuyTotem, "Count:", purchaseCount)
-                        else
-                            warn("[Auto Buy] ⚠️ Purchase succeeded but inventory not updated")
-                        end
-                    else
-                        warn("[Auto Buy] Error:", result)
-                    end
-
-                    task.wait(1)
-                end
-
-                if purchaseCount >= buyTotemLimit then
-                    autoBuyTotem = false
-                    Window:Notify({
-                        Title = "Auto Buy Completed",
-                        Content = "Purchased " .. purchaseCount .. " totems!",
-                        Icon = "rbxassetid://7733911621",
-                        Duration = 4
-                    })
-                end
-            end)
-        else
-            Window:Notify({
-                Title = "Auto Buy Totem Disabled",
-                Content = "Stopped. Purchased: " .. purchaseCount .. " totems",
-                Icon = "rbxassetid://7733911621",
-                Duration = 2
-            })
-        end
-    end
+				-- Function to check inventory count
+				function GetTotemCount(totemName)
+					local success, result = pcall(function()
+						local Client = require(ReplicatedStorage.Packages.Replion).Client
+						local dataStore = Client:WaitReplion("Data")
+						local inventory = dataStore:GetExpect("Inventory")
+						
+						-- Get correct Inventory ID
+						local inventoryId = TotemInventoryIds[totemName]
+						
+						if inventory and inventory.Totems then
+							local totalCount = 0
+							for _, item in ipairs(inventory.Totems) do
+								-- Check by Inventory ID
+								if tonumber(item.Id) == inventoryId then
+									totalCount = totalCount + (item.Count or 1)
+								end
+							end
+							return totalCount
+						end
+						return 0
+					end)
+					
+					if not success then
+						warn("[Auto Buy] GetTotemCount error:", result)
+						return 0
+					end
+					
+					return result or 0
+				end
+				
+				while _G.AutoBuyTotem and purchaseCount < _G.BuyTotemLimit do
+					local totemId = TotemMarketIds[_G.SelectedBuyTotem]
+					local beforeCount = GetTotemCount(_G.SelectedBuyTotem)
+					
+					-- Try to purchase
+					local success, result = pcall(function()
+						return PurchaseRemote:InvokeServer(totemId)
+					end)
+					
+					if success then
+						if result then
+							-- Wait a bit for inventory to update
+							task.wait(0.5)
+							
+							-- Verify purchase by checking inventory
+							local afterCount = GetTotemCount(_G.SelectedBuyTotem)
+							
+							if afterCount > beforeCount then
+								purchaseCount = purchaseCount + 1
+								print("[Auto Buy] ✓ Purchased:", _G.SelectedBuyTotem, "ID:", totemId, "Count:", purchaseCount .. "/" .. _G.BuyTotemLimit)
+								print("[Auto Buy] Inventory:", afterCount, "totems")
+							else
+								warn("[Auto Buy] ⚠️ Purchase response OK but inventory not updated")
+							end
+						else
+							warn("[Auto Buy] ✗ Purchase failed (not enough coins or error)")
+						end
+					else
+						warn("[Auto Buy] Error:", result)
+					end
+					
+					-- Wait before next purchase attempt
+					task.wait(1)
+				end
+				
+				-- Auto disable when limit reached
+				if purchaseCount >= _G.BuyTotemLimit then
+					_G.AutoBuyTotem = false
+					Window:Notify({
+						Title = "Auto Buy Completed",
+						Content = "Purchased " .. purchaseCount .. " totems!\nAuto Buy disabled.",
+						Icon = "rbxassetid://7733911621",
+						Duration = 4
+					})
+				end
+			end)
+		else
+			Window:Notify({
+				Title = "Auto Buy Totem Disabled",
+				Content = "Stopped auto buying totems\nPurchased: " .. purchaseCount .. " totems",
+				Icon = "rbxassetid://7733911621",
+				Duration = 2
+			})
+		end
+	end
 })
 
 ExclusiveTab:CreateSection({ Name = "FPS Boost" })
 
 -- ==============================================================
---                ⭐ FPS BOOSTER MODULE (SECURED) ⭐
+--                ⭐ FPS BOOSTER MODULE (OPTIMIZED) ⭐
+--                    Ready untuk GUI Integration
 -- ==============================================================
+
 local FPSBooster = {}
 FPSBooster.Enabled = false
 
--- Storage untuk restore (dibersihkan saat disable)
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local Terrain = workspace:FindFirstChildOfClass("Terrain")
+
+-- Storage untuk restore
 local originalStates = {
     reflectance = {},
     transparency = {},
@@ -1762,43 +1769,63 @@ local originalStates = {
     waterProperties = {}
 }
 
+-- Connection untuk new objects
 local newObjectConnection = nil
 
--- [SECURITY] Fungsi internal menjadi lokal
-local function optimizeObject(obj)
+-- Fungsi untuk optimize single object
+ function optimizeObject(obj)
     if not FPSBooster.Enabled then return end
     
     pcall(function()
+        -- Optimize BasePart (Bangunan, model, dll)
         if obj:IsA("BasePart") then
+            -- Simpan original states (JANGAN UBAH WARNA & MATERIAL)
             if not originalStates.reflectance[obj] then
                 originalStates.reflectance[obj] = obj.Reflectance
             end
+            
+            -- Hapus reflections & shadows saja
             obj.Reflectance = 0
             obj.CastShadow = false
         end
         
+        -- Matikan Decals & Textures
         if obj:IsA("Decal") or obj:IsA("Texture") then
             if not originalStates.transparency[obj] then
                 originalStates.transparency[obj] = obj.Transparency
             end
-            obj.Transparency = 1
+            obj.Transparency = 1 -- Invisible
         end
         
+        -- Matikan SurfaceAppearance (texture PBR)
         if obj:IsA("SurfaceAppearance") then
             obj:Destroy()
         end
         
-        if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam") then
+        -- Matikan ParticleEmitter (debu, asap, dll)
+        if obj:IsA("ParticleEmitter") then
             obj.Enabled = false
         end
         
+        -- Matikan Trail effects
+        if obj:IsA("Trail") then
+            obj.Enabled = false
+        end
+        
+        -- Matikan Beam effects
+        if obj:IsA("Beam") then
+            obj.Enabled = false
+        end
+        
+        -- Matikan Fire, Smoke, Sparkles
         if obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then
             obj.Enabled = false
         end
     end)
 end
 
-local function restoreObject(obj)
+-- Fungsi untuk restore single object
+ function restoreObject(obj)
     pcall(function()
         if obj:IsA("BasePart") then
             if originalStates.reflectance[obj] then
@@ -1833,36 +1860,48 @@ function FPSBooster.Enable()
     
     FPSBooster.Enabled = true
     
+    -----------------------------------------
     -- 1. Optimize semua existing objects
+    -----------------------------------------
     for _, obj in ipairs(workspace:GetDescendants()) do
         optimizeObject(obj)
     end
     
-    -- 2. Matikan animasi air (Terrain Water)
+    -----------------------------------------
+    -- 2. MATIKAN ANIMASI AIR (Terrain Water)
+    -----------------------------------------
     if Terrain then
         pcall(function()
+            -- Simpan water properties
             originalStates.waterProperties = {
                 WaterReflectance = Terrain.WaterReflectance,
                 WaterWaveSize = Terrain.WaterWaveSize,
                 WaterWaveSpeed = Terrain.WaterWaveSpeed
             }
-            Terrain.WaterWaveSize = 0
-            Terrain.WaterWaveSpeed = 0
-            Terrain.WaterReflectance = 0
+            
+            -- Matikan animasi air (WARNA TETAP DEFAULT)
+            Terrain.WaterWaveSize = 0 -- NO WAVES
+            Terrain.WaterWaveSpeed = 0 -- NO ANIMATION
+            Terrain.WaterReflectance = 0 -- NO REFLECTION
         end)
     end
     
+    -----------------------------------------
     -- 3. Optimize Lighting (Hapus Shadows & Fog)
+    -----------------------------------------
     originalStates.lighting = {
         GlobalShadows = Lighting.GlobalShadows,
         FogEnd = Lighting.FogEnd,
         FogStart = Lighting.FogStart
     }
-    Lighting.GlobalShadows = false
-    Lighting.FogStart = 0
-    Lighting.FogEnd = 1000000
     
+    Lighting.GlobalShadows = false -- NO SHADOWS
+    Lighting.FogStart = 0
+    Lighting.FogEnd = 1000000 -- NO FOG
+    
+    -----------------------------------------
     -- 4. Matikan Post-Processing Effects
+    -----------------------------------------
     for _, effect in ipairs(Lighting:GetChildren()) do
         if effect:IsA("PostEffect") then
             originalStates.effects[effect] = effect.Enabled
@@ -1870,13 +1909,17 @@ function FPSBooster.Enable()
         end
     end
     
+    -----------------------------------------
     -- 5. Set Render Quality ke MINIMUM
+    -----------------------------------------
     settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
     
+    -----------------------------------------
     -- 6. Hook new objects yang spawn
+    -----------------------------------------
     newObjectConnection = workspace.DescendantAdded:Connect(function(obj)
         if FPSBooster.Enabled then
-            task.wait(0.1)
+            task.wait(0.1) -- Delay kecil
             optimizeObject(obj)
         end
     end)
@@ -1894,12 +1937,16 @@ function FPSBooster.Disable()
     
     FPSBooster.Enabled = false
     
+    -----------------------------------------
     -- 1. Restore semua objects
+    -----------------------------------------
     for _, obj in ipairs(workspace:GetDescendants()) do
         restoreObject(obj)
     end
     
+    -----------------------------------------
     -- 2. Restore Terrain Water
+    -----------------------------------------
     if Terrain and originalStates.waterProperties then
         pcall(function()
             Terrain.WaterReflectance = originalStates.waterProperties.WaterReflectance
@@ -1908,41 +1955,51 @@ function FPSBooster.Disable()
         end)
     end
     
+    -----------------------------------------
     -- 3. Restore Lighting
+    -----------------------------------------
     if originalStates.lighting.GlobalShadows ~= nil then
         Lighting.GlobalShadows = originalStates.lighting.GlobalShadows
         Lighting.FogEnd = originalStates.lighting.FogEnd
         Lighting.FogStart = originalStates.lighting.FogStart
     end
     
+    -----------------------------------------
     -- 4. Restore Post-Processing
+    -----------------------------------------
     for effect, state in pairs(originalStates.effects) do
         if effect and effect.Parent then
             effect.Enabled = state
         end
     end
     
+    -----------------------------------------
     -- 5. Restore Render Quality
+    -----------------------------------------
     settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
     
+    -----------------------------------------
     -- 6. Disconnect hook
+    -----------------------------------------
     if newObjectConnection then
         newObjectConnection:Disconnect()
         newObjectConnection = nil
     end
     
-    -- 7. Bersihkan penyimpanan original states
-    table.clear(originalStates.reflectance)
-    table.clear(originalStates.transparency)
-    table.clear(originalStates.lighting)
-    table.clear(originalStates.effects)
-    table.clear(originalStates.waterProperties)
+    -- Clear original states
+    originalStates = {
+        reflectance = {},
+        transparency = {},
+        lighting = {},
+        effects = {},
+        waterProperties = {}
+    }
     
     return true, "FPS Booster disabled"
 end
 
 -- ============================================
--- UTILITY
+-- UTILITY FUNCTIONS
 -- ============================================
 function FPSBooster.IsEnabled()
     return FPSBooster.Enabled
@@ -1958,9 +2015,11 @@ ExclusiveTab:CreateToggle({
     Default = false,
     Callback = function(value)
         if value then
-            FPSBooster.Enable()
+            -- Enable FPS Booster
+            local success, msg = FPSBooster.Enable()
         else
-            FPSBooster.Disable()
+            -- Disable FPS Booster
+            local success, msg = FPSBooster.Disable()
         end
     end,
 })
@@ -2014,104 +2073,63 @@ ExclusiveTab:CreateToggle({
 })
 
 
-ExclusiveTab:CreateSection({ Name = "Player Optimize" })
-
--- [SECURITY] State lokal untuk Freeze Character
-local freezeEnabled = false
-local freezeConnection = nil
-local originalCFrame = nil
-local freezeCurrentRoot = nil
-
-local function enableFreeze()
-    local char = LocalPlayer.Character
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-
-    freezeCurrentRoot = root
-    originalCFrame = root.CFrame
-
-    freezeConnection = RunService.Heartbeat:Connect(function()
-        if freezeEnabled and freezeCurrentRoot and freezeCurrentRoot.Parent then
-            freezeCurrentRoot.CFrame = originalCFrame
-        end
-    end)
-end
-
-local function disableFreeze()
-    if freezeConnection then
-        freezeConnection:Disconnect()
-        freezeConnection = nil
-    end
-    freezeCurrentRoot = nil
-    originalCFrame = nil
-end
-
--- Pantau jika karakter berubah (respawn)
-LocalPlayer.CharacterAdded:Connect(function(char)
-    if not freezeEnabled then return end
-    local root = char:WaitForChild("HumanoidRootPart")
-    if root then
-        -- Matikan freeze lama
-        disableFreeze()
-        -- Aktifkan ulang dengan root baru
-        freezeEnabled = true
-        enableFreeze()
-    end
-end)
-
 ExclusiveTab:CreateToggle({
-    Name = "Freeze Character",
-    Default = false,
-    Callback = function(state)
-        freezeEnabled = state
+	Name = "Freeze Character",
+	Default = false,
+	 Callback = function(state)
+        _G.FreezeCharacter = state
         if state then
-            enableFreeze()
+            local character = game.Players.LocalPlayer.Character
+            if character then
+                local root = character:FindFirstChild("HumanoidRootPart")
+                if root then
+                    originalCFrame = root.CFrame
+                    freezeConnection = game:GetService("RunService").Heartbeat:Connect(function()
+                        if _G.FreezeCharacter and root then
+                            root.CFrame = originalCFrame
+                        end
+                    end)
+                end
+            end
         else
-            disableFreeze()
+            if freezeConnection then
+                freezeConnection:Disconnect()
+                freezeConnection = nil
+            end
         end
     end
 })
 
 
 ExclusiveTab:CreateToggle({
-    Name = "Disable Fish Caught",
-    Default = false,
-    Callback = function(state)
-        -- [SECURITY] State lokal, tidak ada global
-        local playerGui = LocalPlayer:WaitForChild("PlayerGui")
-        local connection = nil  -- akan diisi jika state ON
+	Name = "Disable Fish Caught",
+	Default = false,
+  Callback = function(state)
+        disableNotifs = state
+        
+        local Players = game:GetService("Players")
+        local LocalPlayer = Players.LocalPlayer
+        local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
         if state then
-            -- Hapus notifikasi yang sudah ada
-            local smallNotif = playerGui:FindFirstChild("Small Notification")
+            -- 1. Hapus yang sudah ada sekarang
+            local smallNotif = PlayerGui:FindFirstChild("Small Notification")
             if smallNotif then
                 smallNotif:Destroy()
             end
 
-            -- Pantau notifikasi baru
-            connection = playerGui.ChildAdded:Connect(function(child)
-                -- Cek nama atau struktur yang menandakan notifikasi
-                if child.Name == "Small Notification" or
+            -- 2. Auto-hapus setiap kali game coba spawn lagi
+            PlayerGui.ChildAdded:Connect(function(child)
+                if child.Name == "Small Notification" or 
                    (child:FindFirstChild("Display") and child:FindFirstChildWhichIsA("Frame")) then
                     task.spawn(function()
-                        task.wait() -- tunggu 1 frame
+                        task.wait() -- tunggu 1 frame biar aman
                         if child and child.Parent then
                             child:Destroy()
                         end
                     end)
                 end
             end)
-
-            -- Simpan koneksi agar bisa diputus saat OFF
-            -- Gunakan variabel di luar closure
-            _disableFishCaughtConnection = connection
-        else
-            -- Matikan pantauan
-            if _disableFishCaughtConnection then
-                _disableFishCaughtConnection:Disconnect()
-                _disableFishCaughtConnection = nil
-            end
         end
     end
 })
@@ -2415,7 +2433,7 @@ function sendTestWebhook()
     end
 
     local payload = {
-        username = "DevHub Webhook",
+        username = "VoraHub Webhook",
         avatar_url = "https://cdn.discordapp.com/attachments/1434789394929287178/1448926732705988659/Swuppie.jpg?ex=693d09ac&is=693bb82c&hm=88d4c68207470eb4abc79d9b68227d85171aded5d3d99e9a76edcd823862f5fe",
         embeds = {{
             title = "Test Webhook Connected",
@@ -2463,9 +2481,9 @@ function sendNewFishWebhook(newlyCaughtFish)
     local payload = {
         content = nil,
         embeds = {{
-            title = "DevHub Fish caught!",
+            title = "VoraHub Fish caught!",
             description = string.format("Congrats! **%s** You obtained new **%s** here for full detail fish :", playerName, newFishRarity),
-            url = "https://discord.gg/Devhub",
+            url = "https://discord.gg/vorahub",
             color = 8900346,
             fields = {
                 { name = "Name Fish :",        value = "```\n"..newFishDetails.Name.."```" },
@@ -2477,7 +2495,7 @@ function sendNewFishWebhook(newlyCaughtFish)
                 { name = "Current Coin :",     value = "```"..currentCoins.."```" },
             },
             footer = {
-                text = "DevHub Webhook",
+                text = "VoraHub Webhook",
                 icon_url = "https://cdn.discordapp.com/attachments/1434789394929287178/1448926732705988659/Swuppie.jpg?ex=693d09ac&is=693bb82c&hm=88d4c68207470eb4abc79d9b68227d85171aded5d3d99e9a76edcd823862f5fe"
             },
             timestamp = os.date("!%Y-%m-%dT%H:%M:%S.000Z"),
@@ -2485,7 +2503,7 @@ function sendNewFishWebhook(newlyCaughtFish)
                 url = getThumbnailURL(newFishDetails.Icon)
             }
         }},
-        username = "DevHub Webhook",
+        username = "VoraHub Webhook",
         avatar_url = "https://cdn.discordapp.com/attachments/1434789394929287178/1448926732705988659/Swuppie.jpg?ex=693d09ac&is=693bb82c&hm=88d4c68207470eb4abc79d9b68227d85171aded5d3d99e9a76edcd823862f5fe",
         attachments = {}
     }
@@ -2533,7 +2551,7 @@ function sendGlobalTrackerWebhook(newlyCaughtFish)
     local payload = {
         content = nil,
         embeds = {{
-            title = string.format(":fish: DevHub | Global Tracker\n\nGLOBAL CATCH! %s", fishDetails.Name),
+            title = string.format(":fish: VoraHub | Global Tracker\n\nGLOBAL CATCH! %s", fishDetails.Name),
             description = string.format("Pemain **%s** baru saja menangkap ikan **SECRET**!", censoredName),
             color = 16766720,
             fields = {
@@ -2542,9 +2560,9 @@ function sendGlobalTrackerWebhook(newlyCaughtFish)
                 { name = "Mutation", value = string.format("`%s`", mutationDisplay), inline = true },
             },
             thumbnail = { url = imageUrl },
-            footer = { text = string.format("DevHub Community | Player: %s | %s", censoredName, timestamp) },
+            footer = { text = string.format("VoraHub Community | Player: %s | %s", censoredName, timestamp) },
         }},
-        username = "DevHub | Community",
+        username = "VoraHub | Community",
         attachments = {}
     }
 
@@ -2569,7 +2587,7 @@ function sendTestGlobalWebhook()
     local testPayload = {
         content = nil,
         embeds = {{
-            title = ":fish: DevHub | Global Tracker\n\nGLOBAL CATCH! Blob Shark",
+            title = ":fish: VoraHub | Global Tracker\n\nGLOBAL CATCH! Blob Shark",
             description = string.format("Pemain **%s** baru saja menangkap ikan **SECRET**! (TEST)", censoredName),
             color = 16766720,
             fields = {
@@ -2578,9 +2596,9 @@ function sendTestGlobalWebhook()
                 { name = "Mutation", value = "`N/A`", inline = true },
             },
             thumbnail = { url = "https://tr.rbxcdn.com/53eb9b170bea9855c45c9356fb33c070/420/420/Image/Png" },
-            footer = { text = string.format("DevHub Community | Player: %s | %s", censoredName, timestamp) },
+            footer = { text = string.format("VoraHub Community | Player: %s | %s", censoredName, timestamp) },
         }},
-        username = "DevHub | Community",
+        username = "VoraHub | Community",
         attachments = {}
     }
     pcall(function()
@@ -2673,7 +2691,7 @@ function sendFishToWhatsApp_API(fish)
     if not _G.WA_NumberID or _G.WA_NumberID == "" or
        not _G.WA_AccessToken or _G.WA_AccessToken == "" or
        not _G.WA_TargetPhone or _G.WA_TargetPhone == "" then
-        warn("[DevHub WA] Missing WhatsApp API credentials")
+        warn("[VoraHub WA] Missing WhatsApp API credentials")
         return
     end
 
@@ -2703,7 +2721,7 @@ function sendFishToWhatsApp_API(fish)
         "💰 *Sell Price:* %s\n" ..
         "🎒 *Backpack:* %d/4500\n" ..
         "🪙 *Coins:* %s\n\n" ..
-        "— DevHub Auto Fishing",
+        "— VoraHub Auto Fishing",
         fishInfo.Name, rarity, weight, mutation, price, totalFish, coins
     )
 
@@ -2873,14 +2891,14 @@ end
             { name = "Chance",  value = string.format("`1 in %s`", chance),   inline = true },
             { name = "Player",  value = string.format("`%s`", censored),      inline = true },
         },
-        footer    = { text = "DevHub Server Tracker" },
+        footer    = { text = "VoraHub Server Tracker" },
         timestamp = os.date("!%Y-%m-%dT%H:%M:%S.000Z"),
     }
     if imageUrl and imageUrl ~= "" then
         embed.thumbnail = { url = imageUrl }
     end
     local payload = {
-        username   = "DevHub | Server Tracker",
+        username   = "VoraHub | Server Tracker",
         avatar_url = "https://cdn.discordapp.com/attachments/1434789394929287178/1448926732705988659/Swuppie.jpg?ex=693d09ac&is=693bb82c&hm=88d4c68207470eb4abc79d9b68227d85171aded5d3d99e9a76edcd823862f5fe",
         embeds = { embed }
     }
@@ -2968,25 +2986,25 @@ MonitoringTab:CreateToggle({
 })
 
 -- =========================================================================
--- DevHUB WEB MONITORING
+-- VORAHUB WEB MONITORING
 -- =========================================================================
-MonitoringTab:CreateSection({ Name = "DevHub Web Monitoring" })
+MonitoringTab:CreateSection({ Name = "VoraHub Web Monitoring" })
 
-local DevMonitoringSettings = {
-    DevKey = "", -- Replace in UI
+local VoraMonitoringSettings = {
+    VoraKey = "", -- Replace in UI
     AutoSync = true,
     Interval = 5,
     Enabled = false -- Master Toggle State
 }
 
-local Dev_API_URL = "https://monitor.Devhub.xyz/api/inventory/sync"
+local VORA_API_URL = "https://monitor.vorahub.xyz/api/inventory/sync"
 
 MonitoringTab:CreateInput({
-    Name = "DevHub Key",
-    Placeholder = "Enter DevHub Key...",
-    Default = DevMonitoringSettings.DevKey,
+    Name = "VoraHub Key",
+    Placeholder = "Enter VoraHub Key...",
+    Default = VoraMonitoringSettings.VoraKey,
     Callback = function(val)
-        DevMonitoringSettings.DevKey = val
+        VoraMonitoringSettings.VoraKey = val
     end
 })
 
@@ -2994,7 +3012,7 @@ MonitoringTab:CreateToggle({
     Name = "Enable Web Monitoring",
     Default = false,
     Callback = function(val)
-        DevMonitoringSettings.Enabled = val
+        VoraMonitoringSettings.Enabled = val
     end
 })
 
@@ -3034,7 +3052,7 @@ MonitoringTab:CreateToggle({
     return success and result or nil
 end
 
- function GatherDevInventory()
+ function GatherVoraInventory()
     local inventory = {
         Rods = {},
         Charms = {},
@@ -3181,7 +3199,7 @@ end
     }
 
     return {
-        apiKey = DevMonitoringSettings.DevKey,
+        apiKey = VoraMonitoringSettings.VoraKey,
         playerName = safeString(Player.Name),
         userId = Player.UserId,
         playerStats = playerStats,
@@ -3191,11 +3209,11 @@ end
     }
 end
 
- function SendDevInventory(isOffline)
-    if DevMonitoringSettings.DevKey == "yourkey" or DevMonitoringSettings.DevKey == "" then return end
+ function SendVoraInventory(isOffline)
+    if VoraMonitoringSettings.VoraKey == "yourkey" or VoraMonitoringSettings.VoraKey == "" then return end
     
     local success, err = pcall(function()
-        local data = GatherDevInventory()
+        local data = GatherVoraInventory()
         if not data then return end
         
         if isOffline then data.isOnline = false end
@@ -3204,7 +3222,7 @@ end
         
         -- Use httpRequest function defined earlier
         httpRequest({
-            Url = Dev_API_URL,
+            Url = VORA_API_URL,
             Method = "POST",
             Headers = {
                 ["Content-Type"] = "application/json",
@@ -3215,12 +3233,12 @@ end
     end)
 end
 
--- Auto-sync loop for DevHub
+-- Auto-sync loop for VoraHub
 task.spawn(function()
     while true do
-        task.wait(DevMonitoringSettings.Interval)
-        if DevMonitoringSettings.Enabled and DevMonitoringSettings.AutoSync then
-            SendDevInventory(false)    
+        task.wait(VoraMonitoringSettings.Interval)
+        if VoraMonitoringSettings.Enabled and VoraMonitoringSettings.AutoSync then
+            SendVoraInventory(false)    
         end
     end
 end)
@@ -3228,7 +3246,7 @@ end)
 -- Handle leaving
 game:GetService("Players").PlayerRemoving:Connect(function(p)
     if p == game.Players.LocalPlayer then
-        SendDevInventory(true)
+        SendVoraInventory(true)
     end
 end)
 
@@ -3379,6 +3397,142 @@ MainTab:CreateInput({
             delayfishing = 1
         end
 	end
+})
+
+MainTab:CreateSection({ Name = "Silent Lag‑Switch (Burst Instan)" })
+
+-- State lokal
+local silentLagEnabled = false
+local silentLagThread: thread? = nil
+local burstCount = 5
+local burstDelay = 0.015          -- jeda SEBELUM catch (bisa diatur sangat kecil)
+local burstRetryOnFail = true
+
+local function startSilentLag()
+    if silentLagThread then task.cancel(silentLagThread) end
+
+    local chargeRemote = ChargeRod
+    local minigameRemote = StartMini
+    local catchRemote = REFishDoneRE or REFishDone
+
+    if not chargeRemote or not minigameRemote or not catchRemote then
+        warn("[Silent Lag] Remote tidak tersedia!")
+        silentLagEnabled = false
+        return
+    end
+
+    silentLagThread = task.spawn(function()
+        while silentLagEnabled do
+            local cycleSuccess = false
+            local attempts = 0
+
+            while not cycleSuccess and attempts < 3 and silentLagEnabled do
+                attempts += 1
+                local chargeOk, burstOk, catchOk = false, false, false
+
+                -- 1. Charge
+                chargeOk = pcall(function()
+                    local t = workspace:GetServerTimeNow()
+                    chargeRemote:InvokeServer(nil, nil, t, nil)
+                end)
+                if not chargeOk then
+                    warn("[Silent Lag] Charge failed")
+                    if burstRetryOnFail then task.wait() continue else break end
+                end
+
+                -- 2. Burst minigame TANPA JEDA
+                burstOk = true
+                for _ = 1, burstCount do
+                    if not silentLagEnabled then break end
+                    local ok = pcall(function()
+                        minigameRemote:InvokeServer(-1, 1, workspace:GetServerTimeNow())
+                    end)
+                    if not ok then
+                        burstOk = false
+                        break
+                    end
+                    -- TIDAK ADA task.wait() di sini!
+                end
+                if not burstOk then
+                    warn("[Silent Lag] Minigame burst failed")
+                    if burstRetryOnFail then task.wait() continue else break end
+                end
+
+                -- 3. Delay sebelum catch (bisa sangat kecil)
+                if burstDelay > 0 then
+                    task.wait(burstDelay)
+                end
+
+                -- 4. Catch
+                catchOk = pcall(function()
+                    catchRemote:FireServer()
+                end)
+                if not catchOk then
+                    warn("[Silent Lag] Catch failed")
+                    if burstRetryOnFail then task.wait() continue else break end
+                end
+
+                cycleSuccess = chargeOk and burstOk and catchOk
+                if not cycleSuccess and not burstRetryOnFail then break end
+            end
+
+            -- HANYA 1 FRAME setelah catch, sebelum mengulang
+            task.wait()
+        end
+    end)
+end
+
+local function stopSilentLag()
+    silentLagEnabled = false
+    if silentLagThread then
+        task.cancel(silentLagThread)
+        silentLagThread = nil
+    end
+end
+
+-- UI Toggle
+MainTab:CreateToggle({
+    Name = "Silent Lag‑Switch",
+    SubText = "Burst instant + stable cycle",
+    Default = false,
+    Callback = function(state)
+        silentLagEnabled = state
+        if state then
+            startSilentLag()
+            Window:Notify({ Title = "Silent Lag", Content = "Activated", Duration = 1 })
+        else
+            stopSilentLag()
+            Window:Notify({ Title = "Silent Lag", Content = "Stopped", Duration = 1 })
+        end
+    end
+})
+
+-- Input Burst Count
+MainTab:CreateInput({
+    Name = "Burst Count",
+    SideLabel = "Count",
+    Placeholder = "1-15",
+    Default = burstCount,
+    Callback = function(value)
+        local num = tonumber(value)
+        if num and num >= 1 and num <= 15 then
+            burstCount = num
+        end
+    end
+})
+
+-- Input Burst Delay (sebelum catch)
+MainTab:CreateInput({
+    Name = "Burst Delay",
+    SideLabel = "Delay before catch",
+    Placeholder = "0.015",
+    Default = burstDelay,
+    Callback = function(value)
+        local num = tonumber(value)
+        if num and num >= 0 and num <= 1 then   -- bisa 0
+            burstDelay = num
+        end
+    end
 })
 
 MainTab:CreateSection({ Name = "Instant Fishing V2" })
@@ -3969,7 +4123,7 @@ task.spawn(function()
 end)
 
 -- =============================================================================
--- STATUS OVERLAY UI (ported from CompleteDevhub/mainkaitun.lua)
+-- STATUS OVERLAY UI (ported from CompleteVorahub/mainkaitun.lua)
 -- - ScreenGui shows quest progress + best rod/bait/coins
 -- - Visible when any quest mode is ON (or forced by toggle)
 -- =============================================================================
@@ -3978,7 +4132,7 @@ PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 Lighting = game:GetService("Lighting")
 
 screenGui = Instance.new("ScreenGui")
-screenGui.Name = "DevHub Status"
+screenGui.Name = "VoraHub Status"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = PlayerGui
 
@@ -4005,7 +4159,7 @@ function makeLabel(name, size, pos, text, fontSize)
     return l
 end
 
-titleLabel = makeLabel("Title", UDim2.new(0, 300, 0, 40), UDim2.new(0.5, 0, 0.25, 0), "DevHub Status", 24)
+titleLabel = makeLabel("Title", UDim2.new(0, 300, 0, 40), UDim2.new(0.5, 0, 0.25, 0), "VoraHub Status", 24)
 titleLabel.TextColor3 = Color3.fromRGB(64, 224, 208)
 titleLabel.TextScaled = true
 
@@ -4164,7 +4318,7 @@ end)
 
 -- =============================================================================
 -- =============================================================================
--- QUEST PROCESS FUNCTIONS (ported from Main.lua, adapted for Dev.lua)
+-- QUEST PROCESS FUNCTIONS (ported from Main.lua, adapted for Vora.lua)
 -- Handles: Deep Sea, Element, Diamond, Temple Lever auto-teleport + item actions
 -- =============================================================================
 _G.AutoDeepSeaQuest = _G.AutoDeepSeaQuest or _G.DeepSeaQuestMode or false
@@ -4896,7 +5050,7 @@ spawn(function()
             for name, rod in pairs(FishingRods) do
                 local uuid = getRodUUID(rod.id)
                 if not uuid and coins >= rod.price then
-                    print("[DevHub] Buying " .. name .. " (Price: " .. rod.price .. ")")
+                    print("[VoraHub] Buying " .. name .. " (Price: " .. rod.price .. ")")
                     local wasDeepSea = _G.DeepSeaQuestMode
                     local wasElement = _G.ElementQuestMode
                     local wasDiamond = _G.DiamondQuestMode
@@ -4933,7 +5087,7 @@ spawn(function()
                                     equipTool:FireServer(1)
                                 end)
                             end
-                            print("[DevHub] " .. name .. " equipped!")
+                            print("[VoraHub] " .. name .. " equipped!")
                         end
 
                         teleportBasedOnCondition(getBestRod())
@@ -4961,7 +5115,7 @@ spawn(function()
 
             for baitId, bait in pairs(Baits) do
                 if not hasBait(baitId) and coins >= bait.price then
-                    print("[DevHub] Buying " .. bait.name .. "...")
+                    print("[VoraHub] Buying " .. bait.name .. "...")
                     local wasDeepSea = _G.DeepSeaQuestMode
                     local wasElement = _G.ElementQuestMode
                     local wasDiamond = _G.DiamondQuestMode
@@ -5380,24 +5534,27 @@ MainTab:CreateInput({
     end,
 })
 
--- ============================================
+--------------------------------------------------------------------------------
 -- SECTION 1: AUTO FAVORITE (NAME & RARITY ONLY)
--- ============================================
+--------------------------------------------------------------------------------
 MainTab:CreateSection({ Name = "Auto Favorite", Icon = "rbxassetid://7733765398" })
 
--- Remote lokal (gunakan yang sudah ada, jangan buat ulang)
 local REFishCaught = RE.FishCaught or REFishGot
 local REFishingCompleted = RE.FishingCompleted or REFishDone
 
--- Reset state saat ikan tertangkap
 if REFishCaught then
     REFishCaught.OnClientEvent:Connect(function()
         st.canFish = true
     end)
 end
 
--- Tabel konversi tier -> rarity (lokal)
-local tierToRarity = {
+-- if REFishingCompleted then
+--     REFishingCompleted.OnClientEvent:Connect(function()
+--         st.canFish = true
+--     end)
+-- end
+
+tierToRarity = {
     [1] = "Common",
     [2] = "Uncommon",
     [3] = "Rare",
@@ -5408,293 +5565,244 @@ local tierToRarity = {
     [8] = "Forgotten"
 }
 
--- Ambil semua nama ikan dari ReplicatedStorage.Items (lokal)
-local fishNames = {}
-if Items then
-    for _, module in ipairs(Items:GetChildren()) do
-        if module:IsA("ModuleScript") then
-            local ok, data = pcall(require, module)
-            if ok and data.Data and data.Data.Type == "Fish" then
-                table.insert(fishNames, data.Data.Name)
-            end
+fishNames = {}
+for _, module in ipairs(Items:GetChildren()) do
+    if module:IsA("ModuleScript") then
+        local ok, data = pcall(require, module)
+        if ok and data.Data and data.Data.Type == "Fish" then
+            table.insert(fishNames, data.Data.Name)
         end
     end
-    table.sort(fishNames)
 end
+table.sort(fishNames)
 
--- State lokal untuk auto favorite
+-- Ensure RE (RemoteEvents table) is defined
+local RE = {}
+pcall(function()
+    local Net = Net
+    RE.FavoriteItem = REFav
+    RE.FavoriteStateChanged = REFavChg
+end)
+
 local favState = {}
-local selectedNames = {}     -- nama ikan yang dipilih
-local selectedRarities = {} -- rarity yang dipilih
-local selectedVariants = {} -- variant ID yang dipilih
+local selectedName = {}
+local selectedRarity = {}
+local selectedVariant = {}
 local favoriteDebounce = {}
 
--- Sinkronisasi state favorit dari server (gunakan remote yang sudah ada)
-if REFavChg then
-    REFavChg.OnClientEvent:Connect(function(uuid, fav)
+if RE.FavoriteStateChanged then
+    RE.FavoriteStateChanged.OnClientEvent:Connect(function(uuid, fav)
         if uuid then favState[uuid] = fav end
     end)
 end
 
--- Fungsi utama untuk mengecek dan favoritkan item
-local function checkAndFavorite(item)
+-- Function for Name & Rarity only
+function checkAndFavoriteBasic(item)
+    -- Check if ANY auto-fav system is valid
     if not st.autoFavEnabled and not st.autoFavVariantEnabled then return end
-
+    
     local info = ItemUtility.GetItemDataFromItemType("Items", item.Id)
     if not info or info.Data.Type ~= "Fish" then return end
 
-    -- Debounce untuk item yang sama (2 detik)
+    -- Validation Debounce (Prevent looping/spamming same item)
     if favoriteDebounce[item.UUID] and (tick() - favoriteDebounce[item.UUID] < 2) then
         return
     end
 
     local isFav = favState[item.UUID] or item.Favorited or false
-    if isFav then return end
+    if isFav then return end -- Already favorited
 
     local shouldFav = false
 
-    -- Cek berdasarkan nama & rarity
+    -- 1. Check Name & Rarity Logic
     if st.autoFavEnabled then
         local rarity = tierToRarity[info.Data.Tier]
-        local nameMatch = (#selectedNames > 0 and table.find(selectedNames, info.Data.Name) ~= nil)
-        local rarityMatch = (#selectedRarities > 0 and table.find(selectedRarities, rarity) ~= nil)
-        if nameMatch or rarityMatch then
+        local nameMatches = (#selectedName > 0 and table.find(selectedName, info.Data.Name) ~= nil)
+        local rarityMatches = (#selectedRarity > 0 and table.find(selectedRarity, rarity) ~= nil)
+        
+        if nameMatches or rarityMatches then
             shouldFav = true
         end
     end
 
-    -- Cek berdasarkan variant (jika ada fitur autoFavVariant)
+    -- 2. Check Variant Logic
     if not shouldFav and st.autoFavVariantEnabled then
         local mutation = (item.Metadata and item.Metadata.VariantId and tostring(item.Metadata.VariantId)) or "None"
-        if mutation ~= "None" and #selectedVariants > 0 and table.find(selectedVariants, mutation) then
-            shouldFav = true
+        if mutation ~= "None" and #selectedVariant > 0 then
+             if table.find(selectedVariant, mutation) then
+                 shouldFav = true
+             end
         end
     end
 
-    -- Lakukan favorit jika memenuhi syarat
+    -- Final Decision
     if shouldFav then
-        -- Gunakan remote REFav yang sudah ada (bukan RE.FavoriteItem buatan)
-        local FavoriteEvent = REFav
-        if FavoriteEvent then
-            local fishName = info.Data.Name or "Fish"
-            local mutation = (item.Metadata and item.Metadata.VariantId and tostring(item.Metadata.VariantId)) or "None"
-            print("[AutoFav] Favoriting:", fishName, "| Variant:", mutation)
+        -- Get RemoteEvent reference
+        local FavoriteEvent = RE.FavoriteItem
+        if not FavoriteEvent and NetService then
+            FavoriteEvent = REFav
+        end
 
-            favoriteDebounce[item.UUID] = tick()
-            local ok = pcall(function()
+        if FavoriteEvent then
+            local infoName = info.Data.Name or "Fish"
+            local mutation = (item.Metadata and item.Metadata.VariantId and tostring(item.Metadata.VariantId)) or "None"
+            print("[AutoFav] ✅ Favoriting:", infoName, "| Variant:", mutation)
+            
+            favoriteDebounce[item.UUID] = tick() -- Set debounce
+            
+            local success, err = pcall(function()
                 FavoriteEvent:FireServer(item.UUID, true)
             end)
-            if ok then
+            
+            if success then
                 favState[item.UUID] = true
             else
-                warn("[AutoFav] Failed to favorite:", fishName)
+                warn("[AutoFav] ❌ Failed:", err)
             end
-        else
-            warn("[AutoFav] REFav remote not found!")
         end
     end
 end
 
--- Memindai seluruh inventory dan favoritkan yang sesuai
-local function scanInventory()
+function scanInventoryBasic()
     if not (st.autoFavEnabled or st.autoFavVariantEnabled) then return end
-    print("[AutoFav] Scanning Inventory...")
-    print("[AutoFav] Names:", #selectedNames > 0 and table.concat(selectedNames, ", ") or "NONE")
-    print("[AutoFav] Rarities:", #selectedRarities > 0 and table.concat(selectedRarities, ", ") or "NONE")
-
+    -- print("[AutoFav] 🔍 Scanning Inventory...")
+    print("[AutoFav Basic] Names:", #selectedName > 0 and table.concat(selectedName, ", ") or "NONE")
+    print("[AutoFav Basic] Rarities:", #selectedRarity > 0 and table.concat(selectedRarity, ", ") or "NONE")
+    
     local inv = Data:GetExpect({ "Inventory", "Items" })
-    if not inv then
-        warn("[AutoFav] Inventory not found!")
-        return
+    if not inv then 
+        warn("[AutoFav Basic] ❌ Inventory not found!")
+        return 
     end
-
+    
     local count = 0
-    for _, item in ipairs(inv) do
-        local wasFav = favState[item.UUID] or item.Favorited or false
-        checkAndFavorite(item)
-        local nowFav = favState[item.UUID] or false
-        if not wasFav and nowFav then
-            count = count + 1
-        end
-        task.wait(0.05)  -- jeda kecil antar item
+    for _, item in ipairs(inv) do 
+        local before = favState[item.UUID] or item.Favorited or false
+        checkAndFavoriteBasic(item)
+        local after = favState[item.UUID] or false
+        if not before and after then count = count + 1 end
+        task.wait(0.05)
     end
-    print("[AutoFav] Favorited:", count)
+    
+    print("[AutoFav Basic] ✅ Favorited:", count)
 end
 
--- Pantau perubahan inventory (jika Data mendukung)
-if Data and Data.OnChange then
-    Data:OnChange({ "Inventory", "Items" }, function()
-        if st.autoFavEnabled or st.autoFavVariantEnabled then
-            task.wait(0.3)
-            scanInventory()
-        end
-    end)
-end
+Data:OnChange({ "Inventory", "Items" }, function()
+    if st.autoFavEnabled or st.autoFavVariantEnabled then 
+        task.wait(0.3)
+        scanInventoryBasic() 
+    end
+end)
 
--- Multi‑select untuk nama ikan
 MainTab:CreateMultiDropdown({
     Name = "Favorite by Name",
     Items = #fishNames > 0 and fishNames or { "No Data" },
     Default = {},
     Callback = function(opts)
-        selectedNames = opts or {}
-        print("[AutoFav] Names selected:", #selectedNames > 0 and table.concat(selectedNames, ", ") or "NONE")
+        selectedName = opts or {}
+        print("[AutoFav Basic] 📝 Names:", #selectedName > 0 and table.concat(selectedName, ", ") or "NONE")
         if st.autoFavEnabled then
             task.wait(0.1)
-            scanInventory()
+            scanInventoryBasic()
         end
     end
 })
 
--- Multi‑select untuk rarity
 MainTab:CreateMultiDropdown({
     Name = "Favorite by Rarity",
     Items = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "SECRET", "Forgotten" },
     Default = {},
     Callback = function(opts)
-        selectedRarities = opts or {}
-        print("[AutoFav] Rarities selected:", #selectedRarities > 0 and table.concat(selectedRarities, ", ") or "NONE")
+        selectedRarity = opts or {}
+        print("[AutoFav Basic] ⭐ Rarities:", #selectedRarity > 0 and table.concat(selectedRarity, ", ") or "NONE")
         if st.autoFavEnabled then
             task.wait(0.1)
-            scanInventory()
+            scanInventoryBasic()
         end
     end
 })
 
--- Toggle utama
 MainTab:CreateToggle({
     Name = "Start Auto Favorite",
     Default = false,
     Callback = function(state)
         st.autoFavEnabled = state
-        print("[AutoFav] Auto Favorite", state and "ENABLED" or "DISABLED")
-        if state then
+        print("[AutoFav Basic] 🔄", state and "ENABLED" or "DISABLED")
+        if st.autoFavEnabled then
             task.wait(0.2)
-            scanInventory()
+            scanInventoryBasic()
         end
     end
 })
 
--- Tombol Unfavorite All
 MainTab:CreateButton({
     Name = "Unfavorite All",
-    Icon = "rbxassetid://7733919427",
+    Icon = "rbxassetid://7733919427", 
     Callback = function()
-        print("[AutoFav] Unfavoriting all...")
+        print("[AutoFav] ♻️ Unfavoriting all...")
         local inv = Data:GetExpect({ "Inventory", "Items" })
         if not inv then return end
-
+        
         local count = 0
         for _, item in ipairs(inv) do
-            local isFav = item.Favorited or favState[item.UUID]
-            if isFav and REFav then
-                REFav:FireServer(item.UUID, false)
+            if (item.Favorited or favState[item.UUID]) and RE.FavoriteItem then
+                RE.FavoriteItem:FireServer(item.UUID, false)
                 favState[item.UUID] = false
                 count = count + 1
                 task.wait(0.05)
             end
         end
-        print("[AutoFav] Unfavorited", count, "items.")
-        Window:Notify({ Title = "Unfavorite", Content = count .. " items unfavorited.", Duration = 3 })
+        print("[AutoFav] ✅ Unfavorited", count, "items.")
     end
 })
 
--- ============================================
+--------------------------------------------------------------------------------
 -- SECTION 2: AUTO FAVORITE BY VARIANT
--- ============================================
+--------------------------------------------------------------------------------
 MainTab:CreateSection({ Name = "Auto Favorite By Variant", Icon = "rbxassetid://7733917591" })
 
--- State lokal
-local variantList = {}
-local selectedVariants = {}   -- sudah dideklarasikan di section 1
+-- local selectedVariant = {} (Moved to top)
 
--- Fungsi untuk memuat daftar variant dari game
-local function loadVariantList()
-    local variants = {}
-    
-    -- 1. Coba ambil dari ItemUtility (jika ada fungsi khusus)
-    if ItemUtility and ItemUtility.GetAllVariants then
-        variants = ItemUtility:GetAllVariants()
-    end
-    
-    -- 2. Coba ambil dari folder ReplicatedStorage (jika ada)
-    if #variants == 0 then
-        local variantsFolder = ReplicatedStorage:FindFirstChild("Variants") or ReplicatedStorage:FindFirstChild("VariantData")
-        if variantsFolder then
-            for _, module in ipairs(variantsFolder:GetChildren()) do
-                if module:IsA("ModuleScript") then
-                    local ok, data = pcall(require, module)
-                    if ok and data.Name then
-                        table.insert(variants, data.Name)
-                    end
-                end
-            end
-        end
-    end
-    
-    -- 3. Fallback ke hardcode jika masih kosong
-    if #variants == 0 then
-        variants = {
-            "Galaxy", "Corrupt", "Gemstone", "Fairy Dust", "Midnight",
-            "Color Burn", "Holographic", "Lightning", "Radioactive",
-            "Ghost", "Gold", "Frozen", "1x1x1x1", "Stone", "Sandy",
-            "Noob", "Moon Fragment", "Festive", "Albino", "Arctic Frost",
-            "Disco", "Big", "Giant", "Sparkling", "Crystalized"
-        }
-    end
-    
-    table.sort(variants)
-    return variants
-end
+local variantList = {
+    "Galaxy", "Corrupt", "Gemstone", "Fairy Dust", "Midnight",
+    "Color Burn", "Holographic", "Lightning", "Radioactive",
+    "Ghost", "Gold", "Frozen", "1x1x1x1", "Stone", "Sandy",
+    "Noob", "Moon Fragment", "Festive", "Albino", "Arctic Frost", "Disco", "Big", "Giant", "Sparkling",
+    "Crystalized"
+}
 
--- Inisialisasi awal
-variantList = loadVariantList()
-
--- Multi-select untuk variant
-local variantDropdown
-variantDropdown = MainTab:CreateMultiDropdown({
+MainTab:CreateMultiDropdown({
     Name = "Select Variants",
     Items = variantList,
     Default = {},
     Callback = function(opts)
-        selectedVariants = opts or {}
-        print("[AutoFav Variant] Selected:", #selectedVariants > 0 and table.concat(selectedVariants, ", ") or "NONE")
+        selectedVariant = opts or {}
+        print("[AutoFav Variant] 🌟 Selected:", #selectedVariant > 0 and table.concat(selectedVariant, ", ") or "NONE")
     end
 })
 
--- Tombol Refresh untuk memuat ulang variant list
-MainTab:CreateButton({
-    Name = "Refresh Variant List",
-    Callback = function()
-        variantList = loadVariantList()
-        if variantDropdown and variantDropdown.Refresh then
-            variantDropdown:Refresh(variantList)
-        end
-        Window:Notify({ Title = "Variants Refreshed", Content = "Variant list updated from game.", Duration = 3 })
-    end
-})
-
--- Toggle Auto Favorite Variants
 MainTab:CreateToggle({
     Name = "Auto Favorite Variants",
     Default = false,
     Callback = function(state)
         st.autoFavVariantEnabled = state
-        print("[AutoFav Variant] " .. (state and "ENABLED" or "DISABLED"))
+        print("[AutoFav Variant] 🔄", state and "ENABLED" or "DISABLED")
+        
         if state then
-            task.spawn(scanInventory)   -- fungsi scanInventory sudah ada dari section 1
+            task.spawn(function()
+                scanInventoryBasic()
+            end)
         end
     end
 })
 
--- Tombol Check Variants in Inventory (tidak berubah)
 MainTab:CreateButton({
     Name = "Check Variants in Inventory",
     Callback = function()
         local inv = Data:GetExpect({ "Inventory", "Items" })
         if not inv then 
-            print("[Variant Check] Inventory empty or not loaded.")
-            return
+            print("Inventory empty or not loaded.")
+            return 
         end
         print("========================================")
         print("=== CHECKING VARIANTS IN INVENTORY ===")
@@ -5719,26 +5827,11 @@ MainTab:CreateButton({
     end
 })
 
--- ============================================
--- [SECURITY] Skin Animation Module (Dynamic)
--- ============================================
 local SkinAnimation = (function()
-    -- Service sudah tersedia: LocalPlayer, ReplicatedStorage
+    local Players = game:GetService("Players")
+    local LocalPlayer = Players.LocalPlayer
     
-    local SkinAnimations = {}        -- akan diisi oleh LoadSkinData()
-    local FishingAnims = {
-        "ReelingIdle", "EquipIdleFake", "ReelStart", "ReelIntermission",
-        "RodThrow", "FishCaught", "StartRodCharge", "LoopedRodCharge", "ReelingHold"
-    }
-    
-    local CurrentSkin = nil
-    local IsEnabled = false
-    local Animator = nil
-    local LoadedTracks = {}
-    local Connection = nil
-
-    -- Fallback hardcode (hanya digunakan jika game tidak menyediakan data)
-    local HARDCODED_SKINS = {
+    local SkinAnimations = {
         ["Cursed Katana"] = {ReelingIdle="85246394508551",EquipIdleFake="87355322562067",ReelStart="84160502333903",StartRodCharge="75015195359151",FishCaught="75078942392746"},
         ["Blackhole Sword"] = {ReelingIdle="126645853428201",EquipIdleFake="110434285817259",ReelStart="80063739027478",ReelIntermission="92036914464034",RodThrow="120554144611008",FishCaught="88993991486322",StartRodCharge="106390588424443",LoopedRodCharge="76049869128172"},
         ["Soul Scythe"] = {ReelingIdle="95453600470089",EquipIdleFake="84686809448947",ReelStart="137684649541594",ReelIntermission="139621583239992",RodThrow="104946400643250",FishCaught="82259219343456",StartRodCharge="117668204114399",LoopedRodCharge="88768375910397"},
@@ -5771,58 +5864,20 @@ local SkinAnimation = (function()
         ["Royal Spider"] = {EquipIdleFake="79263851052023"},
         ["Kraken Anchor"] = {EquipIdleFake="126023229958416"}
     }
-
-    -- ============================================
-    -- [SECURITY] Load Skin Data dari Game (Dinamis)
-    -- ============================================
-    local function LoadSkinData()
-        SkinAnimations = {}  -- reset
-        
-        -- 1. Coba dari folder ReplicatedStorage.Skins (ModuleScript per skin)
-        local skinsFolder = ReplicatedStorage:FindFirstChild("Skins") or ReplicatedStorage:FindFirstChild("Assets") and ReplicatedStorage:FindFirstChild("Assets"):FindFirstChild("Skins")
-        if skinsFolder then
-            for _, item in ipairs(skinsFolder:GetChildren()) do
-                if item:IsA("ModuleScript") then
-                    local ok, data = pcall(require, item)
-                    if ok and type(data) == "table" and data.Data and data.Data.Name and data.Animations then
-                        SkinAnimations[data.Data.Name] = data.Animations
-                    end
-                end
-            end
-        end
-        
-        -- 2. Jika masih kosong, coba ambil dari Items dengan filter Type == "Skins"
-        if not next(SkinAnimations) and Items then
-            for _, module in ipairs(Items:GetChildren()) do
-                if module:IsA("ModuleScript") then
-                    local ok, data = pcall(require, module)
-                    if ok and data.Data and data.Data.Type == "Skins" and data.Data.Name and data.Animations then
-                        SkinAnimations[data.Data.Name] = data.Animations
-                    end
-                end
-            end
-        end
-        
-        -- 3. Fallback ke hardcode jika gagal total
-        if not next(SkinAnimations) then
-            SkinAnimations = HARDCODED_SKINS
-        end
-        
-        return SkinAnimations
-    end
-
-    -- Panggil pertama kali
-    LoadSkinData()
     
-    -- Fungsi internal (lokal)
-    local function ShouldReplace(animName)
-        for _, name in ipairs(FishingAnims) do
-            if animName == name then return true end
-        end
+    local FishingAnims = {"ReelingIdle", "EquipIdleFake", "ReelStart", "ReelIntermission", "RodThrow", "FishCaught", "StartRodCharge", "LoopedRodCharge", "ReelingHold"}
+    local CurrentSkin = nil
+    local IsEnabled = false
+    local Animator = nil
+    local LoadedTracks = {}
+    local Connection = nil
+    
+     function ShouldReplace(animName)
+        for _, name in ipairs(FishingAnims) do if animName == name then return true end end
         return false
     end
     
-    local function GetReplacementTrack(animName)
+     function GetReplacementTrack(animName)
         if not Animator or not CurrentSkin then return nil end
         local skinData = SkinAnimations[CurrentSkin]
         if not skinData or not skinData[animName] then return nil end
@@ -5841,14 +5896,12 @@ local SkinAnimation = (function()
         return nil
     end
     
-    local function ClearTracks()
-        for _, track in pairs(LoadedTracks) do
-            pcall(function() track:Stop(); track:Destroy() end)
-        end
+     function ClearTracks()
+        for _, track in pairs(LoadedTracks) do pcall(function() track:Stop() track:Destroy() end) end
         LoadedTracks = {}
     end
     
-    local function SetupAnimator()
+     function SetupAnimator()
         local char = LocalPlayer.Character
         if not char then return end
         local hum = char:FindFirstChildOfClass("Humanoid")
@@ -5876,85 +5929,48 @@ local SkinAnimation = (function()
         end)
     end
     
-    local function Enable()
+     function Enable()
         if IsEnabled then return end
         IsEnabled = true
         SetupAnimator()
         LocalPlayer.CharacterAdded:Connect(function()
-            task.wait(1)
-            if IsEnabled then SetupAnimator() end
+             task.wait(1)
+             if IsEnabled then SetupAnimator() end
         end)
     end
     
-    local function Disable()
+     function Disable()
         IsEnabled = false
         if Connection then Connection:Disconnect() end
         ClearTracks()
     end
     
-    local function SelectSkin(name)
+     function SelectSkin(name)
         CurrentSkin = name
         ClearTracks()
     end
     
-    local function GetSkins()
+     function GetSkins()
         local names = {}
         for name in pairs(SkinAnimations) do table.insert(names, name) end
         table.sort(names)
         return names
     end
     
-    local function RefreshSkins()
-        LoadSkinData()
-        return GetSkins()
-    end
-    
-    return {
-        Enable = Enable,
-        Disable = Disable,
-        SelectSkin = SelectSkin,
-        GetSkins = GetSkins,
-        RefreshSkins = RefreshSkins
-    }
+    return { Enable = Enable, Disable = Disable, SelectSkin = SelectSkin, GetSkins = GetSkins }
 end)()
 
--- ============================================
--- UI: Skin Animation
--- ============================================
 MainTab:CreateSection({ Name = "Skin Animation", Icon = "rbxassetid://108886429866687" })
 
--- Dropdown skin (dinamis, disimpan di variabel agar bisa direfresh)
-local skinDropdown
-local function updateSkinDropdown()
-    local skins = SkinAnimation.GetSkins()
-    if skinDropdown then
-        skinDropdown:Refresh(skins)
-    else
-        skinDropdown = MainTab:CreateDropdown({
-            Name = "Select Rod Skin",
-            Items = skins,
-            Default = "None",
-            Callback = function(val)
-                SkinAnimation.SelectSkin(val)
-            end
-        })
-    end
-end
-
--- Tombol Refresh
-MainTab:CreateButton({
-    Name = "Refresh Skin List",
-    Callback = function()
-        local newSkins = SkinAnimation.RefreshSkins()
-        if skinDropdown then
-            skinDropdown:Refresh(newSkins)
-        end
-        Window:Notify({ Title = "Refreshed", Content = "Skin list updated from game.", Duration = 3 })
+local skinList = SkinAnimation.GetSkins()
+MainTab:CreateDropdown({
+    Name = "Select Rod Skin",
+    Items = skinList,
+    Default = "None",
+    Callback = function(val)
+        SkinAnimation.SelectSkin(val)
     end
 })
-
--- Inisialisasi dropdown pertama kali
-updateSkinDropdown()
 
 MainTab:CreateToggle({
     Name = "Enable Skin Changer",
@@ -6585,18 +6601,18 @@ AutoTab:CreateToggle({
                                     local args = { chestId }
                                     RE:FireServer(unpack(args))
                                     chestsFound = chestsFound + 1
-                                    print("[DevHub] Claiming chest: " .. chestId)
+                                    print("[VoraHub] Claiming chest: " .. chestId)
                                     task.wait(0.3)
                                 end
                             end
                             
                             if chestsFound > 0 then
-                                print("[DevHub] Successfully claimed " .. chestsFound .. " pirate chests!")
+                                print("[VoraHub] Successfully claimed " .. chestsFound .. " pirate chests!")
                             else
-                                print("[DevHub] No pirate chests found in PirateChestStorage")
+                                print("[VoraHub] No pirate chests found in PirateChestStorage")
                             end
                         else
-                            print("[DevHub] PirateChestStorage not found in workspace")
+                            print("[VoraHub] PirateChestStorage not found in workspace")
                         end
                     end)
                     task.wait(2) -- Wait 2 seconds before scanning again
@@ -7272,334 +7288,184 @@ ShopTab:CreateButton({
 
 ShopTab:CreateSection({ Name = "Buy Rod" })
 
--- [SECURITY] State lokal
-local rodData = {}         -- { displayName = { key = "Luck Rod", id = 79, price = 350 } }
-local rodNames = {}        -- daftar displayName untuk dropdown
-local selectedRod = nil
+ReplicatedStorage = game:GetService("ReplicatedStorage")  
+RFPurchaseFishingRod = BuyRod  
 
--- Fungsi untuk memuat data rod dari game
-local function loadRods()
-    local rods = {}
-    local names = {}
+local rods = {  
+    ["Luck Rod"] = 79,  
+    ["Carbon Rod"] = 76,  
+    ["Grass Rod"] = 85,
+    ["Demascus Rod"] = 77,  
+    ["Ice Rod"] = 78,  
+    ["Lucky Rod"] = 4,  
+    ["Midnight Rod"] = 80,  
+    ["Steampunk Rod"] = 6,  
+    ["Chrome Rod"] = 7,  
+    ["Astral Rod"] = 5,  
+    ["Ares Rod"] = 126,  
+    ["Angler Rod"] = 168,
+    ["Bamboo Rod"] = 258
+}  
 
-    -- 1. Coba ambil dari folder ReplicatedStorage.Items
-    local itemsFolder = ReplicatedStorage:FindFirstChild("Items")
-    if itemsFolder then
-        for _, moduleScript in ipairs(itemsFolder:GetChildren()) do
-            if moduleScript:IsA("ModuleScript") then
-                local ok, itemData = pcall(require, moduleScript)
-                if ok and itemData.Data and itemData.Data.Type == "FishingRod" then
-                    local name = itemData.Data.Name
-                    local id = itemData.Data.MarketId or itemData.Data.Id
-                    local price = itemData.Data.Price or itemData.Data.Cost or 0
+local rodNames = {  
+    "Luck Rod (350 Coins)", "Carbon Rod (900 Coins)", "Grass Rod (1.5k Coins)", "Demascus Rod (3k Coins)",  
+    "Ice Rod (5k Coins)", "Lucky Rod (15k Coins)", "Midnight Rod (50k Coins)", "Steampunk Rod (215k Coins)",  
+    "Chrome Rod (437k Coins)", "Astral Rod (1M Coins)", "Ares Rod (3M Coins)", "Angler Rod (8M Coins)",
+    "Bamboo Rod (12M Coins)"
+}  
 
-                    if name and id then
-                        local display = name
-                        if price > 0 then
-                            display = name .. " (" .. price .. " Coins)"
-                        end
-                        rods[display] = { key = name, id = id, price = price }
-                        table.insert(names, display)
-                    end
-                end
-            end
-        end
-    end
+local rodKeyMap = {  
+    ["Luck Rod (350 Coins)"]="Luck Rod",  
+    ["Carbon Rod (900 Coins)"]="Carbon Rod",  
+    ["Grass Rod (1.5k Coins)"]="Grass Rod",  
+    ["Demascus Rod (3k Coins)"]="Demascus Rod",  
+    ["Ice Rod (5k Coins)"]="Ice Rod",  
+    ["Lucky Rod (15k Coins)"]="Lucky Rod",  
+    ["Midnight Rod (50k Coins)"]="Midnight Rod",  
+    ["Steampunk Rod (215k Coins)"]="Steampunk Rod",  
+    ["Chrome Rod (437k Coins)"]="Chrome Rod",  
+    ["Astral Rod (1M Coins)"]="Astral Rod",  
+    ["Ares Rod (3M Coins)"]="Ares Rod",  
+    ["Angler Rod (8M Coins)"]="Angler Rod",
+    ["Bamboo Rod (12M Coins)"]="Bamboo Rod"
+}  
 
-    -- 2. Fallback hardcode jika tidak ditemukan
-    if #names == 0 then
-        local hardcoded = {
-            ["Luck Rod (350 Coins)"] = { key = "Luck Rod", id = 79 },
-            ["Carbon Rod (900 Coins)"] = { key = "Carbon Rod", id = 76 },
-            ["Grass Rod (1.5k Coins)"] = { key = "Grass Rod", id = 85 },
-            ["Demascus Rod (3k Coins)"] = { key = "Demascus Rod", id = 77 },
-            ["Ice Rod (5k Coins)"] = { key = "Ice Rod", id = 78 },
-            ["Lucky Rod (15k Coins)"] = { key = "Lucky Rod", id = 4 },
-            ["Midnight Rod (50k Coins)"] = { key = "Midnight Rod", id = 80 },
-            ["Steampunk Rod (215k Coins)"] = { key = "Steampunk Rod", id = 6 },
-            ["Chrome Rod (437k Coins)"] = { key = "Chrome Rod", id = 7 },
-            ["Astral Rod (1M Coins)"] = { key = "Astral Rod", id = 5 },
-            ["Ares Rod (3M Coins)"] = { key = "Ares Rod", id = 126 },
-            ["Angler Rod (8M Coins)"] = { key = "Angler Rod", id = 168 },
-            ["Bamboo Rod (12M Coins)"] = { key = "Bamboo Rod", id = 258 }
-        }
-        for display, data in pairs(hardcoded) do
-            rods[display] = data
-            table.insert(names, display)
-        end
-    end
+local selectedRod = rodNames[1]  
 
-    table.sort(names)
-    return rods, names
-end
+ShopTab:CreateDropdown({
+	Name = "Select Rod",
+	  Items = rodNames,  
+    Value = selectedRod,  
+    Callback = function(value)  
+        selectedRod = value  
+    end  
+})  
 
--- Inisialisasi awal
-rodData, rodNames = loadRods()
-selectedRod = rodNames[1] or ""
 
--- Dropdown (disimpan agar bisa direfresh)
-local rodDropdown
-rodDropdown = ShopTab:CreateDropdown({
-    Name = "Select Rod",
-    Items = rodNames,
-    Value = selectedRod,
-    Callback = function(value)
-        selectedRod = value
-    end
-})
-
--- Tombol Refresh
 ShopTab:CreateButton({
-    Name = "Refresh Rod List",
-    Callback = function()
-        rodData, rodNames = loadRods()
-        if rodDropdown and rodDropdown.Refresh then
-            rodDropdown:Refresh(rodNames)
-        end
-        -- Pastikan pilihan masih valid
-        if not selectedRod or not rodData[selectedRod] then
-            selectedRod = rodNames[1] or ""
-        end
-        Window:Notify({ Title = "Refreshed", Content = "Rod list updated from game.", Duration = 3 })
-    end
-})
-
--- Tombol Buy
-ShopTab:CreateButton({
-    Name = "Buy Rod",
-    Icon = "rbxassetid://7733920644",
-    Callback = function()
-        if not selectedRod or not rodData[selectedRod] then
-            Window:Notify({ Title = "Error", Content = "No rod selected.", Duration = 3 })
-            return
-        end
-        local id = rodData[selectedRod].id
-        if not id then
-            Window:Notify({ Title = "Error", Content = "Rod ID not found.", Duration = 3 })
-            return
-        end
-        local ok, err = pcall(function()
-            BuyRod:InvokeServer(id)   -- BuyRod sudah lokal dari deklarasi remote
-        end)
-        if ok then
-            Window:Notify({ Title = "Rod Purchase", Content = "Purchased " .. selectedRod, Duration = 3 })
-        else
-            Window:Notify({ Title = "Rod Purchase Error", Content = tostring(err), Duration = 5 })
-        end
-    end
+	Name = "Buy Rod",
+	Icon = "rbxassetid://7733920644",
+	 Callback=function()  
+        local key = rodKeyMap[selectedRod]  
+        if key and rods[key] then  
+            local success, err = pcall(function()  
+                RFPurchaseFishingRod:InvokeServer(rods[key])  
+            end)  
+            if success then  
+                Window:Notify({Title="Rod Purchase", Content="Purchased "..selectedRod, Duration=3})  
+            else  
+                Window:Notify({Title="Rod Purchase Error", Content=tostring(err), Duration=5})  
+            end  
+        end  
+    end  
 })
 
 ShopTab:CreateSection({ Name = "Buy Baits" })
 
--- [SECURITY] State lokal
-local baitData = {}         -- { displayName = { key = "TopWater Bait", id = 10, price = 100 } }
-local baitNames = {}        -- daftar displayName untuk dropdown
-local selectedBait = nil
+local ReplicatedStorage = game:GetService("ReplicatedStorage")  
+local RFPurchaseBait = BuyBait  
 
--- Fungsi untuk memuat data bait dari game
-local function loadBaits()
-    local baits = {}
-    local names = {}
+local baits = {
+    ["TopWater Bait"] = 10,
+    ["Lucky Bait"] = 2,
+    ["Midnight Bait"] = 3,
+    ["Chroma Bait"] = 6,
+    ["Dark Mater Bait"] = 8,
+    ["Corrupt Bait"] = 15,
+    ["Aether Bait"] = 16
+}
 
-    -- 1. Coba ambil dari folder ReplicatedStorage.Items
-    local itemsFolder = ReplicatedStorage:FindFirstChild("Items")
-    if itemsFolder then
-        for _, moduleScript in ipairs(itemsFolder:GetChildren()) do
-            if moduleScript:IsA("ModuleScript") then
-                local ok, itemData = pcall(require, moduleScript)
-                if ok and itemData.Data and itemData.Data.Type == "Bait" then
-                    local name = itemData.Data.Name
-                    local id = itemData.Data.MarketId or itemData.Data.Id
-                    local price = itemData.Data.Price or itemData.Data.Cost or 0
+local baitNames = {
+    "TopWater Bait (100 Coins)",
+    "Lucky Bait (1k Coins)",
+    "Midnight Bait (3k Coins)",
+    "Chroma Bait (290k Coins)",
+    "Dark Mater Bait (630k Coins)",
+    "Corrupt Bait (1.15M Coins)",
+    "Aether Bait (3.7M Coins)"
+}
 
-                    if name and id then
-                        local display = name
-                        if price > 0 then
-                            -- Format harga agar mudah dibaca
-                            local formattedPrice
-                            if price >= 1000000 then
-                                formattedPrice = string.format("%.2fM Coins", price / 1000000)
-                            elseif price >= 1000 then
-                                formattedPrice = string.format("%.1fk Coins", price / 1000)
-                            else
-                                formattedPrice = price .. " Coins"
-                            end
-                            display = name .. " (" .. formattedPrice .. ")"
-                        end
-                        baits[display] = { key = name, id = id, price = price }
-                        table.insert(names, display)
-                    end
-                end
-            end
-        end
-    end
+local baitKeyMap = {
+    ["TopWater Bait (100 Coins)"] = "TopWater Bait",
+    ["Lucky Bait (1k Coins)"] = "Lucky Bait",
+    ["Midnight Bait (3k Coins)"] = "Midnight Bait",
+    ["Chroma Bait (290k Coins)"] = "Chroma Bait",
+    ["Dark Mater Bait (630k Coins)"] = "Dark Mater Bait",
+    ["Corrupt Bait (1.15M Coins)"] = "Corrupt Bait",
+    ["Aether Bait (3.7M Coins)"] = "Aether Bait"
+}
 
-    -- 2. Fallback hardcode jika tidak ditemukan
-    if #names == 0 then
-        local hardcoded = {
-            ["TopWater Bait (100 Coins)"] = { key = "TopWater Bait", id = 10 },
-            ["Lucky Bait (1k Coins)"] = { key = "Lucky Bait", id = 2 },
-            ["Midnight Bait (3k Coins)"] = { key = "Midnight Bait", id = 3 },
-            ["Chroma Bait (290k Coins)"] = { key = "Chroma Bait", id = 6 },
-            ["Dark Mater Bait (630k Coins)"] = { key = "Dark Mater Bait", id = 8 },
-            ["Corrupt Bait (1.15M Coins)"] = { key = "Corrupt Bait", id = 15 },
-            ["Aether Bait (3.7M Coins)"] = { key = "Aether Bait", id = 16 }
-        }
-        for display, data in pairs(hardcoded) do
-            baits[display] = data
-            table.insert(names, display)
-        end
-    end
+local selectedBait = baitNames[1]  
 
-    table.sort(names)
-    return baits, names
-end
+ShopTab:CreateDropdown({
+	Name = "Select Bait",
+	 Items = baitNames,  
+    Value = selectedBait,  
+    Callback = function(value)  
+        selectedBait = value  
+    end  
+})  
 
--- Inisialisasi awal
-baitData, baitNames = loadBaits()
-selectedBait = baitNames[1] or ""
-
--- Dropdown (disimpan agar bisa direfresh)
-local baitDropdown
-baitDropdown = ShopTab:CreateDropdown({
-    Name = "Select Bait",
-    Items = baitNames,
-    Value = selectedBait,
-    Callback = function(value)
-        selectedBait = value
-    end
-})
-
--- Tombol Refresh
 ShopTab:CreateButton({
-    Name = "Refresh Bait List",
-    Callback = function()
-        baitData, baitNames = loadBaits()
-        if baitDropdown and baitDropdown.Refresh then
-            baitDropdown:Refresh(baitNames)
-        end
-        -- Pastikan pilihan masih valid
-        if not selectedBait or not baitData[selectedBait] then
-            selectedBait = baitNames[1] or ""
-        end
-        Window:Notify({ Title = "Refreshed", Content = "Bait list updated from game.", Duration = 3 })
-    end
-})
-
--- Tombol Buy
-ShopTab:CreateButton({
-    Name = "Buy Bait",
-    Icon = "rbxassetid://7733920644",
-    Callback = function()
-        if not selectedBait or not baitData[selectedBait] then
-            Window:Notify({ Title = "Error", Content = "No bait selected.", Duration = 3 })
-            return
-        end
-        local id = baitData[selectedBait].id
-        if not id then
-            Window:Notify({ Title = "Error", Content = "Bait ID not found.", Duration = 3 })
-            return
-        end
-        local ok, err = pcall(function()
-            BuyBait:InvokeServer(id)   -- BuyBait sudah lokal dari deklarasi remote
-        end)
-        if ok then
-            Window:Notify({ Title = "Bait Purchase", Content = "Purchased " .. selectedBait, Duration = 3 })
-        else
-            Window:Notify({ Title = "Bait Purchase Error", Content = tostring(err), Duration = 5 })
-        end
-    end
+	Name = "Buy Bait",
+	Icon = "rbxassetid://7733920644",
+ Callback = function()  
+        local key = baitKeyMap[selectedBait]  
+        if key and baits[key] then  
+            local success, err = pcall(function()  
+                RFPurchaseBait:InvokeServer(baits[key])  
+            end)  
+            if success then  
+                Window:Notify({Title = "Bait Purchase", Content = "Purchased " .. selectedBait, Duration = 3})  
+            else  
+                Window:Notify({Title = "Bait Purchase Error", Content = tostring(err), Duration = 5})  
+            end  
+        end  
+    end  
 })
 
 
 ShopTab:CreateSection({ Name = "Buy Weather Event", Icon = "rbxassetid://7733955511" })
 
--- State lokal
-local weatherData = {}          -- { displayName = { key = "Wind", price = 10000 } }
-local weatherNames = {}         -- daftar displayName untuk UI
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RFPurchaseWeatherEvent = BuyWeather
+
+-- Data cuaca
+local weathers = {
+    ["Wind"] = "Wind",
+    ["Cloudy"] = "Cloudy",
+    ["Snow"] = "Snow",
+    ["Storm"] = "Storm",
+    ["Radiant"] = "Radiant",
+    ["Shark Hunt"] = "Shark Hunt"
+}
+
+-- Nama tampilan
+local weatherNames = {
+    "Windy (10k Coins)",
+    "Cloudy (20k Coins)",
+    "Snow (15k Coins)",
+    "Stormy (35k Coins)",
+    "Radiant (50k Coins)",
+    "Shark Hunt (300k Coins)"
+}
+
+-- Mapping nama → key internal
+local weatherKeyMap = {
+    ["Windy (10k Coins)"] = "Wind",
+    ["Cloudy (20k Coins)"] = "Cloudy",
+    ["Snow (15k Coins)"] = "Snow",
+    ["Stormy (35k Coins)"] = "Storm",
+    ["Radiant (50k Coins)"] = "Radiant",
+    ["Shark Hunt (300k Coins)"] = "Shark Hunt"
+}
+
 local selectedWeathers = {}
 local autoBuyRunning = false
 
--- Fungsi untuk memuat data weather dari game
-local function loadWeatherData()
-    local weathers = {}
-    local names = {}
-
-    -- 1. Coba dari ReplicatedStorage (folder Weather atau WeatherEvents)
-    local weatherFolder = ReplicatedStorage:FindFirstChild("Weather") or ReplicatedStorage:FindFirstChild("WeatherEvents")
-    if weatherFolder then
-        for _, module in ipairs(weatherFolder:GetChildren()) do
-            if module:IsA("ModuleScript") then
-                local ok, data = pcall(require, module)
-                if ok and type(data) == "table" and data.Name then
-                    local key = data.InternalName or data.Name
-                    local price = tonumber(data.Price) or tonumber(data.Cost) or 0
-                    local displayName = data.DisplayName or data.Name
-                    if price > 0 then
-                        if price >= 1000000 then
-                            displayName = displayName .. string.format(" (%.2fM Coins)", price / 1000000)
-                        elseif price >= 1000 then
-                            displayName = displayName .. string.format(" (%.1fk Coins)", price / 1000)
-                        else
-                            displayName = displayName .. " (" .. price .. " Coins)"
-                        end
-                    end
-                    weathers[displayName] = { key = key, price = price }
-                    table.insert(names, displayName)
-                end
-            end
-        end
-    end
-
-    -- 2. Coba dari ItemUtility (jika ada fungsi GetAllWeathers)
-    if #names == 0 and ItemUtility and ItemUtility.GetAllWeathers then
-        local list = ItemUtility:GetAllWeathers()
-        for _, w in ipairs(list) do
-            local key = w.InternalName or w.Name
-            local price = tonumber(w.Price) or tonumber(w.Cost) or 0
-            local displayName = w.DisplayName or w.Name
-            if price > 0 then
-                if price >= 1000000 then
-                    displayName = displayName .. string.format(" (%.2fM Coins)", price / 1000000)
-                elseif price >= 1000 then
-                    displayName = displayName .. string.format(" (%.1fk Coins)", price / 1000)
-                else
-                    displayName = displayName .. " (" .. price .. " Coins)"
-                end
-            end
-            weathers[displayName] = { key = key, price = price }
-            table.insert(names, displayName)
-        end
-    end
-
-    -- 3. Fallback hardcode
-    if #names == 0 then
-        local hardcoded = {
-            ["Windy (10k Coins)"] = { key = "Wind", price = 10000 },
-            ["Fog (20k Coins)"] = { key = "Fog", price = 20000 },
-            ["Snow (15k Coins)"] = { key = "Snow", price = 15000 },
-            ["Stormy (35k Coins)"] = { key = "Storm", price = 35000 },
-            ["Radiant (50k Coins)"] = { key = "Radiant", price = 50000 },
-            ["Shark Hunt (300k Coins)"] = { key = "Shark Hunt", price = 300000 }
-        }
-        for display, data in pairs(hardcoded) do
-            weathers[display] = data
-            table.insert(names, display)
-        end
-    end
-
-    table.sort(names)
-    return weathers, names
-end
-
--- Inisialisasi
-weatherData, weatherNames = loadWeatherData()
-
--- Multi-dropdown (disimpan agar bisa direfresh)
-local weatherDropdown
-weatherDropdown = ShopTab:CreateMultiDropdown({
-    Name = "Select Weather Events",
-    Items = weatherNames,
+ShopTab:CreateMultiDropdown({
+	Name = "Select Weather Events",
+	Items = weatherNames,
     Default = selectedWeathers,
     Callback = function(values)
         selectedWeathers = values
@@ -7607,33 +7473,14 @@ weatherDropdown = ShopTab:CreateMultiDropdown({
     end
 })
 
--- Tombol Refresh
-ShopTab:CreateButton({
-    Name = "Refresh Weather List",
-    Callback = function()
-        weatherData, weatherNames = loadWeatherData()
-        if weatherDropdown and weatherDropdown.Refresh then
-            weatherDropdown:Refresh(weatherNames)
-        end
-        -- Hapus pilihan yang tidak valid
-        local newSelected = {}
-        for _, name in ipairs(selectedWeathers) do
-            if table.find(weatherNames, name) then
-                table.insert(newSelected, name)
-            end
-        end
-        selectedWeathers = newSelected
-        Window:Notify({ Title = "Refreshed", Content = "Weather list updated from game.", Duration = 3 })
-    end
-})
 
--- Toggle Auto Buy
 ShopTab:CreateToggle({
-    Name = "Auto Buy Selected Weathers",
-    SubText = "Continuously purchase all selected weather events while ON",
-    Default = false,
-    Callback = function(state)
+	Name = "Auto Buy Selected Weathers",
+	SubText = "Continuously purchase all selected weather events while ON",
+	Default = false,
+ Callback = function(state)
         autoBuyRunning = state
+
         if state then
             if #selectedWeathers == 0 then
                 Window:Notify({
@@ -7647,18 +7494,18 @@ ShopTab:CreateToggle({
 
             Window:Notify({
                 Title = "🌤️ Auto Buy Enabled",
-                Content = "Auto-purchase started.",
+                Content = "Auto-purchase started. It will keep buying until turned off.",
                 Duration = 3
             })
 
-            -- Loop pembelian
+            -- Jalankan loop di thread terpisah
             task.spawn(function()
                 while autoBuyRunning do
                     for _, selected in ipairs(selectedWeathers) do
-                        local entry = weatherData[selected]
-                        if entry and entry.key then
-                            pcall(function()
-                                BuyWeather:InvokeServer(entry.key)
+                        local key = weatherKeyMap[selected]
+                        if key and weathers[key] then
+                            local success, err = pcall(function()
+                                RFPurchaseWeatherEvent:InvokeServer(weathers[key])
                             end)
                         else
                             Window:Notify({
@@ -7669,7 +7516,8 @@ ShopTab:CreateToggle({
                         end
                         task.wait(0.5)
                     end
-                    task.wait(5)
+
+                    task.wait(5) -- Increased from 2s to 5s to reduce CPU usage
                 end
             end)
         else
@@ -7681,6 +7529,7 @@ ShopTab:CreateToggle({
         end
     end
 })
+
 
 -- ==================================================
 -- Merchant (copied/adapted from `source of wishub/Main.lua`)
@@ -7920,7 +7769,6 @@ ShopTab:CreateButton({
 
 TeleportTab:CreateSection({ Name = "Island", Icon = "rbxassetid://7733955511" })
 
--- Hardcode fallback (digunakan hanya jika tidak ada folder "Islands")
 local IslandLocations = {
     ["Ancient Ruins"] = Vector3.new(6009, -585, 4691),
     ["Ancient Jungle"] = Vector3.new(1518, 1, -186),
@@ -7932,76 +7780,81 @@ local IslandLocations = {
     ["Fisherman Island"] = Vector3.new(-175, 3, 2772),
     ["Kohana Volcano"] = Vector3.new(-545.302429, 17.1266193, 118.870537),
     ["Kohana"] = Vector3.new(-603, 3, 719),
+    ["Kohana Spot 1"] = Vector3.new(-703.661194, 17.2500553, 438.727234, 0.999670267, -1.30875062e-08, 0.0256783087, 1.42019179e-08, 1, -4.32165699e-08, -0.0256783087, 4.35669989e-08, 0.999670267),
+    ["Kohana Spot 2"] = Vector3.new(-897.885498, 5.7500596, 694.055359, -0.0598792434, -1.81639592e-08, 0.998205602, -7.78091647e-10, 1, 1.81499349e-08, -0.998205602, 3.10108939e-10, -0.0598792434),
     ["Lost Isle"] = Vector3.new(-3643, 1, -1061),
     ["Sacred Temple"] = Vector3.new(1498, -23, -644),
     ["Sysyphus Statue"] = Vector3.new(-3783.26807, -135.073914, -949.946289),
     ["Treasure Room"] = Vector3.new(-3600, -267, -1575),
     ["Tropical Grove"] = Vector3.new(-2091, 6, 3703),
     ["Weather Machine"] = Vector3.new(-1508, 6, 1895),
-    ["Pirate Cave"] = Vector3.new(3398.86011, 4.19197035, 3480.54517),
-    ["Pirate Treasure room"] = Vector3.new(3299.81274, -305.034851, 3041.50952),
-    ["Crystal Depths"] = Vector3.new(5817.32715, -905.697144, 15416.3047),
-    ["Leviathan Den"] = Vector3.new(3474.05298, -287.774719, 3472.63403),
-    ["Volcanic Cavern"] = Vector3.new(1097.38257, 85.8561707, -10243.374),
-    ["Lava Basin"] = Vector3.new(934.931152, 67.6846008, -10218.3184),
-    ["Secret Passage"] = Vector3.new(3431.59546, -299.344971, 3359.79614),
-    ["Planetary Observatory"] = Vector3.new(424.709442, 3.67347598, 2186.08545),
-    ["Aquatic Research Lab"] = Vector3.new(5006.53125, 4934.31055, 5008.31885),
-    ["Underwater City"] = Vector3.new(-3141.34546, -643.484253, -10408.1104),
+    ["Pirate Cave"] = Vector3.new(3398.86011, 4.19197035, 3480.54517, 0.617785096, -6.47339746e-08, -0.786346972, 3.20196716e-11, 1, -8.22972481e-08, 0.786346972, 5.0816837e-08, 0.617785096),
+    ["Pirate Treasure room"] = Vector3.new(3299.81274, -305.034851, 3041.50952, -0.483591467, 2.84460047e-08, -0.875293851, -4.8970314e-08, 1, 5.95544378e-08, 0.875293851, 7.1663429e-08, -0.483591467),
+    ["Crystal Depths"] = Vector3.new(5817.32715, -905.697144, 15416.3047, 0.0518231429, 1.04369903e-07, -0.998656273, -1.59683076e-08, 1, 1.03681693e-07, 0.998656273, 1.05737401e-08, 0.0518231429),
+    ["Leviathan Den"] = Vector3.new(3474.05298, -287.774719, 3472.63403, -0.915228605, 0.097325258, -0.391004264, 3.60608101e-06, 0.970392585, 0.241532952, 0.402934879, 0.221056461, -0.88813144),
+    ["Volcanic Cavern"] = Vector3.new(1097.38257, 85.8561707, -10243.374, 0.000799760048, -8.65786873e-08, 0.999999702, 3.16020241e-08, 1, 8.65534346e-08, -0.999999702, 3.15327924e-08, 0.000799760048),
+    ["Lava Basin"] = Vector3.new(934.931152, 67.6846008, -10218.3184, -0.712165296, 1.81655864e-08, 0.702011824, -1.73417316e-08, 1, -4.34690186e-08, -0.702011824, -4.31312266e-08, -0.712165296),
+    ["Secret Passage"] = Vector3.new(3431.59546, -299.344971, 3359.79614, -0.947619379, 3.96371149e-08, -0.319401741, 3.15227737e-08, 1, 3.0574423e-08, 0.319401741, 1.89044869e-08, -0.947619379),
+	["Planetary Observatory"] = Vector3.new(424.709442, 3.67347598, 2186.08545, -0.248919666, 4.43553425e-08, -0.968524158, -4.75323825e-09, 1, 4.70184638e-08, 0.968524158, 1.63074461e-08, -0.248919666),
+    ["Aquatic Research Lab"] = Vector3.new(5006.53125, 4934.31055, 5008.31885, 0.954527259, 3.15839692e-08, -0.298123598, -6.24583052e-09, 1, 8.5944734e-08, 0.298123598, -8.01745657e-08, 0.954527259),
+    ["Underwater City"] = Vector3.new(-3141.34546, -643.484253, -10408.1104, 0.120906673, 5.98232788e-08, -0.99266386, 4.37882157e-08, 1, 6.55988117e-08, 0.99266386, -5.13983132e-08, 0.120906673),
+    
 }
 
--- State lokal
 local SelectedIsland = nil
-local islandDropdown = nil
 
--- Fungsi untuk mendapatkan folder Islands (jika ada)
 local function getIslandFolder()
     return workspace:FindFirstChild("Islands")
 end
 
--- Mendapatkan daftar pulau dari folder (dan hardcode sebagai fallback)
 local function getIslandDropdownItems()
     local folder = getIslandFolder()
+    if not folder then
+        return { "Islands folder not found" }
+    end
+
     local out = {}
-
-    if folder then
-        -- Ambil semua anak yang bisa mewakili lokasi
-        for _, child in ipairs(folder:GetChildren()) do
-            if child:IsA("Model") or child:IsA("BasePart") or child:IsA("CFrameValue") or child:IsA("Vector3Value") or child:IsA("Folder") then
-                table.insert(out, child.Name)
-            end
+    for _, child in ipairs(folder:GetChildren()) do
+        if child:IsA("Model") or child:IsA("BasePart") or child:IsA("CFrameValue") or child:IsA("Vector3Value") or child:IsA("Folder") then
+            table.insert(out, child.Name)
         end
-        table.sort(out)
     end
-
-    -- Jika folder kosong atau tidak ada, gunakan hardcode
+    table.sort(out)
     if #out == 0 then
-        for name in pairs(IslandLocations) do
-            table.insert(out, name)
-        end
-        table.sort(out)
+        return { "No islands found" }
     end
-
     return out
 end
 
--- Mendapatkan CFrame dari instance di dalam folder
 local function resolveCFrameFromInstance(inst)
     if not inst then return nil end
-    if inst:IsA("Model") then return inst:GetPivot() end
-    if inst:IsA("BasePart") then return inst.CFrame end
-    if inst:IsA("CFrameValue") then return inst.Value end
-    if inst:IsA("Vector3Value") then return CFrame.new(inst.Value) end
+
+    if inst:IsA("Model") then
+        return inst:GetPivot()
+    end
+    if inst:IsA("BasePart") then
+        return inst.CFrame
+    end
+    if inst:IsA("CFrameValue") then
+        return inst.Value
+    end
+    if inst:IsA("Vector3Value") then
+        return CFrame.new(inst.Value)
+    end
     if inst:IsA("Folder") then
         local model = inst:FindFirstChildWhichIsA("Model")
-        if model then return model:GetPivot() end
+        if model then
+            return model:GetPivot()
+        end
         local part = inst:FindFirstChildWhichIsA("BasePart", true)
-        if part then return part.CFrame end
+        if part then
+            return part.CFrame
+        end
     end
+
     return nil
 end
 
--- Resolver utama: coba folder dulu, lalu hardcode
 local function resolveIslandCFrame(selection)
     if not selection or selection == "" then return nil end
 
@@ -8011,39 +7864,30 @@ local function resolveIslandCFrame(selection)
         local cf = resolveCFrameFromInstance(child)
         if cf then return cf end
     end
-
-    -- Fallback ke hardcode
-    local vec = IslandLocations[selection]
-    if vec then
-        return CFrame.new(vec)
-    end
     return nil
 end
 
--- Buat dropdown
-islandDropdown = TeleportTab:CreateDropdown({
-    Name = "Select Island",
-    Items = getIslandDropdownItems(),
+local IslandDropdown = TeleportTab:CreateDropdown({
+	Name = "Select Island",
+	 Items = getIslandDropdownItems(),
     Callback = function(Value)
         SelectedIsland = Value
     end
 })
 
--- Auto-refresh dropdown saat folder berubah
 task.spawn(function()
+    local function refresh()
+        if IslandDropdown and IslandDropdown.Refresh then
+            IslandDropdown:Refresh(getIslandDropdownItems())
+        end
+    end
+
     local folder = getIslandFolder()
     if not folder then
-        -- Tunggu hingga folder muncul (maks 10 detik)
         for _ = 1, 20 do
             folder = getIslandFolder()
             if folder then break end
             task.wait(0.5)
-        end
-    end
-
-    local function refresh()
-        if islandDropdown and islandDropdown.Refresh then
-            islandDropdown:Refresh(getIslandDropdownItems())
         end
     end
 
@@ -8054,21 +7898,15 @@ task.spawn(function()
     end
 end)
 
--- Tombol Teleport
 TeleportTab:CreateButton({
-    Name = "Teleport to Island",
-    Icon = "rbxassetid://7733920644",
-    Callback = function()
-        local char = LocalPlayer.Character
-        if not char then return end
-        local hrp = char:FindFirstChild("HumanoidRootPart")
+	Name = "Teleport to Island",
+	Icon = "rbxassetid://7733920644",
+	  Callback = function()
+        local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
 
         local cf = resolveIslandCFrame(SelectedIsland)
-        if not cf then
-            Window:Notify({ Title = "Error", Content = "Island location not found.", Duration = 3 })
-            return
-        end
+        if not cf then return end
 
         local _, y, _ = hrp.CFrame:ToOrientation()
         local dest = cf.Position + Vector3.new(0, 3, 0)
@@ -8922,7 +8760,7 @@ SettingsTab:CreateToggle({
         if not replicateConn and RE.ReplicateCutscene then
             replicateConn = RE.ReplicateCutscene and RE.ReplicateCutscene.OnClientEvent:Connect(function(...)
                 if skipCutscene then
-                    warn("[DevHub] Blocked ReplicateCutscene event!")
+                    warn("[VoraHub] Blocked ReplicateCutscene event!")
                 end
             end)
         end
@@ -8930,7 +8768,7 @@ SettingsTab:CreateToggle({
         if not stopConn and RE.StopCutscene then
             stopConn = RE.StopCutscene and RE.StopCutscene.OnClientEvent:Connect(function()
                 if skipCutscene then
-                    warn("[DevHub] Blocked StopCutscene event!")
+                    warn("[VoraHub] Blocked StopCutscene event!")
                 end
             end)
         end
@@ -8945,7 +8783,7 @@ SettingsTab:CreateToggle({
             end)
 
             if not ok or not CutsceneController then
-                warn("[DevHub] CutsceneController not found.")
+                warn("[VoraHub] CutsceneController not found.")
                 return
             end
 
@@ -8956,10 +8794,10 @@ SettingsTab:CreateToggle({
             while true do
                 if skipCutscene then
                     CutsceneController.Play = function(...)
-                        warn("[DevHub] Cutscene skipped (Play).")
+                        warn("[VoraHub] Cutscene skipped (Play).")
                     end
                     CutsceneController.Stop = function(...)
-                        warn("[DevHub] Cutscene skipped (Stop).")
+                        warn("[VoraHub] Cutscene skipped (Stop).")
                     end
                 else
                     CutsceneController.Play = originalPlay
@@ -9246,26 +9084,28 @@ SettingsTab:CreateToggle({
 
 
 -- ============================================
--- FAKE CHARACTER SYSTEM (IMPROVED)
+-- FAKE CHARACTER SYSTEM
 -- ============================================
 SettingsTab:CreateSection({ Name = "Fake Character", Icon = "rbxassetid://7733964719" })
 
--- [SECURITY] State lokal di dalam modul
 local FakeCharacter = {}
 FakeCharacter.Enabled = false
 FakeCharacter.FakeChar = nil
 FakeCharacter.RealChar = nil
 FakeCharacter.Connections = {}
 
--- Konfigurasi (lokal)
-local TRANSPARENCY = 1
-local FAKE_TRANSPARENCY = 0
+-- Configuration
+local TRANSPARENCY = 1 -- Real character transparency (1 = invisible)
+local FAKE_TRANSPARENCY = 0 -- Fake character transparency (0 = visible)
 
--- Helper lokal untuk membuat bagian karakter transparan
-local function setCharacterTransparency(character, transparency)
+-- Helper: Make character parts transparent
+ function setCharacterTransparency(character, transparency)
     if not character then return end
+    
     for _, part in pairs(character:GetDescendants()) do
-        if part:IsA("BasePart") or part:IsA("Decal") then
+        if part:IsA("BasePart") then
+            part.Transparency = transparency
+        elseif part:IsA("Decal") then
             part.Transparency = transparency
         elseif part:IsA("Accessory") then
             local handle = part:FindFirstChild("Handle")
@@ -9274,7 +9114,8 @@ local function setCharacterTransparency(character, transparency)
             end
         end
     end
-    -- Wajah
+    
+    -- Handle face
     local head = character:FindFirstChild("Head")
     if head then
         local face = head:FindFirstChild("face")
@@ -9284,172 +9125,174 @@ local function setCharacterTransparency(character, transparency)
     end
 end
 
--- Helper lokal untuk kloning karakter secara lebih akurat
-local function cloneCharacter(original)
+-- Helper: Clone character
+ function cloneCharacter(original)
     if not original then return nil end
+    
     local clone = Instance.new("Model")
     clone.Name = original.Name .. "_Fake"
-
-    -- Clone semua BasePart, Accessory, Decal, Texture, Humanoid
-    for _, child in pairs(original:GetChildren()) do
-        if child:IsA("BasePart") or child:IsA("Accessory") or child:IsA("Humanoid") or
-           child:IsA("Decal") or child:IsA("Texture") then
-            local cloned = child:Clone()
-            if cloned:IsA("BasePart") then
-                cloned.CanCollide = false
-                cloned.Anchored = false
-                -- Hapus constraint/constraint yang mungkin mengganggu
-                for _, c in pairs(cloned:GetChildren()) do
-                    if c:IsA("Constraint") or c:IsA("WeldConstraint") then
-                        c:Destroy()
+    
+    -- Clone all parts
+    for _, part in pairs(original:GetChildren()) do
+        if part:IsA("BasePart") or part:IsA("Accessory") or part:IsA("Humanoid") then
+            local clonedPart = part:Clone()
+            
+            -- Make cloned parts non-collidable
+            if clonedPart:IsA("BasePart") then
+                clonedPart.CanCollide = false
+                clonedPart.Anchored = false
+                
+                -- Remove any welds/constraints
+                for _, constraint in pairs(clonedPart:GetChildren()) do
+                    if constraint:IsA("Constraint") or constraint:IsA("WeldConstraint") then
+                        constraint:Destroy()
                     end
                 end
             end
-            cloned.Parent = clone
+            
+            clonedPart.Parent = clone
         end
     end
-
+    
     -- Set primary part
     if original.PrimaryPart then
-        local primaryClone = clone:FindFirstChild(original.PrimaryPart.Name)
-        if primaryClone then
-            clone.PrimaryPart = primaryClone
-        end
+        clone.PrimaryPart = clone:FindFirstChild(original.PrimaryPart.Name)
     end
+    
     return clone
 end
 
--- Helper lokal untuk meng-weld fake character dengan Weld (bukan WeldConstraint) agar lebih stabil
-local function weldFakeCharacter(fakeChar)
+-- Helper: Weld fake character parts together
+ function weldFakeCharacter(fakeChar)
     if not fakeChar then return end
+    
     local rootPart = fakeChar:FindFirstChild("HumanoidRootPart")
     if not rootPart then return end
-
+    
     for _, part in pairs(fakeChar:GetChildren()) do
         if part:IsA("BasePart") and part ~= rootPart then
-            local weld = Instance.new("Weld")
+            local weld = Instance.new("WeldConstraint")
             weld.Part0 = rootPart
             weld.Part1 = part
-            -- Pertahankan posisi relatif
-            weld.C0 = rootPart.CFrame:Inverse() * part.CFrame
             weld.Parent = rootPart
         end
     end
 end
 
--- Helper lokal untuk menyamakan posisi fake dengan real
-local function updateFakePosition()
+-- Helper: Update fake character position
+ function updateFakePosition()
     if not FakeCharacter.Enabled then return end
-    local realRoot = FakeCharacter.RealChar and FakeCharacter.RealChar:FindFirstChild("HumanoidRootPart")
-    local fakeRoot = FakeCharacter.FakeChar and FakeCharacter.FakeChar:FindFirstChild("HumanoidRootPart")
+    if not FakeCharacter.FakeChar or not FakeCharacter.RealChar then return end
+    
+    local realRoot = FakeCharacter.RealChar:FindFirstChild("HumanoidRootPart")
+    local fakeRoot = FakeCharacter.FakeChar:FindFirstChild("HumanoidRootPart")
+    
     if realRoot and fakeRoot then
         fakeRoot.CFrame = realRoot.CFrame
     end
 end
 
--- Mulai fake character
+-- Start fake character
 function FakeCharacter.Start()
     if FakeCharacter.Enabled then
         warn("[FakeChar] Already enabled")
         return false
     end
-
-    local char = LocalPlayer.Character
-    if not char then
+    
+    local character = Players.LocalPlayer.Character
+    if not character then
         warn("[FakeChar] No character found")
         return false
     end
-
-    FakeCharacter.RealChar = char
-
-    -- Buat fake character
-    FakeCharacter.FakeChar = cloneCharacter(char)
+    
+    FakeCharacter.RealChar = character
+    
+    -- Create fake character
+    FakeCharacter.FakeChar = cloneCharacter(character)
     if not FakeCharacter.FakeChar then
         warn("[FakeChar] Failed to clone character")
         return false
     end
-
-    -- Weld fake
+    
+    -- Setup fake character
     weldFakeCharacter(FakeCharacter.FakeChar)
-    -- Tempatkan di workspace
     FakeCharacter.FakeChar.Parent = workspace
-
-    -- Jadikan real tidak terlihat, fake terlihat
+    
+    -- Make real character invisible
     setCharacterTransparency(FakeCharacter.RealChar, TRANSPARENCY)
+    
+    -- Make fake character visible
     setCharacterTransparency(FakeCharacter.FakeChar, FAKE_TRANSPARENCY)
-
-    -- Update posisi setiap frame
-    FakeCharacter.Connections.Update = RunService.Heartbeat:Connect(updateFakePosition)
-
-    -- Jika karakter respawn, kloning ulang dan sambungkan kembali
-    FakeCharacter.Connections.Respawn = LocalPlayer.CharacterAdded:Connect(function(newChar)
-        if not FakeCharacter.Enabled then return end
-        task.wait(0.5)
-        -- Hancurkan fake lama
-        if FakeCharacter.FakeChar then
-            FakeCharacter.FakeChar:Destroy()
-            FakeCharacter.FakeChar = nil
-        end
-        -- Perbarui real char
-        FakeCharacter.RealChar = newChar
-        -- Buat fake baru
-        FakeCharacter.FakeChar = cloneCharacter(newChar)
-        if FakeCharacter.FakeChar then
-            weldFakeCharacter(FakeCharacter.FakeChar)
-            FakeCharacter.FakeChar.Parent = workspace
-            setCharacterTransparency(FakeCharacter.RealChar, TRANSPARENCY)
-            setCharacterTransparency(FakeCharacter.FakeChar, FAKE_TRANSPARENCY)
-            -- Koneksi update sudah ada, tidak perlu dibuat ulang
+    
+    -- Update loop
+    FakeCharacter.Connections.Update = game:GetService("RunService").Heartbeat:Connect(updateFakePosition)
+    
+    -- Handle character respawn
+    FakeCharacter.Connections.Respawn = Players.LocalPlayer.CharacterAdded:Connect(function(newChar)
+        if FakeCharacter.Enabled then
+            task.wait(0.5)
+            FakeCharacter.Stop()
+            task.wait(0.5)
+            FakeCharacter.Start()
         end
     end)
-
+    
     FakeCharacter.Enabled = true
-    print("[FakeChar] Enabled")
-
+    print("[FakeChar] Fake character enabled")
+    
     if Window then
-        Window:Notify({ Title = "✓ Fake Character", Content = "Fake character enabled!", Duration = 3 })
+        Window:Notify({
+            Title = "✓ Fake Character",
+            Content = "Fake character enabled!",
+            Duration = 3
+        })
     end
-
+    
     return true
 end
 
--- Hentikan fake character
+-- Stop fake character
 function FakeCharacter.Stop()
     if not FakeCharacter.Enabled then
         warn("[FakeChar] Not enabled")
         return false
     end
-
-    -- Putus semua koneksi
-    for _, conn in pairs(FakeCharacter.Connections) do
-        if conn then conn:Disconnect() end
+    
+    -- Disconnect all connections
+    for _, connection in pairs(FakeCharacter.Connections) do
+        if connection then
+            connection:Disconnect()
+        end
     end
     FakeCharacter.Connections = {}
-
-    -- Hapus fake
+    
+    -- Remove fake character
     if FakeCharacter.FakeChar then
         FakeCharacter.FakeChar:Destroy()
         FakeCharacter.FakeChar = nil
     end
-
-    -- Kembalikan transparansi asli
+    
+    -- Restore real character visibility
     if FakeCharacter.RealChar then
         setCharacterTransparency(FakeCharacter.RealChar, 0)
     end
-
+    
     FakeCharacter.Enabled = false
     FakeCharacter.RealChar = nil
-
-    print("[FakeChar] Disabled")
-
+    
+    print("[FakeChar] Fake character disabled")
+    
     if Window then
-        Window:Notify({ Title = "✗ Fake Character", Content = "Fake character disabled!", Duration = 3 })
+        Window:Notify({
+            Title = "✗ Fake Character",
+            Content = "Fake character disabled!",
+            Duration = 3
+        })
     end
-
+    
     return true
 end
 
--- UI Toggle
 SettingsTab:CreateToggle({
     Name = "Fake Character",
     SubText = "Hide your real position with a fake character",
@@ -9482,9 +9325,9 @@ defaultHeader = header.Text
 defaultLevel = levelLabel.Text
 
 -- Configuration Defaults
-local FakeName = "discord.gg/Devhub"
+local FakeName = "discord.gg/vorahub"
 local FakeLevel = "MAX"
-local ScriptName = "Devhub"
+local ScriptName = "Vorahub"
 local HideStatsEnabled = false
 
 -- Storage
@@ -9538,11 +9381,11 @@ function createMovingGradient(label)
     return gradient
 end
 
--- Helper: Create Script Name Label (Devhub)
+-- Helper: Create Script Name Label (Vorahub)
 function createScriptNameLabel(nameLabel, billboard)
     if not nameLabel or not billboard then return end
     
-    local existingFrame = billboard:FindFirstChild("DevhubFrame")
+    local existingFrame = billboard:FindFirstChild("VorahubFrame")
     if existingFrame then return existingFrame end
     
     local nameFrame = nameLabel.Parent
@@ -9556,24 +9399,24 @@ function createScriptNameLabel(nameLabel, billboard)
         originalNamePos.Y.Offset
     )
     
-    local DevFrame = Instance.new("Frame")
-    DevFrame.Name = "DevhubFrame"
-    DevFrame.Size = nameFrame.Size
-    DevFrame.Position = originalNamePos
-    DevFrame.BackgroundTransparency = 1
-    DevFrame.Parent = billboard
+    local voraFrame = Instance.new("Frame")
+    voraFrame.Name = "VorahubFrame"
+    voraFrame.Size = nameFrame.Size
+    voraFrame.Position = originalNamePos
+    voraFrame.BackgroundTransparency = 1
+    voraFrame.Parent = billboard
     
     local scriptLabel = nameLabel:Clone()
-    scriptLabel.Name = "DevhubLabel"
+    scriptLabel.Name = "VorahubLabel"
     scriptLabel.Text = ScriptName
     scriptLabel.TextScaled = true
     scriptLabel.Font = Enum.Font.GothamBold
     scriptLabel.TextStrokeTransparency = 0.5
     scriptLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-    scriptLabel.Parent = DevFrame
+    scriptLabel.Parent = voraFrame
     
     createMovingGradient(scriptLabel)
-    return DevFrame
+    return voraFrame
 end
 
 -- Helper: Remove Script Name Labels
@@ -9585,8 +9428,8 @@ function removeAllScriptNames()
     local overhead = hrp:FindFirstChild("Overhead")
     if not overhead then return end
     
-    local DevFrame = overhead:FindFirstChild("DevhubFrame")
-    if DevFrame then
+    local voraFrame = overhead:FindFirstChild("VorahubFrame")
+    if voraFrame then
         for threadId, _ in pairs(ActiveGradientThreads) do
             ActiveGradientThreads[threadId] = nil
         end
@@ -9604,7 +9447,7 @@ function removeAllScriptNames()
                 )
             end
         end
-        DevFrame:Destroy()
+        voraFrame:Destroy()
     end
 end
 
@@ -9632,7 +9475,7 @@ function updateStats()
             local originalText = OriginalTexts[fullPath]
             if originalText and originalText ~= "" then
                 if obj.Name == "Header" then
-                    if not overhead:FindFirstChild("DevhubFrame") then
+                    if not overhead:FindFirstChild("VorahubFrame") then
                         createScriptNameLabel(obj, overhead)
                     end
                     obj.Text = FakeName
@@ -9686,7 +9529,7 @@ SettingsTab:CreateToggle({
         if state then
             startUpdateLoop()
             updateStats()
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/DeveloperK-AI/DevK/main/DisplayName.lua"))()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/CF-Trail/NameHider/main/MainScript.lua"))()
         else
             -- Restore original texts
             for path, originalText in pairs(OriginalTexts) do
@@ -9902,265 +9745,151 @@ SettingsTab:CreateToggle({
 	end
 })
 
-SettingsTab:CreateSection({ Name = "Anti Pengganggu", Icon = "rbxassetid://7734053535" })
+SettingsTab:CreateSection({ Name = "Anti Staff", Icon = "rbxassetid://7734053535" })
 
 -- ============================================
--- [SECURITY] State lokal untuk Anti Pengganggu
+-- ANTI STAFF SYSTEM (Group ID)
 -- ============================================
-local antiPenggangguEnabled = false
-local antiPenggangguConnection = nil
+
 local FISH_GROUP_ID = 35102746
+_G.AntiStaffEnabled = false
+local AntiStaffConnection = nil
 
--- Fungsi aman untuk Server Hop (tanpa memerlukan _G atau global)
-local function ForceServerHop(reason)
-    if Window then
-        Window:Notify({
-            Title = "Server Hop",
-            Content = reason or "Hopping...",
-            Icon = "rbxassetid://7733920644",
-            Duration = 3
-        })
-    end
-    task.wait(0.5)
-    -- Gunakan TeleportService yang sudah lokal di file utama
-    local TeleportService = game:GetService("TeleportService")
-    local LocalPlayer = Players.LocalPlayer
-    pcall(function()
-        TeleportService:Teleport(game.PlaceId, LocalPlayer)
-    end)
-end
-
--- Cek apakah seorang player termasuk "pengganggu" (role selain Guest/Member)
-local function IsPengganggu(player)
+function IsStaff(player)
     local ok, role = pcall(function()
         return player:GetRoleInGroup(FISH_GROUP_ID)
     end)
     if not ok then return false end
-    -- Hanya Guest dan Member yang tidak dianggap pengganggu, sisanya = pengganggu
-    return (role ~= "Guest" and role ~= "Member")
-end
-
--- Fungsi utama untuk memeriksa semua pemain dan melakukan hop jika ada pengganggu
-local function CheckForPengganggu()
-    if not antiPenggangguEnabled then return end
-
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and IsPengganggu(player) then
-            print("[Anti Pengganggu] Detected:", player.Name, "UserID:", player.UserId)
-            ForceServerHop("⚠️ Pengganggu terdeteksi: " .. player.Name)
-            break
-        end
+    if role == "Guest" or role == "Member" then
+        return false
     end
+    return true
 end
 
--- ============================================
--- UI Toggle
--- ============================================
+function CheckForStaff()
+	if not _G.AntiStaffEnabled then return end
+	
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= Players.LocalPlayer and IsStaff(player) then
+			print("[Anti-Staff] Staff detected:", player.Name, "UserID:", player.UserId)
+			ServerHop("⚠️ Staff detected: " .. player.Name .. "\nServer hopping...", true) -- Force public
+			break
+		end
+	end
+end
+
+
 SettingsTab:CreateToggle({
-    Name = "Anti Pengganggu",
-    Description = "Automatically server hop when non-Member joins",
-    Icon = "rbxassetid://7734053535",
-    Default = false,
-    Callback = function(value)
-        antiPenggangguEnabled = value
-
-        if value then
-            Window:Notify({
-                Title = "Anti Pengganggu Enabled",
-                Content = "Avoiding all except Friends",
-                Icon = "rbxassetid://7734053535",
-                Duration = 3
-            })
-
-            -- Jalankan pengecekan awal
-            task.spawn(CheckForPengganggu)
-
-            -- Pasang koneksi PlayerAdded
-            if antiPenggangguConnection then
-                antiPenggangguConnection:Disconnect()
-            end
-            antiPenggangguConnection = Players.PlayerAdded:Connect(function(player)
-                task.wait(0.5)
-                if antiPenggangguEnabled and player ~= LocalPlayer and IsPengganggu(player) then
-                    print("[Anti Pengganggu] Joined:", player.Name, "UserID:", player.UserId)
-                    ForceServerHop("⚠️ Pengganggu joined: " .. player.Name)
-                end
-            end)
-
-            -- Loop pemantauan berkala
-            task.spawn(function()
-                while antiPenggangguEnabled do
-                    CheckForPengganggu()
-                    task.wait(5)
-                end
-            end)
-        else
-            -- Matikan
-            if antiPenggangguConnection then
-                antiPenggangguConnection:Disconnect()
-                antiPenggangguConnection = nil
-            end
-            Window:Notify({
-                Title = "Anti Pengganggu Disabled",
-                Content = "No longer monitoring",
-                Icon = "rbxassetid://7734053535",
-                Duration = 2
-            })
-        end
-    end
+	Name = "Anti Staff",
+	Description = "Automatically server hop when staff members join",
+	Icon = "rbxassetid://7734053535",
+	Default = false,
+	Callback = function(value)
+		_G.AntiStaffEnabled = value
+		
+		if value then
+			Window:Notify({
+				Title = "Anti Staff Enabled",
+				Content = "Avoiding all staff except Members",
+				Icon = "rbxassetid://7734053535",
+				Duration = 3
+			})
+			
+			task.spawn(CheckForStaff)
+			
+			if AntiStaffConnection then
+				AntiStaffConnection:Disconnect()
+			end
+			
+			AntiStaffConnection = Players.PlayerAdded:Connect(function(player)
+				task.wait(0.5)
+				if player ~= Players.LocalPlayer and IsStaff(player) then
+					print("[Anti-Staff] Staff joined:", player.Name, "UserID:", player.UserId)
+					ServerHop("⚠️ Staff joined: " .. player.Name .. "\nServer hopping...", true)
+				end
+			end)
+			
+			task.spawn(function()
+				while _G.AntiStaffEnabled do
+					CheckForStaff()
+					task.wait(5)
+				end
+			end)
+		else
+			if AntiStaffConnection then
+				AntiStaffConnection:Disconnect()
+				AntiStaffConnection = nil
+			end
+			
+			Window:Notify({
+				Title = "Anti Staff Disabled",
+				Content = "No longer monitoring staff",
+				Icon = "rbxassetid://7734053535",
+				Duration = 2
+			})
+		end
+	end
 })
 
 SettingsTab:CreateSection({ Name = "Server", Icon = "rbxassetid://7733955511" })
 
--- [SECURITY] State lokal untuk Server
-local TeleportService = game:GetService("TeleportService")
-local HttpService = game:GetService("HttpService")
-
--- Fungsi untuk mendapatkan daftar server publik (jika executor mendukung HttpService)
-local function getPublicServers(placeId, limit)
-    limit = limit or 20
-    local servers = {}
-    
-    -- Gunakan HttpService jika tersedia dan executor mengizinkan akses ke API Roblox
-    local success, result = pcall(function()
-        local url = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?limit=" .. limit
-        local response = HttpService:RequestInternal({
-            Url = url,
-            Method = "GET"
-        })
-        return response
-    end)
-    
-    if success and result and result.Success and result.Body then
-        local data = HttpService:JSONDecode(result.Body)
-        if data and data.data then
-            for _, server in ipairs(data.data) do
-                if server.playing and server.maxPlayers and server.playing < server.maxPlayers then
-                    table.insert(servers, {
-                        jobId = server.id,
-                        players = server.playing,
-                        maxPlayers = server.maxPlayers,
-                        ping = server.ping or nil  -- ping mungkin tidak selalu tersedia
-                    })
-                end
-            end
-        end
-    end
-    
-    -- Jika tidak bisa mendapatkan daftar, fallback ke tabel kosong
-    return servers
-end
-
--- Fungsi untuk mengukur ping ke server tertentu (menggunakan trik sederhana)
-local function pingServer(jobId)
-    -- Di Roblox, kita tidak bisa ping langsung, tapi kita bisa estimasi dari respons API
-    -- atau menggunakan trik TeleportService (tapi itu akan memutus koneksi).
-    -- Untuk keperluan ini, kita akan menggunakan nilai acak sebagai fallback.
-    return math.random(50, 300)  -- fallback, akan diganti dengan data asli jika API mendukung
-end
-
--- Fungsi Server Hop dengan pilihan server berdasarkan ping rendah
-local function serverHopLowPing(placeId, localPlayer)
-    local servers = getPublicServers(placeId, 100)  -- ambil 100 server
-    
-    if #servers == 0 then
-        -- Fallback: server hop biasa
-        pcall(function()
-            TeleportService:Teleport(placeId, localPlayer)
-        end)
-        return false, "No servers found, using normal hop"
-    end
-    
-    -- Urutkan berdasarkan pemain (atau ping jika tersedia)
-    table.sort(servers, function(a, b)
-        -- Prioritaskan server dengan pemain lebih sedikit (agar lebih sepi)
-        -- Jika ada data ping, gunakan itu
-        if a.ping and b.ping then
-            return a.ping < b.ping
-        else
-            return a.players < b.players
-        end
-    end)
-    
-    -- Pilih server pertama (terbaik)
-    local bestServer = servers[1]
-    local success, err = pcall(function()
-        TeleportService:TeleportToPlaceInstance(placeId, bestServer.jobId, localPlayer)
-    end)
-    
-    if not success then
-        -- Fallback ke teleport biasa
-        pcall(function()
-            TeleportService:Teleport(placeId, localPlayer)
-        end)
-        return false, "Best server failed, used normal hop"
-    end
-    
-    return true, "Hopped to server with " .. bestServer.players .. " players"
-end
-
--- Tombol Rejoin Server (perbaiki)
 SettingsTab:CreateButton({
-    Name = "Rejoin Server",
-    SubText = "Reconnect to current server",
-    Icon = "rbxassetid://7733920644",
-    Callback = function()
-        local isPrivate = game.PrivateServerId ~= "" and game.PrivateServerOwnerId ~= 0
-        local message = isPrivate and "Rejoining private server..." or "Rejoining server..."
-        
-        Window:Notify({
-            Title = "Rejoining...",
-            Content = message,
-            Icon = "rbxassetid://7733920644",
-            Duration = 2
-        })
-        
-        task.wait(0.5)
-        
-        local success = pcall(function()
-            if isPrivate then
-                local teleportOptions = Instance.new("TeleportOptions")
-                teleportOptions.ServerInstanceId = game.JobId
-                teleportOptions.ReservedServerAccessCode = game.PrivateServerId
-                TeleportService:TeleportAsync(game.PlaceId, {LocalPlayer}, teleportOptions)
-            else
-                TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
-            end
-        end)
-        
-        if not success then
-            task.wait(0.5)
-            pcall(function()
-                TeleportService:Teleport(game.PlaceId, LocalPlayer)
-            end)
-        end
-    end
+	Name = "Rejoin Server",
+	SubText = "Reconnect to current server",
+	Icon = "rbxassetid://7733920644",
+	Callback = function()
+		-- For rejoin, we want to stay in same server type
+		-- So use forcePublic=false to allow fallback rejoin
+		local isPrivate = game.PrivateServerId ~= "" and game.PrivateServerOwnerId ~= 0
+		local message = isPrivate and "Rejoining private server..." or "Rejoining server..."
+		
+		-- Notify user
+		if Window then
+			Window:Notify({
+				Title = "Rejoining...",
+				Content = message,
+				Icon = "rbxassetid://7733920644",
+				Duration = 2
+			})
+		end
+		
+		task.wait(0.5)
+		
+		-- Use ServerHop with forcePublic=false to allow rejoin to same server
+		local TeleportService = game:GetService("TeleportService")
+		local Players = game:GetService("Players")
+		local LocalPlayer = Players.LocalPlayer
+		
+		local success = pcall(function()
+			if isPrivate then
+				-- Private Server - rejoin same private
+				local teleportOptions = Instance.new("TeleportOptions")
+				teleportOptions.ServerInstanceId = game.JobId
+				teleportOptions.ReservedServerAccessCode = game.PrivateServerId
+				TeleportService:TeleportAsync(game.PlaceId, {LocalPlayer}, teleportOptions)
+			else
+				-- Public Server - rejoin via JobId
+				TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+			end
+		end)
+		
+		if not success then
+			-- Fallback to random teleport if rejoin fails
+			task.wait(0.5)
+			pcall(function()
+				TeleportService:Teleport(game.PlaceId, LocalPlayer)
+			end)
+		end
+	end
 })
 
--- Tombol Server Hop (dengan fitur pemindaian server rendah ping)
 SettingsTab:CreateButton({
-    Name = "Server Hop (Low Ping)",
-    SubText = "Find and join a server with low ping",
-    Icon = "rbxassetid://7733920644",
-    Callback = function()
-        Window:Notify({
-            Title = "Scanning Servers...",
-            Content = "Looking for best server...",
-            Duration = 2
-        })
-        
-        -- Jalankan pemindaian di thread terpisah agar UI tidak freeze
-        task.spawn(function()
-            local success, msg = serverHopLowPing(game.PlaceId, LocalPlayer)
-            if not success then
-                Window:Notify({
-                    Title = "Server Hop",
-                    Content = msg or "Failed to hop",
-                    Duration = 3
-                })
-            end
-        end)
-    end
+	Name = "Server Hop",
+	SubText = "Switch to another server",
+	Icon = "rbxassetid://7733920644",
+	Callback = function()
+		ServerHop("Switching to another server...", false) -- Allow fallback rejoin
+	end
 })
 
 local TabConfig = Window:CreateTab({
@@ -10175,7 +9904,7 @@ TabConfig:CreateSection({
  configName = ""
  selectedConfig = ""
  configDropdown = nil
- CONFIG_FOLDER = "DevHubConfigs"
+ CONFIG_FOLDER = "VoraHubConfigs"
 
 function sanitizeConfigName(name)
     name = tostring(name or ""):gsub("^%s+", ""):gsub("%s+$", "")
@@ -10311,3 +10040,4 @@ task.spawn(function()
     task.wait(2)
     Window:LoadConfig(CONFIG_FOLDER, "default")
 end)
+
