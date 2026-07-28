@@ -5391,116 +5391,80 @@ MainTab:CreateSection({ Name = "Sell", Icon = "rbxassetid://7733793319" })
 -- ============================================
 -- [SECURITY] State lokal Auto Sell
 -- ============================================
-local autoSellEnabled = false
-local autoSellMode = "Sell By Count"   -- "Sell By Count" atau "Sell All"
-local autoSellValue = 0                -- threshold untuk count
+MainTab:CreateSection({ Name = "Sell", Icon = "rbxassetid://7733793319" })
+
+Players = game:GetService("Players")
+ LocalPlayer = Players.LocalPlayer
+
+_G.AutoSells = false
+
+local autoSellMode = "Sell Delay"
+local autoSellValue = 0
 local currentCount = 0
 
--- Remote sell (SellItem sudah lokal dari deklarasi remote)
-local sellRemote = SellItem
+local label = LocalPlayer.PlayerGui.Inventory.Main.Top.Options.Fish.Label.BagSize
 
--- Label BagSize untuk memantau jumlah item
-local label = LocalPlayer.PlayerGui:FindFirstChild("Inventory")
-if label then
-    label = label:FindFirstChild("Main")
-    if label then
-        label = label:FindFirstChild("Top")
-        if label then
-            label = label:FindFirstChild("Options")
-            if label then
-                label = label:FindFirstChild("Fish")
-                if label then
-                    label = label:FindFirstChild("Label")
-                    if label then
-                        label = label:FindFirstChild("BagSize")
-                    end
-                end
-            end
-        end
-    end
-end
+label:GetPropertyChangedSignal("ContentText"):Connect(function()
+    local text = label.ContentText
+    currentCount = tonumber(string.match(text, "^(%d+)")) or 0
+end)
 
-if label then
-    label:GetPropertyChangedSignal("ContentText"):Connect(function()
-        local text = label.ContentText
-        currentCount = tonumber(string.match(text, "^(%d+)")) or 0
-    end)
-else
-    warn("[Auto Sell] BagSize label not found, currentCount will always be 0")
-end
+local sellAllItems = SellItem
 
--- Fungsi sell yang aman
-local function SafeSell()
-    if not sellRemote then
-        warn("[Auto Sell] SellItem remote not available")
-        return
-    end
+ function SafeSell()
     pcall(function()
-        sellRemote:InvokeServer()
+        sellAllItems:InvokeServer()
     end)
 end
 
--- Loop untuk mode "Sell By Count"
-local function AutoSellLoop()
-    while autoSellEnabled and autoSellMode == "Sell By Count" do
-        if currentCount >= autoSellValue then
+ function AutoSellLoop()
+    while _G.AutoSells do
+        local selldelay = 0
+        local countdelay = 0
+        if autoSellMode == "Sell Delay" then
+            selldelay = autoSellValue
+        else
+            countdelay = autoSellValue
+        end
+
+        if selldelay == 0 and countdelay > 0 then
+            if currentCount >= countdelay then
+                SafeSell()
+                task.wait(0.3)
+            end
+            task.wait(0.1)
+
+        elseif selldelay > 0 and countdelay == 0 then
             SafeSell()
-            task.wait(0.3)  -- jeda setelah sell
+            task.wait(selldelay)
+
+        else
+            Window:Notify({
+                Title = "Yang Bener Hitam",
+                Content = "Pilih mode di dropdown dan isi angka di input (harus > 0).",
+                Duration = 3,
+                Icon = "warn",
+            })
+            break
         end
-        task.wait(0.5)  -- interval pengecekan
     end
 end
 
--- Fungsi untuk memulai auto sell (dipanggil saat toggle ON)
-local function StartAutoSell()
-    if autoSellEnabled then return end
-    autoSellEnabled = true
-    if autoSellMode == "Sell By Count" then
-        task.spawn(AutoSellLoop)
-    elseif autoSellMode == "Sell All" then
-        -- Langsung jual semua item, lalu matikan toggle
-        SafeSell()
-        Window:Notify({
-            Title = "Sell All",
-            Content = "All items sold!",
-            Duration = 2
-        })
-        -- Matikan toggle secara programatik
-        if autoSellToggle then
-            autoSellToggle:Set(false)
-        end
-        autoSellEnabled = false
-    end
+function StartAutoSell()
+    if _G.AutoSells then return end
+    _G.AutoSells = true
+    task.spawn(AutoSellLoop)
 end
 
--- Fungsi untuk menghentikan auto sell
-local function StopAutoSell()
-    autoSellEnabled = false
+function StopAutoSell()
+    _G.AutoSells = false
 end
 
--- Referensi toggle (digunakan untuk mematikan toggle di mode "Sell All")
-local autoSellToggle
 
--- Tombol Sell All (sekali klik, tanpa toggle)
-MainTab:CreateButton({
-    Name = "Sell All",
-    SubText = "Instantly sell all items in inventory",
-    Icon = "rbxassetid://7733793319",
-    Callback = function()
-        SafeSell()
-        Window:Notify({
-            Title = "Sell All",
-            Content = "All items sold!",
-            Duration = 2
-        })
-    end
-})
-
--- UI Toggle
-autoSellToggle = MainTab:CreateToggle({
-    Name = "Auto Sell",
-    Default = false,
-    Callback = function(v)
+MainTab:CreateToggle({
+	Name = "Auto Sell",
+	Default = false,
+	  Callback = function(v)
         if v then
             StartAutoSell()
         else
@@ -5509,31 +5473,23 @@ autoSellToggle = MainTab:CreateToggle({
     end
 })
 
--- Dropdown mode
 MainTab:CreateDropdown({
-    Name = "Auto Sell Mode",
-    Items = { "Sell By Count", "Sell All" },
-    Default = "Sell By Count",
-    Callback = function(Option)
-        autoSellMode = Option
-        -- Jika sedang berjalan, restart loop
-        if autoSellEnabled then
-            StopAutoSell()
-            StartAutoSell()
-        end
-    end,
+	Name = "Auto Sell Mode",
+	Items = { "Sell Delay", "Sell By Count" },
+	Default = "Sell Delay",
+	Callback = function(Option)
+		autoSellMode = Option
+	end,
 })
 
--- Input threshold untuk mode "Sell By Count"
 MainTab:CreateInput({
-    Name = "Sell Count Threshold",
-    Placeholder = "Jual jika isi tas >= angka",
-    Default = "",
-    Callback = function(txt)
-        autoSellValue = tonumber(txt) or 0
-    end,
+	Name = "Auto Sell Value",
+	Placeholder = "Delay: detik antar jual | Count: jual jika isi tas >= angka",
+	Default = "",
+	Callback = function(txt)
+		autoSellValue = tonumber(txt) or 0
+	end,
 })
-
 --------------------------------------------------------------------------------
 -- SECTION 1: AUTO FAVORITE (NAME & RARITY ONLY)
 --------------------------------------------------------------------------------
