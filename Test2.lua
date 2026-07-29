@@ -3227,6 +3227,130 @@ MainTab:CreateToggle({
     end,
 })
 
+MainTab:CreateSection({ Name = "Silent Lag‑Switch (Burst Instan)" })
+
+-- [SECURITY] State lokal
+local silentLagEnabled = false
+local silentLagThread = nil
+local burstCount = 5
+local burstDelay = 0.015          -- jeda sebelum catch (detik)
+local silentRetryOnFail = false   -- default: jangan retry, langsung lanjut
+
+-- Fungsi untuk memulai loop
+local function startSilentLag()
+    -- Hentikan thread lama jika ada
+    if silentLagThread then
+        task.cancel(silentLagThread)
+        silentLagThread = nil
+    end
+
+    -- Remote yang dibutuhkan (pastikan sudah lokal di file utama)
+    local chargeRemote = ChargeRod
+    local minigameRemote = StartMini
+    local catchRemote = REFishDoneRE or REFishDone
+
+    if not chargeRemote or not minigameRemote or not catchRemote then
+        Window:Notify({ Title = "Silent Lag", Content = "Remote tidak ditemukan.", Duration = 3 })
+        silentLagEnabled = false
+        return
+    end
+
+    silentLagThread = task.spawn(function()
+        while silentLagEnabled do
+            -- Jalankan satu siklus penuh
+            local ok = pcall(function()
+                local t = workspace:GetServerTimeNow()
+                -- 1. Charge
+                chargeRemote:InvokeServer(nil, nil, t, nil)
+                -- 2. Burst minigame tanpa jeda
+                for _ = 1, burstCount do
+                    minigameRemote:InvokeServer(-1, 1, t)
+                end
+                -- 3. Delay sebelum catch (bisa 0)
+                if burstDelay > 0 then
+                    task.wait(burstDelay)
+                end
+                -- 4. Catch
+                catchRemote:FireServer()
+            end)
+
+            -- Jika siklus gagal dan retry tidak diaktifkan, lanjutkan saja
+            if not ok and not silentRetryOnFail then
+                -- Tidak melakukan apa-apa, lanjut ke siklus berikutnya
+            elseif not ok and silentRetryOnFail then
+                -- Jika retry diaktifkan, beri jeda sedikit sebelum mengulang siklus yang sama
+                task.wait(0.1)
+            end
+
+            -- Jeda minimal 1 frame sebelum siklus berikutnya agar tidak memonopoli CPU
+            task.wait()
+        end
+    end)
+end
+
+-- Fungsi untuk menghentikan
+local function stopSilentLag()
+    silentLagEnabled = false
+    if silentLagThread then
+        task.cancel(silentLagThread)
+        silentLagThread = nil
+    end
+end
+
+-- UI Toggle
+MainTab:CreateToggle({
+    Name = "Silent Lag‑Switch",
+    SubText = "Burst instant + stable cycle",
+    Default = false,
+    Callback = function(state)
+        silentLagEnabled = state
+        if state then
+            startSilentLag()
+            Window:Notify({ Title = "Silent Lag", Content = "Activated", Duration = 1 })
+        else
+            stopSilentLag()
+            Window:Notify({ Title = "Silent Lag", Content = "Stopped", Duration = 1 })
+        end
+    end
+})
+
+-- Input Burst Count
+MainTab:CreateInput({
+    Name = "Burst Count",
+    SideLabel = "Count",
+    Placeholder = "1-15",
+    Default = tostring(burstCount),   -- perbaikan: string untuk UI
+    Callback = function(value)
+        local num = tonumber(value)
+        if num and num >= 1 and num <= 15 then
+            burstCount = num
+        end
+    end
+})
+
+-- Input Burst Delay
+MainTab:CreateInput({
+    Name = "Burst Delay",
+    SideLabel = "Delay before catch",
+    Placeholder = "0.015",
+    Default = tostring(burstDelay),   -- perbaikan: string untuk UI
+    Callback = function(value)
+        local num = tonumber(value)
+        if num and num >= 0 and num <= 1 then
+            burstDelay = num
+        end
+    end
+})
+
+-- Toggle untuk mengaktifkan retry
+MainTab:CreateToggle({
+    Name = "Retry on Fail",
+    Default = false,
+    Callback = function(state)
+        silentRetryOnFail = state
+    end
+})
+
 -- =================
 -- Instant Bobber UI
 -- =================
