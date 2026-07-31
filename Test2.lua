@@ -274,6 +274,11 @@ InfoTab:CreateParagraph({
 	Icon = "rbxassetid://7733779610"
 })
 
+AdaptiveRodSpeedTab = Window:CreateTab({
+    Name = "Adaptive Rod Speed",
+    Icon = "rbxassetid://7733779610"
+
+
  QuestTab = Window:CreateTab({
 	Name = "Quest",
 	Icon = "rbxassetid://7733955511"
@@ -5036,6 +5041,129 @@ function BlatantSkipCycle(session)
         task.wait(loopDelay)
     end
 end
+
+MainTab:CreateSection({ Name = "Adaptive Rod Speed" })
+
+-- State lokal
+local adaptiveSpeedEnabled = false
+local adaptiveThread = nil
+local lastRodName = nil
+local adaptiveCheckInterval = 5  -- detik
+
+-- Fungsi untuk mendapatkan data rod yang sedang dipakai
+local function getEquippedRodData()
+    -- 1. Ambil dari Data (Replion)
+    if Data then
+        local equipped = Data:Get("EquippedItems")
+        if equipped then
+            local rods = Data:GetExpect({ "Inventory", "Fishing Rods" })
+            if rods then
+                for _, uuid in pairs(equipped) do
+                    for _, rod in ipairs(rods) do
+                        if rod.UUID == uuid then
+                            -- Dapatkan data lengkap rod melalui ItemUtility
+                            local itemData = ItemUtility:GetItemData(rod.Id)
+                            if itemData and itemData.Data then
+                                return itemData.Data  -- mengandung Name, Id, dll.
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- 2. Fallback: ambil dari Items folder (seperti Diamond Rod)
+    if Items then
+        for _, module in ipairs(Items:GetChildren()) do
+            if module:IsA("ModuleScript") then
+                local ok, data = pcall(require, module)
+                if ok and data.Data and data.Data.Type == "Fishing Rods" and data.Data.Id then
+                    -- Cocokkan dengan ID yang dipakai? Perlu cara lain, skip dulu.
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+-- Fungsi untuk menerapkan pengaturan delay berdasarkan rod
+local function applyRodSettings(rodData)
+    if not rodData then return end
+
+    -- Ambil nilai Windup atau atribut lain
+    local windup = rodData.Windup
+    local baseDelay = 0.3  -- default
+
+    if windup and type(windup) == "NumberRange" then
+        -- Windup adalah NumberRange, ambil nilai Minimum atau rata-rata
+        local minWindup = windup.Min or 2.0
+        -- Semakin kecil Windup, semakin kecil delay
+        baseDelay = math.max(0.05, minWindup * 0.3)  -- contoh
+    elseif rodData.ClickPower then
+        -- Rod dengan ClickPower tinggi bisa dikurangi delay
+        baseDelay = math.max(0.05, 0.5 - rodData.ClickPower * 0.8)
+    end
+
+    -- Terapkan ke modul Instant (atau modul yang sedang aktif)
+    if Instant then
+        Instant.SetCastDelay(baseDelay)
+        Instant.SetCompleteDelay(baseDelay * 0.8)
+    end
+
+    -- Log
+    print("[Adaptive] Rod:", rodData.Name or "?", "| Delay:", baseDelay)
+end
+
+-- Loop pemantauan
+local function startAdaptive()
+    if adaptiveThread then task.cancel(adaptiveThread) end
+
+    adaptiveThread = task.spawn(function()
+        while adaptiveSpeedEnabled do
+            local rodData = getEquippedRodData()
+            local currentName = rodData and rodData.Name
+
+            if currentName ~= lastRodName then
+                lastRodName = currentName
+                applyRodSettings(rodData)
+            end
+
+            -- Tunggu interval
+            for _ = 1, adaptiveCheckInterval do
+                if not adaptiveSpeedEnabled then break end
+                task.wait(1)
+            end
+        end
+    end)
+end
+
+local function stopAdaptive()
+    adaptiveSpeedEnabled = false
+    if adaptiveThread then
+        task.cancel(adaptiveThread)
+        adaptiveThread = nil
+    end
+    lastRodName = nil
+end
+
+-- UI Toggle
+MainTab:CreateToggle({
+    Name = "Adaptive Rod Speed",
+    SubText = "Auto-adjust fishing delay based on rod stats",
+    Default = false,
+    Callback = function(state)
+        adaptiveSpeedEnabled = state
+        if state then
+            startAdaptive()
+            Window:Notify({ Title = "Adaptive", Content = "Rod speed adaptation active", Duration = 3 })
+        else
+            stopAdaptive()
+            Window:Notify({ Title = "Adaptive", Content = "Stopped", Duration = 3 })
+        end
+    end
+})
 
 AmblatantTab:CreateSection({ Name = "AMBLATANT OR FAST FISHING" })
 
