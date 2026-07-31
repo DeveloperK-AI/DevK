@@ -5042,7 +5042,7 @@ function BlatantSkipCycle(session)
     end
 end
 
-MainTab:CreateSection({ Name = "Adaptive Rod Speed" })
+AdaptiveRodSpeedTab:CreateSection({ Name = "Adaptive Rod Speed" })
 
 -- State lokal
 local adaptiveSpeedEnabled = false
