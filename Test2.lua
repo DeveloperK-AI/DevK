@@ -277,7 +277,7 @@ InfoTab:CreateParagraph({
 AdaptiveRodSpeedTab = Window:CreateTab({
     Name = "Adaptive Rod Speed",
     Icon = "rbxassetid://7733779610"
-
+})
 
  QuestTab = Window:CreateTab({
 	Name = "Quest",
